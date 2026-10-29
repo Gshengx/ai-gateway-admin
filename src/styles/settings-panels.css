@@ -1,0 +1,120 @@
+.settings-panel {
+  min-width: 0;
+  border-radius: var(--td-radius-medium);
+  background: var(--td-bg-color-container);
+}
+.notice-header,
+.policy-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--td-comp-margin-s);
+}
+h2 {
+  margin: 0;
+  font: var(--td-font-title-medium);
+}
+.description,
+.hint,
+.policy-updated-at {
+  color: var(--td-text-color-secondary);
+  font: var(--td-font-body-small);
+  overflow-wrap: anywhere;
+}
+.description {
+  margin: var(--td-comp-margin-s) 0 var(--td-comp-margin-l);
+}
+.notice-display,
+.notice-form,
+.policy-grid {
+  display: grid;
+  gap: var(--td-comp-margin-l);
+  min-width: 0;
+}
+.notice-form {
+  margin-top: var(--td-comp-margin-l);
+}
+.switch-block,
+.notice-group,
+.policy-group {
+  min-width: 0;
+  margin: 0;
+  padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
+  border-radius: var(--td-radius-medium);
+  background: var(--td-bg-color-secondarycontainer);
+}
+.switch-block p,
+.policy-group .hint {
+  margin: var(--td-comp-margin-s) 0 0;
+}
+.notice-group :deep(.t-form__label),
+.policy-group h3 {
+  color: var(--td-text-color-primary);
+  font: var(--td-font-title-small);
+}
+.policy-group h3 {
+  margin: 0 0 var(--td-comp-margin-s);
+}
+/* TDesign 无业务控件宽度 token：正文以 720px 保持阅读行长；
+ * 密码两列以每列 560px 上限容纳长度范围及英文说明，避免宽屏列间过疏。
+ * 数字输入 120px 为四位分钟值及两侧步进按钮保留空间。 */
+.notice-group :deep(.t-input__wrap),
+.notice-group :deep(.t-textarea) {
+  width: 100%;
+}
+.policy-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.policy-item :deep(.t-input-number) {
+  width: 120px;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+.policy-row,
+.policy-item :deep(.t-form__controls-content) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--td-comp-margin-xs);
+  min-width: 0;
+}
+.policy-item {
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 0;
+}
+.policy-item :deep(.t-form__controls) {
+  min-width: 0;
+}
+.policy-text {
+  color: var(--td-text-color-primary);
+  font: var(--td-font-body-medium);
+  line-height: var(--td-comp-size-m);
+  overflow-wrap: anywhere;
+}
+.policy-text--muted {
+  color: var(--td-text-color-secondary);
+}
+.notice-actions,
+.policy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--td-comp-margin-s);
+  margin-top: var(--td-comp-margin-l);
+  border-top: 1px solid var(--td-component-border);
+  padding-top: var(--td-comp-paddingTB-l);
+}
+.notice-actions > :deep(.t-space),
+.policy-actions > :deep(.t-space) {
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+/* 沿用需求指定的 768px 单列断点；TDesign 无对应媒体查询 token。 */
+@media (max-width: 768px) {
+  .policy-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

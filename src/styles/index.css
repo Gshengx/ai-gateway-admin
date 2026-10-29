@@ -1,0 +1,71 @@
+:root {
+  /* 品牌色：与 TDesign Token 对齐，统一在此覆盖 */
+  --brand-primary: var(--td-brand-color);
+
+  --layout-header-height: 64px;
+  --layout-aside-width: 232px;
+  --layout-aside-width-collapsed: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  color: var(--td-text-color-primary);
+  background-color: var(--td-bg-color-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* API Keys 原型个人中心搜索框为 360px；TDesign 无对应业务宽度 token。 */
+.personal-key-panel .key-search {
+  width: 360px;
+  max-width: 100%;
+}
+/* API Key 管理原型指定的筛选宽度；TDesign 无对应业务宽度 token。 */
+.managed-key-panel .managed-key-search {
+  width: 280px;
+  max-width: 100%;
+}
+.managed-key-panel .managed-key-status {
+  width: 140px;
+}
+.managed-key-panel .managed-key-access {
+  width: 180px;
+}
+
+/* 部门筛选业务宽度：TDesign 无对应宽度 token。
+ * 输入项以 280px 为换行基准并弹性占满父容器；面板取 640px 为十层缩进预留名称空间，
+ * 组件读取此上限，按容器内容区与主题安全边距计算实际 px 宽度。
+ */
+:root {
+  --department-filter-field-basis: 280px;
+  --department-tree-popup-max-width: 640px;
+}
+.managed-key-panel .managed-key-department {
+  flex: 2 1 var(--department-filter-field-basis);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* TDesign Vue Next 1.20.10: useTreeItem renders .t-tree__item and
+ * useRenderOperations renders .t-tree__operations. Global rules reach body teleport.
+ * Opacity keeps native buttons in the Tab order, including before focus-within. */
+.t-tree__item .t-tree__operations .department-tree-node-refresh {
+  opacity: 0;
+}
+.t-tree__item:hover .t-tree__operations .department-tree-node-refresh,
+.t-tree__item:focus-within .t-tree__operations .department-tree-node-refresh {
+  opacity: 1;
+}

@@ -1,0 +1,27 @@
+node_modules
+dist
+dist-ssr
+coverage
+*.local
+
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.husky/_
+
+# 本地临时目录与接口转储，不纳入版本管理
+.trae-tmp/
+openapi_dump.json
