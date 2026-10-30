@@ -124,55 +124,9 @@
       </t-space>
     </div>
   </t-card>
-  <t-dialog
-    v-model:visible="reasonVisible"
-    :header="t('passwordPolicy.reason')"
-    :close-on-overlay-click="false"
-    :close-btn="!submitting"
-    :confirm-btn="{ content: t('common.confirm'), loading: submitting, disabled: !reason.trim() }"
-    :cancel-btn="{ content: t('common.cancel'), disabled: submitting }"
-    @confirm="confirmSave"
-  >
-    <t-form :data="{ reason }" label-align="top">
-      <t-form-item :label="t('passwordPolicy.reason')" required>
-        <t-textarea
-          v-model="reason"
-          :disabled="submitting"
-          :maxlength="512"
-          :placeholder="t('passwordPolicy.reasonRequired')"
-        />
-      </t-form-item>
-    </t-form>
-  </t-dialog>
-  <t-dialog
-    lazy
-    destroy-on-close
-    v-model:visible="reauth.visible"
-    :header="t('passwordPolicy.reauth.title')"
-    :close-on-overlay-click="false"
-    :confirm-btn="{
-      content: t('common.confirm'),
-      disabled: !reauth.password || reauth.verifying,
-      loading: reauth.verifying,
-    }"
-    :cancel-btn="{ content: t('common.cancel') }"
-    @confirm="onReauthConfirm"
-    @close="onReauthClose"
-    @cancel="onReauthClose"
-  >
-    <p class="description">{{ t('passwordPolicy.reauth.content') }}</p>
-    <t-input
-      v-model="reauth.password"
-      type="password"
-      autocomplete="current-password"
-      name="policy-reauth"
-      :disabled="reauth.verifying"
-      :placeholder="t('passwordPolicy.reauth.password')"
-    />
-  </t-dialog>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type FormInstanceFunctions, type FormRule } from 'tdesign-vue-next'
 import {
@@ -182,8 +136,6 @@ import {
   type PasswordPolicyPayload,
 } from '@/api/modules/settings'
 import { canWriteResource, useUserStore } from '@/stores/modules/user'
-import { reauthApi } from '@/api/modules/auth'
-import type { NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -211,8 +163,6 @@ const dirty = computed(() => fields.some(({ key }) => form[key] !== saved.value?
 const formRef = ref<FormInstanceFunctions>()
 const submitting = ref(false)
 const locked = computed(() => !canWrite.value || !saved.value || submitting.value)
-const reasonVisible = ref(false)
-const reason = ref('')
 const rules = computed<Record<string, FormRule[]>>(() =>
   Object.fromEntries(
     fields.map((field) => [
@@ -257,84 +207,21 @@ async function save() {
     MessagePlugin.info(t('passwordPolicy.unchanged'))
     return
   }
-  reason.value = ''
-  reasonVisible.value = true
-}
-const reauth = reactive({ visible: false, password: '', verifying: false })
-let settleReauthPassword: ((password: string | null) => void) | null = null
-function askReauthPassword(): Promise<string | null> {
-  reauth.password = ''
-  reauth.visible = true
-  return new Promise((resolve) => {
-    settleReauthPassword = resolve
-  })
-}
-function finishReauth(password: string | null) {
-  reauth.visible = false
-  reauth.password = ''
-  settleReauthPassword?.(password)
-  settleReauthPassword = null
-}
-function onReauthConfirm() {
-  if (!reauth.password || reauth.verifying) return
-  settleReauthPassword?.(reauth.password)
-  settleReauthPassword = null
-}
-function onReauthClose() {
-  finishReauth(null)
-}
-onBeforeUnmount(onReauthClose)
-async function confirmSave() {
-  if (
-    !canWrite.value ||
-    !saved.value ||
-    submitting.value ||
-    !reason.value.trim() ||
-    reason.value.length > 512 ||
-    (await formRef.value?.validate()) !== true
-  )
-    return
-  const payload = { reason: reason.value.trim() } as PasswordPolicyPayload
+  if (!saved.value) return
+  const payload = {} as PasswordPolicyPayload
   for (const { key } of fields) payload[key] = form[key]!
   if (!fields.some(({ key }) => payload[key] !== saved.value?.[key])) {
-    reasonVisible.value = false
     return
   }
   const idempotencyKey = crypto.randomUUID()
   submitting.value = true
-  reasonVisible.value = false
   try {
-    let proofToken: string | undefined
-    while (!proofToken) {
-      const password = await askReauthPassword()
-      if (!password || !canWrite.value) return
-      reauth.verifying = true
-      try {
-        const { proof_token } = await reauthApi({
-          password,
-          intent: { operation_id: 'updatePasswordPolicy', path: {}, body: { ...payload } },
-        })
-        proofToken = proof_token
-      } catch {
-        // The request layer reports failures; allow another password attempt.
-      } finally {
-        reauth.verifying = false
-      }
-      if (!reauth.visible) return
-    }
-    finishReauth(null)
-    if (!canWrite.value) return
-    const result = await updatePasswordPolicyApi(payload, proofToken, idempotencyKey)
+    const result = await updatePasswordPolicyApi(payload, idempotencyKey)
     apply(result.policy)
-    reasonVisible.value = false
     MessagePlugin.success(t('passwordPolicy.saveSuccess'))
-  } catch (error) {
-    if ((error as NotifiedError).code === 'REAUTH_REQUIRED') {
-      MessagePlugin.error(t('passwordPolicy.reauthExpired'))
-    }
-    // The request layer reports other failures.
+  } catch {
+    // The request layer reports failures.
   } finally {
-    finishReauth(null)
     submitting.value = false
   }
 }

@@ -92,31 +92,30 @@ export function updateRoleApi(id: string, payload: Partial<RolePayload>) {
   return request.patch<RoleMutationResult>(`/roles/${id}`, payload)
 }
 
-export function copyRoleApi(id: string, payload: RolePayload & { reason: string }, proof?: string) {
-  return request.post<RoleMutationResult>(`/roles/${id}/copy`, payload, {
-    headers: proof ? { 'X-Reauth-Proof': proof } : undefined,
-  })
+export function copyRoleApi(id: string, payload: RolePayload) {
+  return request.post<RoleMutationResult>(`/roles/${id}/copy`, payload)
 }
 
 export function saveRolePermissionsApi(
   id: string,
-  payload: { permissions: RoleGrant[]; reason: string },
-  proof?: string,
+  payload: { permissions: RoleGrant[] },
+
   idempotencyKey?: string,
 ) {
   return request.put<RoleMutationResult>(`/roles/${id}/permissions`, payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
 }
 
-export function deleteRoleApi(id: string, reason: string, proof?: string, idempotencyKey?: string) {
+export function deleteRoleApi(
+  id: string,
+
+  idempotencyKey?: string,
+) {
   return request.delete<RoleMutationResult>(`/roles/${id}`, {
-    data: { reason },
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
@@ -250,7 +249,6 @@ export type DepartmentPlacement = 'inside' | 'before' | 'after'
 export interface MoveDepartmentPayload {
   parent_id: string
   sort_order: number
-  reason: string
 }
 
 export interface PlaceDepartmentPayload {
@@ -258,7 +256,6 @@ export interface PlaceDepartmentPayload {
   placement: DepartmentPlacement
   /** before/after 时的参照部门；inside 时省略 */
   anchor_id?: string
-  reason: string
 }
 
 export interface DepartmentMutationResult {
@@ -318,10 +315,6 @@ export interface UpdateUserPayload {
 }
 
 /** 变更类接口统一要求填写原因，写入审计日志 */
-export interface ReasonPayload {
-  reason: string
-}
-
 export interface UserMutationResult {
   applied: boolean
   changed: boolean
@@ -336,7 +329,6 @@ export interface UserSaveResult {
 }
 
 export interface BatchStatusPayload {
-  reason: string
   user_ids: string[]
 }
 
@@ -361,6 +353,43 @@ export interface DeletePreview {
   max_dependencies: number
   org_version: string
   user_id: string
+}
+
+export interface BatchDeleteUserPreviewItem {
+  display_name: string
+  reason: string
+  user_id: string
+  username: string
+}
+
+export interface BatchDeleteUsersPreview {
+  /** 是否存在可删除目标且无阻断条件，不代表删除许可 */
+  allowed: boolean
+  /** 拟删除用户全部 API Key 数量（含启用与禁用） */
+  api_key_count: number
+  block_reason: string
+  deletable: BatchDeleteUserPreviewItem[]
+  /** 拟清理的活动依赖总数，整批最多 5000 */
+  dependency_count: number
+  /** 被排除的本人及超级管理员 */
+  excluded: BatchDeleteUserPreviewItem[]
+  preview_digest: string
+  requested_count: number
+}
+
+export interface BatchDeleteUsersPayload {
+  preview_digest: string
+  /** 预览时原始选择的全部用户 ID，包含排除项 */
+  user_ids: string[]
+}
+
+export interface BatchDeleteUsersResult {
+  api_key_count: number
+  applied: boolean
+  deleted_count: number
+  excluded_count: number
+  replayed: boolean
+  requested_count: number
 }
 
 /** 导入任务状态（三阶段：preview → confirm → result） */
@@ -434,9 +463,9 @@ export interface MockImportRow {
   display_name: string
   email?: string
   phone?: string
-  department: string
-  role: string
-  password: string
+  department_path: string
+  role_name: string
+  initial_password: string
 }
 
 /** 页码模式：返回 items/page/page_size/total/total_pages */
@@ -555,12 +584,9 @@ export function getUserModelGrantsApi(
 
 /**
  * 覆盖保存用户级直接授权：model_ids 为全量直接授权集合，空集合表示清空直授。
- * 不影响部门 / 用户组继承的权限；reason 必填并写入审计。
+ * 不影响部门 / 用户组继承的权限。
  */
-export function setUserModelGrantsApi(
-  id: string,
-  payload: { model_ids: string[]; reason: string },
-) {
+export function setUserModelGrantsApi(id: string, payload: { model_ids: string[] }) {
   return request.put<ModelGrantMutationResult>(`/users/${id}/model-grants`, payload)
 }
 
@@ -604,17 +630,15 @@ export function updateDepartmentApi(id: string, payload: UpdateDepartmentPayload
   )
 }
 
-/** 删除部门：后端要求 body 传 reason */
+/** 删除部门 */
 export function deleteDepartmentApi(
   id: string,
-  payload: ReasonPayload,
-  proof?: string,
+
   idempotencyKey?: string,
 ) {
   return request.delete<{ applied: boolean; id: string; replayed: boolean }>(`/departments/${id}`, {
-    data: payload,
+    data: {},
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
@@ -628,22 +652,19 @@ export function getDepartmentDeletePreviewApi(id: string) {
 }
 
 /** 按排序号移动部门子树（保留在目标父部门下） */
-export function moveDepartmentApi(id: string, payload: MoveDepartmentPayload, proof?: string) {
-  return request.post<DepartmentMutationResult>(`/departments/${id}/move`, payload, {
-    headers: proof ? { 'X-Reauth-Proof': proof } : undefined,
-  })
+export function moveDepartmentApi(id: string, payload: MoveDepartmentPayload) {
+  return request.post<DepartmentMutationResult>(`/departments/${id}/move`, payload)
 }
 
 /** 按落点放置部门子树：inside=放入目标下级，before/after=放到目标兄弟位置 */
 export function placeDepartmentApi(
   id: string,
   payload: PlaceDepartmentPayload,
-  proof?: string,
+
   idempotencyKey?: string,
 ) {
   return request.post<DepartmentMutationResult>(`/departments/${id}/place`, payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
@@ -670,14 +691,12 @@ export function updateUserApi(id: string, payload: UpdateUserPayload) {
   return request.patch<UserSaveResult>(`/users/${id}`, payload)
 }
 
-export function enableUserApi(id: string, payload: ReasonPayload) {
-  return request.post<UserMutationResult>(`/users/${id}/enable`, payload)
+export function enableUserApi(id: string) {
+  return request.post<UserMutationResult>(`/users/${id}/enable`, {})
 }
 
-export function disableUserApi(id: string, payload: ReasonPayload, proof?: string) {
-  return request.post<UserMutationResult>(`/users/${id}/disable`, payload, {
-    headers: proof ? { 'X-Reauth-Proof': proof } : undefined,
-  })
+export function disableUserApi(id: string) {
+  return request.post<UserMutationResult>(`/users/${id}/disable`, {})
 }
 
 export function batchEnableUsersApi(payload: BatchStatusPayload) {
@@ -686,12 +705,11 @@ export function batchEnableUsersApi(payload: BatchStatusPayload) {
 
 export function batchDisableUsersApi(
   payload: BatchStatusPayload,
-  proof?: string,
+
   idempotencyKey?: string,
 ) {
   return request.post<BatchStatusResult>('/users/batch/disable', payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
@@ -699,34 +717,51 @@ export function batchDisableUsersApi(
 
 export function resetUserPasswordApi(
   id: string,
-  payload: ReasonPayload,
-  proof?: string,
+
   idempotencyKey?: string,
 ) {
-  return request.post<ResetPasswordResult>(`/users/${id}/reset-password`, payload, {
+  return request.post<ResetPasswordResult>(
+    `/users/${id}/reset-password`,
+    {},
+    {
+      headers: {
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+      },
+    },
+  )
+}
+
+export function getUserDeletePreviewApi(id: string) {
+  // 后端该接口未声明 Idempotency-Key，携带会返回 MALFORMED_REQUEST
+  return request.post<DeletePreview>(`/users/${id}/delete-preview`, {}, { skipIdempotency: true })
+}
+
+export function deleteUserApi(
+  id: string,
+
+  idempotencyKey?: string,
+) {
+  return request.delete<UserMutationResult>(`/users/${id}`, {
+    data: {},
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
 }
 
-export function getUserDeletePreviewApi(id: string) {
-  return request.post<DeletePreview>(`/users/${id}/delete-preview`, {})
+/** 批量删除预览：返回拟删除/被排除用户与预览摘要，不授予删除许可 */
+export function previewBatchDeleteUsersApi(payload: { user_ids: string[] }) {
+  // 后端该接口未声明 Idempotency-Key，携带会返回 MALFORMED_REQUEST
+  return request.post<BatchDeleteUsersPreview>('/users/batch/delete-preview', payload, {
+    skipIdempotency: true,
+  })
 }
 
-/** 删除用户：后端要求 body 传 reason */
-export function deleteUserApi(
-  id: string,
-  payload: ReasonPayload,
-  proof?: string,
-  idempotencyKey?: string,
-) {
-  return request.delete<UserMutationResult>(`/users/${id}`, {
-    data: payload,
+/** 批量删除：原子执行，需原样回传预览摘要与原始选择 */
+export function batchDeleteUsersApi(payload: BatchDeleteUsersPayload, idempotencyKey: string) {
+  return request.post<BatchDeleteUsersResult>('/users/batch/delete', payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
-      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+      'Idempotency-Key': idempotencyKey,
     },
   })
 }
@@ -739,43 +774,83 @@ export function deleteUserApi(
 export function previewUserImportApi(
   file: File,
   options: { format: ImportFileFormat; mode?: ImportDuplicateMode; mockRows?: MockImportRow[] },
+  idempotencyKey?: string,
 ) {
   const mode = options.mode ?? 'SKIP'
   if (import.meta.env.VITE_USE_MOCK === 'true') {
-    return request.post<ImportTask>('/users/imports/preview', {
-      filename: file.name,
-      format: options.format,
-      mode,
-      rows: options.mockRows ?? [],
-    })
+    return request.post<ImportTask>(
+      '/users/imports/preview',
+      {
+        filename: file.name,
+        format: options.format,
+        mode,
+        rows: options.mockRows ?? [],
+      },
+      { idempotencyKey },
+    )
   }
 
   const form = new FormData()
   form.append('file', file)
   form.append('format', options.format)
   form.append('mode', mode)
-  return request.post<ImportTask>('/users/imports/preview', form)
+  return request.post<ImportTask>('/users/imports/preview', form, { idempotencyKey })
 }
 
-/** 导入确认（第二阶段）：selected_rows 为预览行号，1..1000 */
-export function confirmUserImportApi(taskId: string, selectedRows: number[]) {
+/** 导入确认 */
+export function confirmUserImportApi(taskId: string, idempotencyKey?: string) {
   return request.post<ImportTask>(
     `/users/imports/${taskId}/confirm`,
+    {},
     {
-      selected_rows: selectedRows,
+      headers: { 'Content-Type': 'application/json' },
+      idempotencyKey,
+      handledErrorCodes: [
+        'IMPORT_PREVIEW_CHANGED',
+        'PASSWORD_POLICY_CHANGED',
+        'VALIDATION_FAILED',
+        'FORBIDDEN',
+        'OUT_OF_SCOPE',
+        'RESOURCE_DISABLED',
+        'NOT_FOUND',
+      ],
     },
-    { handledErrorCodes: ['IMPORT_PREVIEW_CHANGED', 'VALIDATION_FAILED'] },
   )
 }
 
-export function getUserImportTaskApi(taskId: string) {
-  return request.get<ImportTask>(`/users/imports/${taskId}`, { skipLocale: true })
+export function downloadUserImportFailuresApi(taskId: string, format: ImportFileFormat = 'csv') {
+  return request.get<Blob>(`/users/imports/${taskId}/errors`, {
+    params: { format },
+    responseType: 'blob',
+    skipLocale: true,
+  })
 }
 
-export function getUserImportRowsApi(taskId: string) {
+export function getUserImportTaskApi(taskId: string, signal?: AbortSignal) {
+  return request.get<ImportTask>(`/users/imports/${taskId}`, {
+    skipLocale: true,
+    signal,
+    handledErrorCodes: [
+      'AUTHENTICATION_BUSY',
+      'FORBIDDEN',
+      'OUT_OF_SCOPE',
+      'RESOURCE_DISABLED',
+      'NOT_FOUND',
+    ],
+  })
+}
+
+export function getUserImportRowsApi(taskId: string, signal?: AbortSignal) {
   return request.get<ImportRowsResult>(`/users/imports/${taskId}/rows`, {
     skipLocale: true,
-    handledErrorCodes: ['IMPORT_PREVIEW_CHANGED'],
+    signal,
+    handledErrorCodes: [
+      'IMPORT_PREVIEW_CHANGED',
+      'FORBIDDEN',
+      'OUT_OF_SCOPE',
+      'RESOURCE_DISABLED',
+      'NOT_FOUND',
+    ],
   })
 }
 
@@ -917,8 +992,8 @@ export interface UserGroupMemberMutationResult extends UserGroupMutationResult {
   changed: boolean
 }
 
-/** 成员增删入参：reason 必填并写入审计日志 */
-export interface UserGroupMemberPayload extends ReasonPayload {
+/** Group member mutation payload. */
+export interface UserGroupMemberPayload {
   user_ids: string[]
 }
 
@@ -934,17 +1009,15 @@ export function updateUserGroupApi(id: string, payload: UpdateUserGroupPayload) 
   return request.patch<UserGroupMutationResult>(`/groups/${id}`, payload)
 }
 
-/** 删除用户组：后端要求 body 传 reason；敏感操作需带二次验证证明 */
+/** Delete a user group. */
 export function deleteUserGroupApi(
   id: string,
-  payload: ReasonPayload,
-  reauthProof?: string,
+
   idempotencyKey?: string,
 ) {
   return request.delete<UserGroupMutationResult>(`/groups/${id}`, {
-    data: payload,
+    data: {},
     headers: {
-      ...(reauthProof ? { 'X-Reauth-Proof': reauthProof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })

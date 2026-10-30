@@ -59,26 +59,24 @@ export interface AcceptTermsResult {
 export const getTermsConfigApi = () =>
   request.get<TermsConfig>('/terms/config', { skipLocale: true })
 export const updateTermsConfigApi = (
-  payload: { login_popup_enabled?: boolean; mandatory_confirmation?: boolean; reason: string },
-  proof?: string,
+  payload: { login_popup_enabled?: boolean; mandatory_confirmation?: boolean },
+
   idempotencyKey?: string,
 ) =>
   request.patch<TermsMutationResult>('/terms/config', payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
 export const previewTermsApi = (payload: { translations: TermsTranslation[] }) =>
   request.post<{ translations: TermsTranslationDetail[] }>('/terms/preview', payload)
 export const publishTermsVersionApi = (
-  payload: { reason: string; translations: TermsTranslation[] },
-  proof?: string,
+  payload: { translations: TermsTranslation[] },
+
   idempotencyKey?: string,
 ) =>
   request.post<TermsMutationResult>('/terms/versions', payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })

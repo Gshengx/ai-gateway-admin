@@ -72,7 +72,7 @@ export const businessRoutes: RouteRecordRaw[] = [
       {
         path: 'providers',
         name: 'ModelProviders',
-        component: () => import('@/views/common/placeholder.vue'),
+        component: () => import('@/views/model/providers/index.vue'),
         meta: { title: 'route.model.providers', permission: 'model.providers' },
       },
       {

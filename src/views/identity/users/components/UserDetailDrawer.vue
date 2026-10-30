@@ -180,6 +180,7 @@
         >
           <t-alert
             v-if="detail.status !== 'ACTIVE'"
+            class="key-disabled-alert"
             theme="warning"
             :message="t('users.detail.keys.userDisabled')"
           />
@@ -323,14 +324,6 @@
             </li>
           </ul>
         </t-form-item>
-        <t-form-item :label="t('users.confirm.reason')" required>
-          <t-textarea
-            v-model="grantDialog.reason"
-            :placeholder="t('users.confirm.reasonPlaceholder')"
-            :maxlength="512"
-            :autosize="{ minRows: 3, maxRows: 4 }"
-          />
-        </t-form-item>
       </t-form>
     </t-dialog>
     <t-dialog
@@ -345,45 +338,6 @@
       @close="closeKeyConfirm"
     >
       <p class="confirm-content">{{ keyDialogContent }}</p>
-      <t-form :data="keyForm" label-align="top"
-        ><t-form-item
-          :label="t('myKeys.reason')"
-          required
-          :help="keyReasonError"
-          :status="keyReasonError ? 'error' : undefined"
-          ><t-textarea
-            v-model="keyForm.reason"
-            :maxlength="200"
-            :disabled="keyBusy"
-            :placeholder="t('myKeys.reasonPlaceholder')" /></t-form-item
-      ></t-form>
-    </t-dialog>
-    <t-dialog
-      lazy
-      destroy-on-close
-      :visible="keyReauthVisible"
-      :header="t('users.reauth.title')"
-      :close-on-overlay-click="false"
-      :close-on-esc-keydown="!keyBusy"
-      :close-btn="!keyBusy"
-      :confirm-btn="{
-        content: t('common.confirm'),
-        disabled: !password || keyBusy,
-        loading: keyBusy,
-      }"
-      :cancel-btn="{ content: t('common.cancel'), disabled: keyBusy }"
-      @confirm="confirmReauth"
-      @close="closeReauth"
-    >
-      <p class="confirm-content">{{ t('users.reauth.content') }}</p>
-      <t-input
-        v-model="password"
-        type="password"
-        autocomplete="current-password"
-        name="user-key-reauth"
-        :placeholder="t('users.reauth.password')"
-        :disabled="keyBusy"
-      />
     </t-dialog>
   </t-drawer>
 </template>
@@ -415,7 +369,6 @@ import {
   batchDisableManagedKeysApi,
   batchDeleteManagedKeysApi,
 } from '@/api/modules/apiKeys'
-import { reauthApi } from '@/api/modules/auth'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 import type { NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
@@ -489,15 +442,11 @@ const grantDialog = reactive({
   mode: 'add' as 'add' | 'remove',
   target: null as ModelRow | null,
   modelIds: [] as string[],
-  reason: '',
   loading: false,
 })
 
 const canConfirmGrant = computed(
-  () =>
-    grantDialog.reason.trim().length > 0 &&
-    grantDialog.reason.trim().length <= 512 &&
-    (grantDialog.mode === 'remove' || grantDialog.modelIds.length > 0),
+  () => grantDialog.mode === 'remove' || grantDialog.modelIds.length > 0,
 )
 
 const avatarText = computed(() => detail.value?.display_name.slice(-2) ?? '')
@@ -622,13 +571,8 @@ const {
 const keysLoading = ref(false)
 const keyBusy = ref(false)
 const keyConfirmVisible = ref(false)
-const keyReauthVisible = ref(false)
 const keyOperation = ref<KeyOperation>('disable')
 const keyTargets = ref<UserApiKeyItem[]>([])
-const keyForm = reactive({ reason: '' })
-const keyReasonError = ref('')
-const password = ref('')
-let settleReauthPassword: ((value: string | null) => void) | null = null
 let keyGeneration = 0
 let keyListRequest = 0
 let drawerGeneration = 0
@@ -696,33 +640,17 @@ async function loadKeys(userId: string) {
     if (request === keyListRequest) keysLoading.value = false
   }
 }
-function finishReauth(value: string | null) {
-  keyReauthVisible.value = false
-  password.value = ''
-  settleReauthPassword?.(value)
-  settleReauthPassword = null
-}
 function resetKeyOperation() {
   ++keyGeneration
   ++keyListRequest
-  finishReauth(null)
   keyConfirmVisible.value = false
   keyBusy.value = false
   keysLoading.value = false
   clearSelection()
   keyTargets.value = []
-  keyForm.reason = ''
-  keyReasonError.value = ''
 }
 function openKeyOperation(action: KeyOperation) {
-  if (
-    !canWriteKeys.value ||
-    loading.value ||
-    keysLoading.value ||
-    keyBusy.value ||
-    settleReauthPassword
-  )
-    return
+  if (!canWriteKeys.value || loading.value || keysLoading.value || keyBusy.value) return
   keyTargets.value = selectedKeyItems.value.filter(
     (item) =>
       action === 'delete' ||
@@ -734,68 +662,31 @@ function openKeyOperation(action: KeyOperation) {
   }
   if (!keyTargets.value.length) return
   keyOperation.value = action
-  keyForm.reason = ''
-  keyReasonError.value = ''
   keyConfirmVisible.value = true
 }
 function closeKeyConfirm() {
   if (!keyBusy.value) keyConfirmVisible.value = false
 }
-function confirmReauth() {
-  if (password.value && !keyBusy.value) finishReauth(password.value)
-}
-function closeReauth() {
-  if (!keyBusy.value) {
-    finishReauth(null)
-    keyConfirmVisible.value = true
-  }
-}
 async function submitKeyOperation() {
-  if (!canWriteKeys.value || keyBusy.value || settleReauthPassword || !props.visible) return
-  const reason = keyForm.reason.trim()
-  if (!reason) {
-    keyReasonError.value = t('myKeys.reasonRequired')
-    return
-  }
-  if (reason.length > 200 || !keyTargets.value.length) return
+  if (!canWriteKeys.value || keyBusy.value || !props.visible || !keyTargets.value.length) return
   const generation = keyGeneration
   const userId = props.user?.id
   if (!userId) return
   const action = keyOperation.value
-  const body = { key_ids: keyTargets.value.map((item) => item.id), reason }
+  const body = { key_ids: keyTargets.value.map((item) => item.id) }
   const idempotencyKey = globalThis.crypto.randomUUID()
-  const intent = {
-    operation_id:
-      action === 'enable'
-        ? 'batchEnableManagedKeys'
-        : action === 'disable'
-          ? 'batchDisableManagedKeys'
-          : 'batchDeleteManagedKeys',
-    path: {},
-    body,
-  }
-  password.value = ''
-  keyConfirmVisible.value = false
-  keyReauthVisible.value = true
-  const currentPassword = await new Promise<string | null>((resolve) => {
-    settleReauthPassword = resolve
-  })
-  if (currentPassword === null || generation !== keyGeneration) return
   keyBusy.value = true
   try {
-    const { proof_token } = await reauthApi({ password: currentPassword, intent })
-    if (generation !== keyGeneration) return
     const api =
       action === 'enable'
         ? batchEnableManagedKeysApi
         : action === 'disable'
           ? batchDisableManagedKeysApi
           : batchDeleteManagedKeysApi
-    await api(body, idempotencyKey, proof_token)
+    await api(body, idempotencyKey)
     if (generation !== keyGeneration) return
     MessagePlugin.success(t('managedKeys.success'))
     keyConfirmVisible.value = false
-    finishReauth(null)
     clearSelection()
     await loadKeys(userId)
   } catch (error) {
@@ -896,7 +787,6 @@ function openAddGrant() {
   grantDialog.mode = 'add'
   grantDialog.target = null
   grantDialog.modelIds = [...selectedModelIds.value]
-  grantDialog.reason = ''
   grantDialog.visible = true
 }
 
@@ -911,7 +801,6 @@ function openRemoveGrant(row: ModelRow) {
   grantDialog.mode = 'remove'
   grantDialog.target = row
   grantDialog.modelIds = []
-  grantDialog.reason = ''
   grantDialog.visible = true
 }
 
@@ -935,7 +824,6 @@ async function submitGrant() {
   const generation = drawerGeneration
   const current = () =>
     generation === drawerGeneration && props.visible && props.user?.id === userId
-  const reason = grantDialog.reason.trim()
   const currentIds = [...directModelIds.value]
   const modelIds =
     grantDialog.mode === 'add'
@@ -944,7 +832,7 @@ async function submitGrant() {
 
   grantDialog.loading = true
   try {
-    const result = await setUserModelGrantsApi(userId, { model_ids: modelIds, reason })
+    const result = await setUserModelGrantsApi(userId, { model_ids: modelIds })
     if (!current()) return
     MessagePlugin.success(
       result.changed
@@ -1030,6 +918,10 @@ function onClose() {
 }
 
 .t-alert:not(:first-child) {
+  margin-bottom: var(--td-comp-margin-l);
+}
+
+.key-disabled-alert {
   margin-bottom: var(--td-comp-margin-l);
 }
 

@@ -192,13 +192,14 @@
               </span>
             </template>
             <template #groups="{ row }">
-              <t-space v-if="row.groups.length" :size="4">
-                <t-tag size="small" variant="light">{{ row.groups[0].display_name }}</t-tag>
-                <t-tag v-if="row.groups.length > 1" size="small" variant="outline">
-                  +{{ row.groups.length - 1 }}
-                </t-tag>
-              </t-space>
-              <span v-else class="cell-empty">—</span>
+              <t-tooltip :content="groupTooltip(row)">
+                <span class="group-text">
+                  {{ row.groups.length ? row.groups[0].display_name : '—' }}
+                  <t-tag v-if="row.groups.length > 1" size="small" variant="light">
+                    +{{ row.groups.length - 1 }}
+                  </t-tag>
+                </span>
+              </t-tooltip>
             </template>
             <template #role="{ row }">
               <span :class="{ 'cell-empty': !row.role }">
@@ -269,30 +270,70 @@
     />
 
     <t-dialog
-      :visible="reasonDialog.visible"
-      :header="reasonDialog.title"
-      width="480px"
+      :visible="confirmDialog.visible"
+      :header="confirmDialog.title"
+      :width="confirmDialog.preview ? '600px' : '480px'"
       :close-on-overlay-click="false"
       :confirm-btn="{
         content: t('common.confirm'),
-        loading: reasonDialog.loading,
-        disabled: !canConfirmReason,
+        loading: confirmDialog.loading,
       }"
       :cancel-btn="{ content: t('common.cancel') }"
-      @confirm="onReasonConfirm"
-      @close="onReasonClose"
+      @confirm="onConfirm"
+      @close="onConfirmClose"
     >
-      <p class="confirm-content">{{ reasonDialog.content }}</p>
-      <t-form label-width="80px" :data="reasonDialog">
-        <t-form-item :label="t('users.confirm.reason')">
-          <t-textarea
-            v-model="reasonDialog.reason"
-            :placeholder="t('users.confirm.reasonPlaceholder')"
-            :maxlength="512"
-            :autosize="{ minRows: 3, maxRows: 4 }"
-          />
-        </t-form-item>
-      </t-form>
+      <template v-if="confirmDialog.preview">
+        <t-alert
+          theme="warning"
+          :message="
+            t('users.confirm.deletePreviewNotice', {
+              selected: confirmDialog.preview.requested_count,
+              excluded: confirmDialog.preview.excluded.length,
+              deletable: confirmDialog.preview.deletable.length,
+              keys: confirmDialog.preview.api_key_count,
+            })
+          "
+        />
+        <p class="delete-preview-description">{{ t('users.confirm.deletePreviewDescription') }}</p>
+        <t-collapse class="delete-preview-collapse" :default-value="['deletable']">
+          <t-collapse-panel
+            value="deletable"
+            :header="
+              t('users.confirm.deletePreviewDeletable', {
+                n: confirmDialog.preview.deletable.length,
+              })
+            "
+          >
+            <ul class="delete-preview-list">
+              <li v-for="user in confirmDialog.preview.deletable" :key="user.user_id">
+                {{ user.username }} · {{ user.display_name }}
+              </li>
+            </ul>
+          </t-collapse-panel>
+          <t-collapse-panel
+            value="excluded"
+            :header="
+              t('users.confirm.deletePreviewExcluded', { n: confirmDialog.preview.excluded.length })
+            "
+          >
+            <ul class="delete-preview-list">
+              <li v-for="user in confirmDialog.preview.excluded" :key="user.user_id">
+                {{ user.username }} · {{ user.display_name }}
+                <t-tag size="small" variant="light">
+                  {{
+                    t(
+                      user.reason === 'SELF_PROTECTED'
+                        ? 'users.confirm.excludeReasonSelf'
+                        : 'users.confirm.excludeReasonSuperAdmin',
+                    )
+                  }}
+                </t-tag>
+              </li>
+            </ul>
+          </t-collapse-panel>
+        </t-collapse>
+      </template>
+      <p v-else class="confirm-content">{{ confirmDialog.content }}</p>
     </t-dialog>
 
     <t-dialog
@@ -308,28 +349,6 @@
         {{ t('users.reset.tip', { name: passwordDialog.username }) }}
       </p>
       <div class="reset-password">{{ passwordDialog.password }}</div>
-    </t-dialog>
-
-    <t-dialog
-      lazy
-      destroy-on-close
-      :visible="reauthDialog.visible"
-      :header="t('users.reauth.title')"
-      width="440px"
-      :close-on-overlay-click="false"
-      :confirm-btn="{ content: t('common.confirm'), disabled: !canConfirmReauth }"
-      :cancel-btn="{ content: t('common.cancel') }"
-      @confirm="onReauthConfirm"
-      @close="onReauthClose"
-    >
-      <p class="confirm-content">{{ t('users.reauth.content') }}</p>
-      <t-input
-        v-model="reauthDialog.password"
-        type="password"
-        autocomplete="current-password"
-        name="user-list-reauth"
-        :placeholder="t('users.reauth.password')"
-      />
     </t-dialog>
   </div>
 </template>
@@ -350,7 +369,6 @@ import {
 
 import FilterBar from '@/components/FilterBar.vue'
 import { canWriteResource, useUserStore } from '@/stores/modules/user'
-import { reauthApi, type ReauthIntent } from '@/api/modules/auth'
 import type { NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
 import DepartmentFormDialog from './components/DepartmentFormDialog.vue'
@@ -358,21 +376,23 @@ import UserDetailDrawer from './components/UserDetailDrawer.vue'
 import UserFormDrawer from './components/UserFormDrawer.vue'
 import UserImportDialog from './components/UserImportDialog.vue'
 import {
+  batchDeleteUsersApi,
   batchDisableUsersApi,
   batchEnableUsersApi,
   createDepartmentApi,
   createUserApi,
   deleteDepartmentApi,
-  deleteUserApi,
   getDepartmentDeletePreviewApi,
   getDepartmentListApi,
   getRoleOptionsApi,
   getUserRoleOptionsApi,
   getUserListApi,
   placeDepartmentApi,
+  previewBatchDeleteUsersApi,
   resetUserPasswordApi,
   updateDepartmentApi,
   updateUserApi,
+  type BatchDeleteUsersPreview,
   type CreateDepartmentPayload,
   type CreateUserPayload,
   type DepartmentItem,
@@ -397,6 +417,11 @@ interface TreeDataNode extends TreeOptionData {
 }
 
 const { t } = useI18n()
+function groupTooltip(row: UserItem) {
+  return row.groups.length
+    ? row.groups.map((group) => group.display_name).join(t('users.detail.listSeparator'))
+    : t('users.detail.noGroups')
+}
 const userStore = useUserStore()
 const canWriteUsers = computed(() => canWriteResource(userStore.permissions, 'identity.users'))
 
@@ -910,32 +935,17 @@ async function onTreeDrop(context: TreeDropContext) {
   // 组件内部会先行移动节点，这里按后端数据重建树恢复，确认后再提交
   await fetchDepartments()
   if (!parentId) return
-  const content =
-    placement === 'inside'
-      ? t('users.departments.moveInside', { name: drag.name, target: drop.name })
-      : placement === 'before'
-        ? t('users.departments.moveBefore', { name: drag.name, target: drop.name })
-        : t('users.departments.moveAfter', { name: drag.name, target: drop.name })
-  openReasonDialog({
-    title: t('users.departments.moveTitle'),
-    content,
-    action: async (reason) => {
-      const payload = {
-        parent_id: parentId,
-        placement,
-        anchor_id: placement === 'inside' ? undefined : drop.id,
-        reason,
-      }
-      const departmentId = drag.id
-      const result = await withReauth(
-        { operation_id: 'placeDepartment', path: { department_id: departmentId }, body: payload },
-        (proof, key) => placeDepartmentApi(departmentId, payload, proof, key),
-      )
-      if (result === null) return
-      MessagePlugin.success(t('users.departments.moveSuccess'))
-      await refreshAll()
-    },
-  })
+  try {
+    await placeDepartmentApi(drag.id, {
+      parent_id: parentId,
+      placement,
+      anchor_id: placement === 'inside' ? undefined : drop.id,
+    })
+    MessagePlugin.success(t('users.departments.moveSuccess'))
+    await refreshAll()
+  } catch {
+    // Request errors are handled by the interceptor.
+  }
 }
 
 function departmentMenuOptions(data: unknown): DropdownProps['options'] {
@@ -996,21 +1006,15 @@ async function onDeleteDepartment(node: TreeDataNode) {
 
   // department_count 含被删除部门自身，文案中展示的是子部门数量
   const childDepartmentCount = Math.max(preview.department_count - 1, 0)
-  openReasonDialog({
+  openConfirmDialog({
     title: t('users.departments.deleteTitle'),
     content: t('users.departments.deleteContent', {
       name: node.name,
       departments: childDepartmentCount,
       users: preview.user_count,
     }),
-    action: async (reason) => {
-      const departmentId = node.id
-      const payload = { reason }
-      const result = await withReauth(
-        { operation_id: 'deleteDepartment', path: { department_id: departmentId }, body: payload },
-        (proof, key) => deleteDepartmentApi(departmentId, payload, proof, key),
-      )
-      if (result === null) return
+    action: async () => {
+      await deleteDepartmentApi(node.id)
       MessagePlugin.success(t('users.departments.deleteSuccess'))
       const selected = selectedDepartmentId.value
       if (selected && (selected === node.id || isDescendantOf(selected, node.id))) {
@@ -1080,11 +1084,8 @@ async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
     }
     drawerVisible.value = false
     await refreshAll()
-  } catch (error) {
-    // REAUTH_REQUIRED 由拦截器交给调用方提示，其余错误已统一提示
-    if ((error as NotifiedError).code === 'REAUTH_REQUIRED') {
-      MessagePlugin.error(t('roleErrors.REAUTH_REQUIRED'))
-    }
+  } catch {
+    // Request errors are handled by the interceptor.
   } finally {
     submitting.value = false
   }
@@ -1092,116 +1093,51 @@ async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
 
 const importVisible = ref(false)
 
-type ReasonAction = (reason: string) => Promise<void>
+type ConfirmAction = () => Promise<void>
 
-const reasonDialog = reactive({
+const confirmDialog = reactive({
   visible: false,
   title: '',
   content: '',
-  reason: '',
+  preview: null as BatchDeleteUsersPreview | null,
   loading: false,
 })
 
-let pendingAction: ReasonAction | null = null
+let pendingAction: ConfirmAction | null = null
 
-const canConfirmReason = computed(() => reasonDialog.reason.trim().length > 0)
-
-function openReasonDialog(options: { title: string; content: string; action: ReasonAction }) {
-  reasonDialog.title = options.title
-  reasonDialog.content = options.content
-  reasonDialog.reason = ''
-  reasonDialog.visible = true
+function openConfirmDialog(options: {
+  title: string
+  content: string
+  action: ConfirmAction
+  preview?: BatchDeleteUsersPreview
+}) {
+  confirmDialog.preview = options.preview ?? null
+  confirmDialog.title = options.title
+  confirmDialog.content = options.content
+  confirmDialog.visible = true
   pendingAction = options.action
 }
 
-async function onReasonConfirm() {
-  const reason = reasonDialog.reason.trim()
-  if (!reason || !pendingAction) return
-  reasonDialog.loading = true
+async function onConfirm() {
+  if (!pendingAction) return
+  confirmDialog.loading = true
   try {
-    await pendingAction(reason)
-    reasonDialog.visible = false
+    await pendingAction()
+    confirmDialog.visible = false
     pendingAction = null
   } catch {
     // 错误已由请求拦截器统一提示
   } finally {
-    reasonDialog.loading = false
+    confirmDialog.loading = false
   }
 }
 
-function onReasonClose() {
-  if (reasonDialog.loading) return
-  reasonDialog.visible = false
+function onConfirmClose() {
+  if (confirmDialog.loading) return
+  confirmDialog.visible = false
   pendingAction = null
 }
 
-/** Obtain a one-time proof before executing a sensitive command. */
-const reauthDialog = reactive({ visible: false, password: '' })
-let settleReauthPassword: ((password: string | null) => void) | null = null
-
-const canConfirmReauth = computed(() => reauthDialog.password.length > 0)
-
-function askReauthPassword(): Promise<string | null> {
-  reauthDialog.password = ''
-  reauthDialog.visible = true
-  return new Promise((resolve) => {
-    settleReauthPassword = resolve
-  })
-}
-
-function finishReauth(password: string | null) {
-  reauthDialog.visible = false
-  reauthDialog.password = ''
-  settleReauthPassword?.(password)
-  settleReauthPassword = null
-}
-
-function onReauthConfirm() {
-  if (!canConfirmReauth.value) return
-  finishReauth(reauthDialog.password)
-}
-
-function onReauthClose() {
-  finishReauth(null)
-}
-
-/** Verify before executing the fixed command once. Null means cancellation. */
-async function withReauth<T>(
-  intent: ReauthIntent,
-  action: (proof: string, idempotencyKey: string) => Promise<T>,
-): Promise<T | null> {
-  const idempotencyKey = crypto.randomUUID()
-  const password = await askReauthPassword()
-  if (password === null) return null
-  const { proof_token } = await reauthApi({ password, intent })
-  return action(proof_token, idempotencyKey)
-}
-
-/** Ask once, then obtain a separate proof and execute each fixed command in order. */
-async function withReauthBatch<T>(
-  tasks: Array<{
-    intent: ReauthIntent
-    run: (proof: string, idempotencyKey: string) => Promise<T>
-  }>,
-): Promise<Array<PromiseSettledResult<T>> | null> {
-  const commands = tasks.map((task) => ({ ...task, idempotencyKey: crypto.randomUUID() }))
-  const password = await askReauthPassword()
-  if (password === null) return null
-  const results: Array<PromiseSettledResult<T>> = []
-  for (const command of commands) {
-    try {
-      const { proof_token } = await reauthApi({ password, intent: command.intent })
-      const value = await command.run(proof_token, command.idempotencyKey)
-      results.push({ status: 'fulfilled', value })
-    } catch (reason) {
-      // Request errors are reported by the request layer and summarized by the caller.
-      results.push({ status: 'rejected', reason })
-    }
-  }
-  return results
-}
-
-/** 后端批量接口单次上限 100，超出则分片提交 */
 function chunk<T>(list: T[], size: number): T[][] {
   const result: T[][] = []
   for (let index = 0; index < list.length; index += size) {
@@ -1213,29 +1149,21 @@ function chunk<T>(list: T[], size: number): T[][] {
 function onBatchStatus(status: UserStatus) {
   const ids = [...selectedKeys.value]
   if (!ids.length) return
-  openReasonDialog({
+  openConfirmDialog({
     title: status === 'ACTIVE' ? t('users.confirm.enableTitle') : t('users.confirm.disableTitle'),
     content:
       status === 'ACTIVE'
         ? t('users.confirm.enableBatch', { n: ids.length })
         : t('users.confirm.disableBatch', { n: ids.length }),
-    action: async (reason) => {
+    action: async () => {
       const groups = chunk(ids, BATCH_LIMIT)
-      const results =
-        status === 'ACTIVE'
-          ? await Promise.allSettled(
-              groups.map((userIds) => batchEnableUsersApi({ reason, user_ids: userIds })),
-            )
-          : await withReauthBatch(
-              groups.map((userIds) => {
-                const payload = { reason, user_ids: userIds }
-                return {
-                  intent: { operation_id: 'batchDisableUsers', path: {}, body: payload },
-                  run: (proof: string, key: string) => batchDisableUsersApi(payload, proof, key),
-                }
-              }),
-            )
-      if (results === null) return
+      const results = await Promise.allSettled(
+        groups.map((userIds) =>
+          status === 'ACTIVE'
+            ? batchEnableUsersApi({ user_ids: userIds })
+            : batchDisableUsersApi({ user_ids: userIds }),
+        ),
+      )
       const succeeded = new Set(
         groups.flatMap((group, index) => (results[index]?.status === 'fulfilled' ? group : [])),
       )
@@ -1256,28 +1184,43 @@ function onBatchStatus(status: UserStatus) {
 function onBatchDelete() {
   const ids = [...selectedKeys.value]
   if (!ids.length) return
-  openReasonDialog({
-    title: t('users.confirm.deleteTitle'),
-    content: t('users.confirm.deleteBatch', { n: ids.length }),
-    action: async (reason) => {
-      const results = await withReauthBatch(
-        ids.map((id) => {
-          const payload = { reason }
-          return {
-            intent: { operation_id: 'deleteUser', path: { user_id: id }, body: payload },
-            run: (proof: string, key: string) => deleteUserApi(id, payload, proof, key),
-          }
-        }),
-      )
-      if (results === null) return
-      const succeeded = new Set(ids.filter((_id, index) => results[index]?.status === 'fulfilled'))
-      selectedKeys.value = selectedKeys.value.filter((id) => !succeeded.has(id))
-      const failed = results.filter((item) => item.status === 'rejected').length
-      if (failed) {
-        MessagePlugin.warning(t('users.partialFailed', { n: failed }))
-      } else {
-        MessagePlugin.success(t('common.deleteSuccess'))
-      }
+  if (ids.length > BATCH_LIMIT) {
+    MessagePlugin.warning(t('users.confirm.batchLimit', { n: BATCH_LIMIT }))
+    return
+  }
+  void openBatchDeleteDialog(ids)
+}
+
+/** 批量删除：先预览（后端排除本人与超级管理员），确认后一次原子提交 */
+async function openBatchDeleteDialog(ids: string[]) {
+  // 预览失败已由请求拦截器统一提示
+  const preview = await previewBatchDeleteUsersApi({ user_ids: ids }).catch(() => null)
+  if (!preview) return
+  if (!preview.allowed || !preview.deletable.length) {
+    MessagePlugin.warning(
+      preview.block_reason === 'DELETE_TOO_LARGE'
+        ? t('users.confirm.deleteTooLarge')
+        : t('users.confirm.deleteBlocked'),
+    )
+    return
+  }
+  openConfirmDialog({
+    title: t('users.confirm.deleteBatchTitle'),
+    content: '',
+    preview,
+    action: async () => {
+      await batchDeleteUsersApi(
+        { preview_digest: preview.preview_digest, user_ids: ids },
+        crypto.randomUUID(),
+      ).catch((error: unknown) => {
+        if ((error as NotifiedError).code === 'EXTERNAL_REFERENCE_BLOCKED') {
+          MessagePlugin.warning(t('users.confirm.deleteExternalBlocked'))
+        }
+        throw error
+      })
+      const deleted = new Set(preview.deletable.map((item) => item.user_id))
+      selectedKeys.value = selectedKeys.value.filter((id) => !deleted.has(id))
+      MessagePlugin.success(t('common.deleteSuccess'))
       await refreshAll()
     },
   })
@@ -1290,18 +1233,12 @@ const passwordDialog = reactive({
 })
 
 function onResetPassword(row: UserItem) {
-  openReasonDialog({
+  openConfirmDialog({
     title: t('users.confirm.resetTitle'),
     content: t('users.confirm.resetContent', { name: row.display_name }),
-    action: async (reason) => {
-      const userId = row.id
+    action: async () => {
       const username = row.username
-      const payload = { reason }
-      const res = await withReauth(
-        { operation_id: 'resetUserPassword', path: { user_id: userId }, body: payload },
-        (proof, key) => resetUserPasswordApi(userId, payload, proof, key),
-      )
-      if (res === null) return
+      const res = await resetUserPasswordApi(row.id)
       if (!res.temporary_password) {
         // 后端可能不再回显明文密码（secret_available=false）
         MessagePlugin.warning(t('users.reset.secretUnavailable'))
@@ -1491,6 +1428,26 @@ onMounted(async () => {
   font-size: var(--td-font-size-body-medium, 14px);
   line-height: 22px;
   color: var(--td-text-color-primary);
+}
+
+.delete-preview-description {
+  margin: var(--td-comp-margin-l) 0;
+  color: var(--td-text-color-primary);
+}
+
+.delete-preview-collapse {
+  margin-bottom: var(--td-comp-margin-l);
+}
+
+.delete-preview-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--td-text-color-secondary);
+}
+
+.delete-preview-list li {
+  padding: var(--td-comp-paddingTB-s) var(--td-comp-paddingLR-s);
 }
 
 .reset-password {

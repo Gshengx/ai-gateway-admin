@@ -15,20 +15,16 @@ export interface PasswordPolicyUpdateResult {
   policy: PasswordPolicy
   replayed: boolean
 }
-export type PasswordPolicyPayload = Omit<
-  PasswordPolicy,
-  'policy_version' | 'version_updated_at'
-> & { reason: string }
+export type PasswordPolicyPayload = Omit<PasswordPolicy, 'policy_version' | 'version_updated_at'>
 export const getPasswordPolicyApi = () =>
   request.get<PasswordPolicy>('/settings/password-policy', { skipLocale: true })
 export const updatePasswordPolicyApi = (
   payload: PasswordPolicyPayload,
-  proof?: string,
+
   idempotencyKey?: string,
 ) =>
   request.put<PasswordPolicyUpdateResult>('/settings/password-policy', payload, {
     headers: {
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })

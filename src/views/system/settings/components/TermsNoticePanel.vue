@@ -63,45 +63,6 @@
       </t-space>
     </div>
   </t-card>
-  <t-dialog
-    v-model:visible="reasonVisible"
-    :header="t('terms.notice.reason')"
-    :close-on-overlay-click="false"
-    :close-btn="!submitting"
-    :confirm-btn="{ content: t('common.confirm'), loading: submitting, disabled: !reason.trim() }"
-    :cancel-btn="{ content: t('common.cancel'), disabled: submitting }"
-    @confirm="confirmSave"
-  >
-    <t-form :data="{ reason }" label-align="top">
-      <t-form-item :label="t('terms.notice.reason')" required>
-        <t-textarea
-          v-model="reason"
-          :maxlength="512"
-          :placeholder="t('terms.notice.reasonRequired')"
-        />
-      </t-form-item>
-    </t-form>
-  </t-dialog>
-  <t-dialog
-    lazy
-    destroy-on-close
-    v-model:visible="reauth.visible"
-    :header="t('terms.notice.reauth.title')"
-    :close-on-overlay-click="false"
-    :confirm-btn="{ content: t('common.confirm'), disabled: !reauth.password }"
-    :cancel-btn="{ content: t('common.cancel') }"
-    @confirm="onReauthConfirm"
-    @close="onReauthClose"
-  >
-    <p class="description">{{ t('terms.notice.reauth.content') }}</p>
-    <t-input
-      v-model="reauth.password"
-      type="password"
-      autocomplete="current-password"
-      name="notice-reauth"
-      :placeholder="t('terms.notice.reauth.password')"
-    />
-  </t-dialog>
   <terms-preview-dialog v-model:visible="previewVisible" :translations="translations" />
 </template>
 <script setup lang="ts">
@@ -121,13 +82,10 @@ import {
   type TermsTranslation,
 } from '@/api/modules/terms'
 import { canWriteResource, useUserStore } from '@/stores/modules/user'
-import { useTermsStore } from '@/stores/modules/terms'
-import { reauthApi, type ReauthIntent } from '@/api/modules/auth'
 import TermsPreviewDialog from './TermsPreviewDialog.vue'
 import { formatDateTime } from '@/utils/datetime'
 const { t } = useI18n()
 const userStore = useUserStore()
-const termsStore = useTermsStore()
 const canWrite = computed(() => canWriteResource(userStore.permissions, 'system.settings'))
 const form = reactive({
   login_popup_enabled: false,
@@ -191,8 +149,6 @@ function reset() {
   formRef.value?.clearValidate()
   MessagePlugin.success(t('terms.notice.resetDone'))
 }
-const reasonVisible = ref(false)
-const reason = ref('')
 const translations = computed<TermsTranslation[]>(() => {
   const items =
     saved.value?.translations.map(({ locale_code, title, body }) => ({
@@ -238,87 +194,31 @@ async function save() {
   )
     return
   if (!textChanged.value && !Object.keys(switchChanges.value).length) return
-  reason.value = ''
-  reasonVisible.value = true
-}
-/** 敏感操作执行前输入密码，换取一次性证明。 */
-const reauth = reactive({ visible: false, password: '' })
-let settleReauthPassword: ((password: string | null) => void) | null = null
-function askReauthPassword(): Promise<string | null> {
-  reauth.password = ''
-  reauth.visible = true
-  return new Promise((resolve) => {
-    settleReauthPassword = resolve
-  })
-}
-function finishReauth(password: string | null) {
-  reauth.visible = false
-  reauth.password = ''
-  settleReauthPassword?.(password)
-  settleReauthPassword = null
-}
-function onReauthConfirm() {
-  if (!reauth.password) return
-  finishReauth(reauth.password)
-}
-function onReauthClose() {
-  finishReauth(null)
-}
-async function confirmSave() {
-  if (submitting.value || !reason.value.trim() || reason.value.length > 512) return
+  const text = textChanged.value ? translations.value.map((item) => ({ ...item })) : null
+  const switches = { ...switchChanges.value }
   submitting.value = true
+  let changed = false
   try {
-    const changeReason = reason.value.trim()
-    const steps: Array<{
-      intent: ReauthIntent
-      idempotencyKey: string
-      run: (proof: string, idempotencyKey: string) => Promise<unknown>
-    }> = []
-    if (textChanged.value) {
-      const body = {
-        reason: changeReason,
-        translations: translations.value.map((item) => ({ ...item })),
-      }
-      steps.push({
-        intent: {
-          operation_id: 'publishTermsVersion',
-          path: {},
-          body,
-        },
-        idempotencyKey: crypto.randomUUID(),
-        run: (proof, key) => publishTermsVersionApi(body, proof, key),
-      })
+    if (text) {
+      await publishTermsVersionApi({ translations: text }, crypto.randomUUID())
+      changed = true
     }
-    if (Object.keys(switchChanges.value).length) {
-      const body = { ...switchChanges.value, reason: changeReason }
-      steps.push({
-        intent: { operation_id: 'updateTermsConfig', path: {}, body },
-        idempotencyKey: crypto.randomUUID(),
-        run: (proof, key) => updateTermsConfigApi(body, proof, key),
-      })
-    }
-    const passwords: string[] = []
-    for (let index = 0; index < steps.length; index += 1) {
-      const password = await askReauthPassword()
-      if (password === null || !canWrite.value) return
-      passwords.push(password)
-    }
-    for (const [index, step] of steps.entries()) {
-      const password = passwords[index]!
-      const { proof_token } = await reauthApi({ password, intent: step.intent })
-      if (!canWrite.value) return
-      await step.run(proof_token, step.idempotencyKey)
+    if (Object.keys(switches).length) {
+      await updateTermsConfigApi(switches, crypto.randomUUID())
+      changed = true
     }
     apply(await getTermsConfigApi())
-    reasonVisible.value = false
     MessagePlugin.success(t('terms.notice.saveSuccess'))
-    try {
-      await termsStore.loadStatus()
-    } catch {
-      /* 错误已统一处理，不阻断当前流程 */
-    }
   } catch {
-    /* 错误已统一处理，不阻断当前流程 */
+    // Preserve unsaved edits while updating the saved baseline after a partial success.
+    if (changed && saved.value) {
+      try {
+        const config = await getTermsConfigApi()
+        saved.value = { ...config }
+      } catch {
+        // The request layer reports failures.
+      }
+    }
   } finally {
     submitting.value = false
   }

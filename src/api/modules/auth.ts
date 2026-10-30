@@ -53,24 +53,6 @@ export interface PermissionsResult {
   capabilities: Capability[]
 }
 
-/**
- * 二次验证意图：需与即将执行的敏感操作完全一致（操作标识、路径参数、请求体），
- * 后端据此校验证明与操作是否匹配。
- */
-export interface ReauthIntent {
-  operation_id: string
-  path?: Record<string, string>
-  body: Record<string, unknown>
-}
-
-/** POST /auth/reauth 结果：proof_token 放入 X-Reauth-Proof 头重试原操作 */
-export interface ReauthResult {
-  proof_token: string
-  expires_at: string
-  operation_id: string
-  action_digest: string
-}
-
 export function loginApi(data: LoginParams) {
   return request.post<LoginResult>('/auth/login', data)
 }
@@ -105,11 +87,6 @@ export function getSessionApi() {
 
 export function getPermissionsApi() {
   return request.get<PermissionsResult>('/me/permissions', { skipLocale: true })
-}
-
-/** 敏感操作二次验证：校验当前密码并获取一次性操作证明 */
-export function reauthApi(data: { password: string; intent: ReauthIntent }) {
-  return request.post<ReauthResult>('/auth/reauth', data)
 }
 
 export function logoutApi(sessionInvalidated = false) {

@@ -184,41 +184,6 @@
     @close="closeConfirm"
   >
     <p>{{ dialogContent }}</p>
-    <t-form :data="form" label-align="top"
-      ><t-form-item
-        :label="t('myKeys.reason')"
-        required
-        :help="reasonError"
-        :status="reasonError ? 'error' : undefined"
-        ><t-textarea
-          v-model="form.reason"
-          :maxlength="200"
-          :disabled="busy"
-          :placeholder="t('myKeys.reasonPlaceholder')" /></t-form-item
-    ></t-form>
-  </t-dialog>
-  <t-dialog
-    lazy
-    destroy-on-close
-    :visible="reauthVisible"
-    :header="t('users.reauth.title')"
-    :close-on-overlay-click="false"
-    :close-on-esc-keydown="!busy"
-    :close-btn="!busy"
-    :confirm-btn="{ content: t('common.confirm'), disabled: !password || busy, loading: busy }"
-    :cancel-btn="{ content: t('common.cancel'), disabled: busy }"
-    @confirm="confirmReauth"
-    @close="closeReauth"
-  >
-    <p>{{ t('users.reauth.content') }}</p>
-    <t-input
-      v-model="password"
-      type="password"
-      autocomplete="current-password"
-      name="managed-key-reauth"
-      :placeholder="t('users.reauth.password')"
-      :disabled="busy"
-    />
   </t-dialog>
 </template>
 
@@ -248,7 +213,6 @@ import {
   type KeyControlCondition,
 } from '@/api/modules/apiKeys'
 import { getTermsConfigApi } from '@/api/modules/terms'
-import { reauthApi, type ReauthIntent } from '@/api/modules/auth'
 import type { NotifiedError } from '@/api/request'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
@@ -412,22 +376,16 @@ watch(locale, () => void loadOptions())
 
 type Operation = 'enable' | 'disable' | 'delete'
 interface Attempt {
-  intent: ReauthIntent
   key: string
   id?: string
   operation: Operation
-  body: { reason: string; key_ids?: string[] }
+  body: { key_ids?: string[] }
 }
 const operation = ref<Operation>('disable')
 const targets = ref<ManagedKeyItem[]>([])
 const batch = ref(false)
 const confirmVisible = ref(false)
-const reauthVisible = ref(false)
 const busy = ref(false)
-const password = ref('')
-const form = reactive({ reason: '' })
-const reasonError = ref('')
-let settleReauthPassword: ((password: string | null) => void) | null = null
 const dialogTitle = computed(() => t(`managedKeys.${operation.value}Title`))
 const dialogContent = computed(() =>
   batch.value
@@ -443,13 +401,7 @@ const dialogContent = computed(() =>
       }),
 )
 function openOperation(action: Operation, row?: ManagedKeyItem) {
-  if (
-    settleReauthPassword ||
-    busy.value ||
-    loading.value ||
-    !userStore.permissions.includes('identity.keys:write')
-  )
-    return
+  if (busy.value || loading.value || !userStore.permissions.includes('identity.keys:write')) return
   operation.value = action
   batch.value = !row
   targets.value = row
@@ -464,8 +416,6 @@ function openOperation(action: Operation, row?: ManagedKeyItem) {
     return
   }
   if (!targets.value.length) return
-  form.reason = ''
-  reasonError.value = ''
   confirmVisible.value = true
 }
 function closeConfirm() {
@@ -473,67 +423,28 @@ function closeConfirm() {
     confirmVisible.value = false
   }
 }
-function askReauthPassword(): Promise<string | null> {
-  password.value = ''
-  confirmVisible.value = false
-  reauthVisible.value = true
-  return new Promise((resolve) => {
-    settleReauthPassword = resolve
-  })
-}
-function finishReauth(value: string | null) {
-  reauthVisible.value = false
-  password.value = ''
-  settleReauthPassword?.(value)
-  settleReauthPassword = null
-}
-function confirmReauth() {
-  if (password.value && !busy.value) finishReauth(password.value)
-}
-function closeReauth() {
-  if (!busy.value) {
-    finishReauth(null)
-    confirmVisible.value = true
-  }
-}
 function prepareAttempt(): Attempt | null {
-  const reason = form.reason.trim()
-  if (!reason) {
-    reasonError.value = t('myKeys.reasonRequired')
-    return null
-  }
-  if (reason.length > 200 || !targets.value.length) return null
+  if (!targets.value.length) return null
   const action = operation.value
   const atomicBatch = batch.value
   const keyIds = targets.value.map((row) => row.id)
   const id = atomicBatch ? undefined : keyIds[0]!
-  const body = { ...(atomicBatch ? { key_ids: keyIds } : {}), reason }
+  const body = { ...(atomicBatch ? { key_ids: keyIds } : {}) }
   return {
     id,
     operation: action,
     body,
     key: globalThis.crypto.randomUUID(),
-    intent: {
-      operation_id: atomicBatch
-        ? action === 'delete'
-          ? 'batchDeleteManagedKeys'
-          : action === 'enable'
-            ? 'batchEnableManagedKeys'
-            : 'batchDisableManagedKeys'
-        : `${action}ManagedKey`,
-      path: id === undefined ? {} : { key_id: id },
-      body,
-    },
   }
 }
-function callAttempt(attempt: Attempt, proof: string) {
+function callAttempt(attempt: Attempt) {
   if (attempt.id === undefined) {
-    const body = { reason: attempt.body.reason, key_ids: attempt.body.key_ids! }
+    const body = { key_ids: attempt.body.key_ids! }
     return attempt.operation === 'delete'
-      ? batchDeleteManagedKeysApi(body, attempt.key, proof)
+      ? batchDeleteManagedKeysApi(body, attempt.key)
       : attempt.operation === 'enable'
-        ? batchEnableManagedKeysApi(body, attempt.key, proof)
-        : batchDisableManagedKeysApi(body, attempt.key, proof)
+        ? batchEnableManagedKeysApi(body, attempt.key)
+        : batchDisableManagedKeysApi(body, attempt.key)
   }
   const api =
     attempt.operation === 'enable'
@@ -541,33 +452,21 @@ function callAttempt(attempt: Attempt, proof: string) {
       : attempt.operation === 'disable'
         ? disableManagedKeyApi
         : deleteManagedKeyApi
-  return api(attempt.id, attempt.body, attempt.key, proof)
+  return api(attempt.id, attempt.body, attempt.key)
 }
 async function finishOperation() {
   confirmVisible.value = false
-  reauthVisible.value = false
-  password.value = ''
   clearSelection()
   MessagePlugin.success(t('managedKeys.success'))
   await fetchList()
 }
 async function submitOperation() {
-  if (
-    busy.value ||
-    settleReauthPassword ||
-    disposed ||
-    !userStore.permissions.includes('identity.keys:write')
-  )
-    return
+  if (busy.value || disposed || !userStore.permissions.includes('identity.keys:write')) return
   const attempt = prepareAttempt()
   if (!attempt) return
-  const currentPassword = await askReauthPassword()
-  if (currentPassword === null || disposed) return
   busy.value = true
   try {
-    const { proof_token } = await reauthApi({ password: currentPassword, intent: attempt.intent })
-    if (disposed) return
-    await callAttempt(attempt, proof_token)
+    await callAttempt(attempt)
     if (!disposed) await finishOperation()
   } catch (error) {
     if (!disposed) showError(error)
@@ -583,7 +482,6 @@ onBeforeUnmount(() => {
   disposed = true
   ++listRequest
   ++optionRequest
-  finishReauth(null)
 })
 </script>
 

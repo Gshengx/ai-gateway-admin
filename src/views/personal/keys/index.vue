@@ -135,45 +135,6 @@
     @close="closeDelete"
   >
     <p>{{ t('myKeys.deleteContent', { name: selected?.name, id: selected?.id }) }}</p>
-    <t-form :data="deleteForm" label-align="top"
-      ><t-form-item
-        :label="t('myKeys.reason')"
-        required
-        :help="reasonError"
-        :status="reasonError ? 'error' : undefined"
-        ><t-textarea
-          v-model="deleteForm.reason"
-          :maxlength="200"
-          :disabled="deleting"
-          :placeholder="t('myKeys.reasonPlaceholder')" /></t-form-item
-    ></t-form>
-  </t-dialog>
-  <t-dialog
-    lazy
-    destroy-on-close
-    :visible="reauthVisible"
-    :header="t('users.reauth.title')"
-    :close-on-overlay-click="false"
-    :close-on-esc-keydown="!deleting"
-    :close-btn="!deleting"
-    :confirm-btn="{
-      content: t('common.confirm'),
-      disabled: !password || deleting,
-      loading: deleting,
-    }"
-    :cancel-btn="{ content: t('common.cancel'), disabled: deleting }"
-    @confirm="confirmReauth"
-    @close="closeReauth"
-  >
-    <p>{{ t('users.reauth.content') }}</p>
-    <t-input
-      v-model="password"
-      type="password"
-      autocomplete="current-password"
-      name="personal-key-reauth"
-      :placeholder="t('users.reauth.password')"
-      :disabled="deleting"
-    />
   </t-dialog>
 </template>
 
@@ -188,7 +149,6 @@ import {
   deleteMyKeyApi,
   type ApiKeyItem,
 } from '@/api/modules/apiKeys'
-import { reauthApi, type ReauthIntent } from '@/api/modules/auth'
 import type { NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
 
@@ -342,17 +302,10 @@ async function saveName() {
 }
 const selected = ref<ApiKeyItem | null>(null)
 const deleteVisible = ref(false)
-const deleteForm = reactive({ reason: '' })
-const reasonError = ref('')
 const deleting = ref(false)
-const reauthVisible = ref(false)
-const password = ref('')
-let settleReauthPassword: ((password: string | null) => void) | null = null
 function openDelete(row: ApiKeyItem) {
-  if (disposed || deleting.value || settleReauthPassword) return
+  if (disposed || deleting.value) return
   selected.value = row
-  deleteForm.reason = ''
-  reasonError.value = ''
   deleteVisible.value = true
 }
 function closeDelete() {
@@ -360,52 +313,13 @@ function closeDelete() {
     deleteVisible.value = false
   }
 }
-function askReauthPassword(): Promise<string | null> {
-  password.value = ''
-  deleteVisible.value = false
-  reauthVisible.value = true
-  return new Promise((resolve) => {
-    settleReauthPassword = resolve
-  })
-}
-function finishReauth(value: string | null) {
-  reauthVisible.value = false
-  password.value = ''
-  settleReauthPassword?.(value)
-  settleReauthPassword = null
-}
-function confirmReauth() {
-  if (password.value && !deleting.value) finishReauth(password.value)
-}
-function closeReauth() {
-  if (!deleting.value) {
-    finishReauth(null)
-    deleteVisible.value = true
-  }
-}
 async function remove() {
-  if (disposed || deleting.value || settleReauthPassword || !selected.value) return
-  const reason = deleteForm.reason.trim()
-  if (!reason) {
-    reasonError.value = t('myKeys.reasonRequired')
-    return
-  }
-  if (reason.length > 200) return
+  if (disposed || deleting.value || !selected.value) return
   const id = selected.value.id
-  const body = { reason }
-  const attempt = {
-    id,
-    body,
-    key: idempotencyKey(),
-    intent: { operation_id: 'deleteMyKey', path: { key_id: id }, body } satisfies ReauthIntent,
-  }
-  const currentPassword = await askReauthPassword()
-  if (currentPassword === null || disposed) return
+  const key = idempotencyKey()
   deleting.value = true
   try {
-    const { proof_token } = await reauthApi({ password: currentPassword, intent: attempt.intent })
-    if (disposed) return
-    await deleteMyKeyApi(attempt.id, attempt.body, attempt.key, proof_token)
+    await deleteMyKeyApi(id, {}, key)
     if (disposed) return
     deleteVisible.value = false
     MessagePlugin.success(t('myKeys.deleted'))
@@ -421,7 +335,6 @@ onBeforeUnmount(() => {
   disposed = true
   ++listRequest
   closeSecret()
-  finishReauth(null)
 })
 </script>
 

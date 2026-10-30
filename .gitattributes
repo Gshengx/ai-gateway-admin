@@ -1,0 +1,2 @@
+# Git hooks 必须保持 LF，否则 Windows(autocrlf=true) 下 husky 钩子执行失败
+.husky/** text eol=lf

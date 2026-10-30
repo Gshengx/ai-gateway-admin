@@ -7,8 +7,12 @@ import { clearSession, clearCsrf, getCsrfToken, getCsrfHeader, setCsrfToken } fr
 
 /** 业务请求配置：在 Axios 配置上扩展自定义开关 */
 export interface RequestConfig extends AxiosRequestConfig {
+  /** 调用方传入时复用，用于同一命令重试 */
+  idempotencyKey?: string
   /** 关闭 GET 请求自动注入的 locale 查询参数（文件下载等接口使用） */
   skipLocale?: boolean
+  /** 关闭非 GET 请求自动注入的 Idempotency-Key（后端未声明该头的接口使用） */
+  skipIdempotency?: boolean
   /** 跳过全局错误提示与登录失效处理，由调用方自行处理 */
   skipErrorHandler?: boolean
   /** 页面自行提示并恢复的业务码 */
@@ -20,7 +24,7 @@ const SUCCESS_CODE = 'OK'
 /** 视为登录失效的业务码，统一走会话重置 */
 const UNAUTHORIZED_CODES = ['UNAUTHENTICATED']
 /** 交由调用方自行处理的业务码：不弹提示、也不按登录失效处理（如删除用户组需二次验证） */
-const DEFERRED_CODES = ['REAUTH_REQUIRED', 'EXTERNAL_REFERENCE_BLOCKED']
+const DEFERRED_CODES = ['EXTERNAL_REFERENCE_BLOCKED']
 
 /** 带 notified 标记的错误：拦截器已弹过提示，调用方无需重复提示 */
 export interface NotifiedError extends Error {
@@ -92,7 +96,6 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
   }
   if (code && (DEFERRED_CODES.includes(code) || config?.handledErrorCodes?.includes(code)))
     throw error
-  if (error.request_id) error.message += ` (${error.request_id})`
   MessagePlugin.error(error.message)
   error.notified = true
   throw error
@@ -123,9 +126,15 @@ const instance: AxiosInstance = axios.create({
 })
 
 /** 幂等键：变更类请求重复提交时后端据此去重（同一次提交重试应复用，当前无自动重试） */
-function createIdempotencyKey(): string {
+export function createIdempotencyKey(): string {
   const uuid = globalThis.crypto?.randomUUID?.()
-  return uuid ?? `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return (
+    uuid ??
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const n = Math.floor(Math.random() * 16)
+      return (c === 'x' ? n : (n & 3) | 8).toString(16)
+    })
+  )
 }
 
 instance.interceptors.request.use(async (config) => {
@@ -169,15 +178,42 @@ instance.interceptors.request.use(async (config) => {
     if (!login) config.headers[getCsrfHeader()] = getCsrfToken()
     const onboarding = config.url?.startsWith('/auth/') || config.url === '/terms/accept'
     const termsPreview = method === 'POST' && config.url === '/terms/preview'
-    if (!onboarding && !termsPreview && !config.headers['Idempotency-Key']) {
-      config.headers['Idempotency-Key'] = createIdempotencyKey()
+    const key = (config as RequestConfig).idempotencyKey
+    if (key) config.headers.set('Idempotency-Key', key)
+    else if (
+      !onboarding &&
+      !termsPreview &&
+      !(config as RequestConfig).skipIdempotency &&
+      !config.headers.get('Idempotency-Key')
+    ) {
+      config.headers.set('Idempotency-Key', createIdempotencyKey())
     }
   }
   return config
 })
 
+async function parseBinaryJson(response?: AxiosResponse): Promise<void> {
+  if (
+    !response ||
+    !/\b(?:application\/json|application\/[\w.+-]+\+json)\b/i.test(
+      String(response.headers['content-type'] ?? ''),
+    )
+  )
+    return
+  const data = response.data
+  if (!(data instanceof Blob) && !(data instanceof ArrayBuffer)) return
+  try {
+    response.data = JSON.parse(
+      data instanceof Blob ? await data.text() : new TextDecoder().decode(data),
+    )
+  } catch {
+    // Preserve malformed binary responses for the normal error path.
+  }
+}
+
 instance.interceptors.response.use(
-  (response: AxiosResponse) => {
+  async (response: AxiosResponse) => {
+    await parseBinaryJson(response)
     // 文件下载等二进制响应没有响应壳，直接放行
     const data = response.data
     if (data instanceof Blob || data instanceof ArrayBuffer) {
@@ -201,7 +237,9 @@ instance.interceptors.response.use(
     }
     return rejectResponse(response, response.config as RequestConfig)
   },
-  (error) => {
+  async (error) => {
+    if (axios.isCancel(error)) return Promise.reject(error)
+    await parseBinaryJson(error.response)
     if (error.notified || (error.code && !error.isAxiosError)) return Promise.reject(error)
     return rejectResponse(error.response, error.config)
   },

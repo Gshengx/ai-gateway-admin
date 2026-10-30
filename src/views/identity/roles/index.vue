@@ -157,61 +157,17 @@
   </t-drawer>
 
   <t-dialog
-    :visible="reasonDialog.visible"
-    :header="reasonDialog.title"
-    :close-on-overlay-click="false"
-    :confirm-btn="{
-      content: t('common.confirm'),
-      loading: reasonDialog.loading,
-      disabled: !reasonDialog.reason.trim(),
-    }"
-    :cancel-btn="{ content: t('common.cancel') }"
-    @confirm="onReasonConfirm"
-    @close="onReasonClose"
-  >
-    <p v-if="reasonDialog.content">{{ reasonDialog.content }}</p>
-    <t-form :data="reasonDialog" label-align="top">
-      <t-form-item :label="t('roles.reason')" required>
-        <t-textarea
-          v-model="reasonDialog.reason"
-          :maxlength="512"
-          :placeholder="t('roles.reasonRequired')"
-        />
-      </t-form-item>
-    </t-form>
-  </t-dialog>
-  <t-dialog
     :visible="deleteVisible"
     :header="t('roles.delete')"
     :confirm-btn="{
       content: t('common.confirm'),
       loading: deleting,
-      disabled: !deleteReason.trim(),
     }"
     :close-on-overlay-click="false"
     @confirm="remove()"
     @close="!deleting && (deleteVisible = false)"
   >
     <p>{{ t('roles.deleteConfirm', { name: selected?.display_name || selected?.name }) }}</p>
-    <t-textarea v-model="deleteReason" :maxlength="512" :placeholder="t('roles.reasonRequired')" />
-  </t-dialog>
-  <t-dialog
-    lazy
-    destroy-on-close
-    :visible="reauthVisible"
-    :header="t('roles.reauth')"
-    :confirm-btn="{ content: t('common.confirm'), loading: deleting, disabled: !password }"
-    :close-on-overlay-click="false"
-    @confirm="confirmReauth"
-    @close="closeReauth"
-  >
-    <t-input
-      v-model="password"
-      type="password"
-      autocomplete="current-password"
-      name="role-reauth"
-      :placeholder="t('roles.password')"
-    />
   </t-dialog>
 </template>
 
@@ -222,7 +178,6 @@ import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-
 import { businessRoutes } from '@/router/routes'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
-import { reauthApi, type ReauthIntent } from '@/api/modules/auth'
 import type { NotifiedError } from '@/api/request'
 import {
   getRolesApi,
@@ -367,7 +322,7 @@ const title = computed(() =>
   ),
 )
 const selected = ref<RoleItem | null>(null)
-const form = reactive({ name: '', description: '', reason: '' })
+const form = reactive({ name: '', description: '' })
 const saving = ref(false)
 const formLoading = ref(false)
 let formRequest = 0
@@ -383,7 +338,7 @@ async function open(nextMode: typeof mode.value, row?: RoleItem) {
   const requestId = ++formRequest
   mode.value = nextMode
   selected.value = row || null
-  Object.assign(form, { name: '', description: '', reason: '' })
+  Object.assign(form, { name: '', description: '' })
   for (const key of Object.keys(grants)) delete grants[key]
   details.value = []
   resourcesLoaded.value = false
@@ -453,17 +408,15 @@ function save() {
   const payload = { name: form.name.trim(), description: form.description.trim() }
   const currentMode = mode.value
   const role = selected.value
-  const action = async (reason: string) => {
+  const action = async () => {
     saving.value = true
     let metadataSaved = false
     let permissionsSaved = false
     try {
       const idempotencyKey = crypto.randomUUID()
-      const currentPassword = needsPermissions ? await askReauthPassword() : null
-      if (needsPermissions && currentPassword === null) return
       let id = role?.id || ''
       if (currentMode === 'copy' && role) {
-        await copyRoleApi(role.id, { ...payload, reason })
+        await copyRoleApi(role.id, payload)
         metadataSaved = true
       } else if (currentMode === 'create') {
         const result = await createRoleApi(payload)
@@ -478,17 +431,8 @@ function save() {
         const roleId = id
         const permissionPayload = {
           permissions: permissions.map((grant) => ({ ...grant })),
-          reason,
         }
-        const { proof_token } = await reauthApi({
-          password: currentPassword!,
-          intent: {
-            operation_id: 'replaceRolePermissions',
-            path: { role_id: roleId },
-            body: permissionPayload,
-          },
-        })
-        await saveRolePermissionsApi(roleId, permissionPayload, proof_token, idempotencyKey)
+        await saveRolePermissionsApi(roleId, permissionPayload, idempotencyKey)
         permissionsSaved = true
       }
       visible.value = false
@@ -504,7 +448,6 @@ function save() {
       if (metadataSaved && needsPermissions && !permissionsSaved) {
         MessagePlugin.warning(t(currentMode === 'create' ? 'roles.partial' : 'roles.partialEdit'))
         if (currentMode === 'create') visible.value = false
-        reasonDialog.visible = false
       }
       throw error
     } finally {
@@ -515,64 +458,14 @@ function save() {
       }
     }
   }
-  if (needsPermissions || currentMode === 'copy') {
-    openReasonDialog({ title: title.value, content: '', action })
-  } else {
-    void action('').catch(showError)
-  }
+  void action().catch(showError)
 }
 function showError(error: unknown) {
-  if ((error as NotifiedError).code === 'REAUTH_REQUIRED') {
-    MessagePlugin.warning(t('roleErrors.REAUTH_REQUIRED'))
-    return
-  }
   if (!(error as NotifiedError).notified)
     MessagePlugin.error((error as Error).message || t('roles.failed'))
 }
-const reasonDialog = reactive({
-  visible: false,
-  title: '',
-  content: '',
-  reason: '',
-  loading: false,
-})
-let pendingAction: ((reason: string) => Promise<void>) | null = null
-function openReasonDialog(options: {
-  title: string
-  content: string
-  action: (reason: string) => Promise<void>
-}) {
-  Object.assign(reasonDialog, {
-    visible: true,
-    title: options.title,
-    content: options.content,
-    reason: '',
-  })
-  pendingAction = options.action
-}
-async function onReasonConfirm() {
-  if (!pendingAction || !reasonDialog.reason.trim() || reasonDialog.loading) return
-  reasonDialog.loading = true
-  try {
-    await pendingAction(reasonDialog.reason.trim())
-    reasonDialog.visible = false
-    pendingAction = null
-  } catch (error) {
-    showError(error)
-  } finally {
-    reasonDialog.loading = false
-  }
-}
-function onReasonClose() {
-  if (reasonDialog.loading) return
-  reasonDialog.visible = false
-  pendingAction = null
-}
 const deleteVisible = ref(false)
-const deleteReason = ref('')
 const deleting = ref(false)
-const reauthVisible = ref(false)
-const password = ref('')
 async function prepareDelete(row: RoleItem) {
   if (row.is_builtin) return
   if (row.user_count > 0) {
@@ -587,74 +480,25 @@ async function prepareDelete(row: RoleItem) {
       return
     }
     selected.value = role
-    deleteReason.value = ''
     deleteVisible.value = true
   } catch {
     /* 请求拦截器统一提示 */
   }
 }
 async function remove() {
-  if (!selected.value || selected.value.is_builtin || !deleteReason.value.trim() || deleting.value)
-    return
-  const roleId = selected.value.id
-  const reason = deleteReason.value.trim()
-  const intent: ReauthIntent = {
-    operation_id: 'deleteRole',
-    path: { role_id: roleId },
-    body: { reason },
-  }
-  deleteVisible.value = false
+  if (!selected.value || selected.value.is_builtin || deleting.value) return
+  deleting.value = true
   try {
-    const result = await withReauth(intent, (proof, idempotencyKey) =>
-      deleteRoleApi(roleId, reason, proof, idempotencyKey),
-    )
-    if (result === null) return
+    await deleteRoleApi(selected.value.id)
+    deleteVisible.value = false
     MessagePlugin.success(t('roles.deleted'))
     resetPage()
     await fetchList()
   } catch (error) {
     showError(error)
-  }
-}
-let pendingReauth: {
-  resolve: (password: string | null) => void
-} | null = null
-function askReauthPassword(): Promise<string | null> {
-  return new Promise((resolve) => {
-    pendingReauth = { resolve }
-    password.value = ''
-    reauthVisible.value = true
-  })
-}
-async function withReauth<T>(
-  intent: ReauthIntent,
-  action: (proof: string, idempotencyKey: string) => Promise<T>,
-): Promise<T | null> {
-  const idempotencyKey = crypto.randomUUID()
-  const currentPassword = await askReauthPassword()
-  if (currentPassword === null) return null
-  deleting.value = true
-  try {
-    const { proof_token } = await reauthApi({ password: currentPassword, intent })
-    return await action(proof_token, idempotencyKey)
   } finally {
     deleting.value = false
   }
-}
-function closeReauth() {
-  if (deleting.value) return
-  reauthVisible.value = false
-  password.value = ''
-  pendingReauth?.resolve(null)
-  pendingReauth = null
-}
-function confirmReauth() {
-  const pending = pendingReauth
-  if (!pending || !password.value || deleting.value) return
-  pendingReauth = null
-  reauthVisible.value = false
-  pending.resolve(password.value)
-  password.value = ''
 }
 onMounted(() => {
   void fetchList()

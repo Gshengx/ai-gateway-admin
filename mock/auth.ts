@@ -73,29 +73,6 @@ function session(req?: MockRequest): SessionInfo {
 }
 export default authMock([
   {
-    url: '/api/v1/auth/reauth',
-    method: 'post',
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
-      if (!password || req.body?.password !== password) return fail('AUTHENTICATION_FAILED', '')
-      const intent = req.body?.intent
-      if (
-        !intent ||
-        typeof intent !== 'object' ||
-        !('operation_id' in intent) ||
-        typeof intent.operation_id !== 'string'
-      )
-        return fail('MALFORMED_REQUEST', '')
-      return success({
-        proof_token: mockId(JSON.stringify(intent)),
-        expires_at: new Date(Date.now() + 300000).toISOString(),
-        operation_id: intent.operation_id,
-        action_digest: mockId(JSON.stringify(intent)),
-      })
-    },
-  },
-  {
     url: '/api/v1/auth/login',
     method: 'post',
     response(this: RespThisType, req: MockRequest) {

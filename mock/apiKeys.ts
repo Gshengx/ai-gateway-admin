@@ -120,7 +120,6 @@ function managedMutation(
   batch: boolean,
 ) {
   const user = usernameFromToken(req)!
-  const reason = req.body?.reason
   const path = req.url?.split('?')[0] || ''
   const id = decodeURIComponent(batch ? '' : path.split('/')[4] || '')
   const ids: unknown = batch ? req.body?.key_ids : [id]
@@ -135,13 +134,11 @@ function managedMutation(
   if (
     batch &&
     (ids.some((value) => !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value)) ||
-      Object.keys(req.body ?? {}).some((field) => !['key_ids', 'reason'].includes(field)))
+      Object.keys(req.body ?? {}).some((field) => !['key_ids'].includes(field)))
   )
     return fail('VALIDATION_FAILED', '')
-  if (typeof reason !== 'string' || !reason.trim() || reason.length > 512)
-    return fail('VALIDATION_FAILED', '')
   const replay = replayId(req, user)
-  const fingerprint = JSON.stringify({ action, ids, reason })
+  const fingerprint = JSON.stringify({ action, ids })
   const previous = managedReplays.get(replay)
   if (previous) {
     if (previous.body !== fingerprint) return fail('IDEMPOTENCY_CONFLICT', '')
@@ -151,17 +148,6 @@ function managedMutation(
   // 先检查完整目标集合，失败时绝不修改任何一个 Key。
   if (ids.some((keyId) => !visible.has(keyId)))
     return fail(batch ? 'OUT_OF_SCOPE' : 'NOT_FOUND', '')
-  const operation_id = batch
-    ? action === 'delete'
-      ? 'batchDeleteManagedKeys'
-      : action === 'enable'
-        ? 'batchEnableManagedKeys'
-        : 'batchDisableManagedKeys'
-    : `${action}ManagedKey`
-  const body = { ...(batch ? { key_ids: ids } : {}), reason }
-  const intent = { operation_id, ...(batch ? {} : { path: { key_id: id } }), body }
-  if (req.headers?.['x-reauth-proof'] !== mockId(JSON.stringify(intent)))
-    return fail('REAUTH_REQUIRED', '')
   if (batch && action === 'enable') {
     const owners = new Set(
       managedKeys.filter((key) => ids.includes(key.id)).map((key) => key.user_id),
@@ -367,16 +353,10 @@ const methods: MockMethod[] = [
     method: 'delete',
     response: (req: MockRequest) => {
       const user = mockId(usernameFromToken(req)!)
-      const reason = req.body?.reason
-      if (typeof reason !== 'string' || !reason.trim() || reason.length > 512)
-        return fail('VALIDATION_FAILED', '')
       const id = pathId(req)
       const replay = replayId(req, user)
       const previous = replays.get(replay) as DeleteMyKeyResult | undefined
       if (previous) return success({ ...previous, replayed: true })
-      const intent = { operation_id: 'deleteMyKey', path: { key_id: id }, body: { reason } }
-      if (req.headers?.['x-reauth-proof'] !== mockId(JSON.stringify(intent)))
-        return fail('REAUTH_REQUIRED', '')
       const keys = keysFor(user)
       const index = keys.findIndex((key) => key.id === id)
       if (index < 0) return fail('NOT_FOUND', '')
@@ -401,7 +381,6 @@ export default methods.map((method) => {
         OK: 200,
         UNAUTHENTICATED: 401,
         CSRF_INVALID: 403,
-        REAUTH_REQUIRED: 403,
         VALIDATION_FAILED: 422,
         CURSOR_INVALID: 400,
         MALFORMED_REQUEST: 400,

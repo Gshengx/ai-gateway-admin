@@ -96,21 +96,21 @@
   />
 
   <t-dialog
-    :visible="reasonDialog.visible"
-    :header="reasonDialog.title"
+    :visible="confirmDialog.visible"
+    :header="confirmDialog.title"
     width="480px"
     :close-on-overlay-click="false"
     :confirm-btn="{
       content: t('common.confirm'),
       theme: 'danger',
-      loading: reasonDialog.loading || checkingReferences,
-      disabled: !canConfirmReason,
+      loading: confirmDialog.loading || checkingReferences,
+      disabled: !canConfirmDelete,
     }"
     :cancel-btn="{ content: t('common.cancel') }"
-    @confirm="onReasonConfirm"
-    @close="onReasonClose"
+    @confirm="onConfirmDelete"
+    @close="onConfirmClose"
   >
-    <p class="confirm-content">{{ reasonDialog.content }}</p>
+    <p class="confirm-content">{{ confirmDialog.content }}</p>
     <p v-if="checkingReferences">{{ t('groups.delete.checkingReferences') }}</p>
     <t-alert v-if="referencedModels.length" theme="warning">
       <p>{{ t('groups.delete.referenced') }}</p>
@@ -122,49 +122,6 @@
       </ul>
       <p v-if="referencesHasMore">{{ t('groups.delete.referencedMore') }}</p>
     </t-alert>
-    <t-form label-width="80px" :data="reasonDialog">
-      <t-form-item :label="t('groups.delete.reason')">
-        <t-textarea
-          v-model="reasonDialog.reason"
-          :placeholder="t('groups.delete.reasonPlaceholder')"
-          :maxlength="512"
-          :autosize="{ minRows: 3, maxRows: 4 }"
-        />
-      </t-form-item>
-    </t-form>
-  </t-dialog>
-
-  <t-dialog
-    lazy
-    destroy-on-close
-    :visible="reauthDialog.visible"
-    :header="t('groups.reauth.title')"
-    width="480px"
-    :close-on-overlay-click="false"
-    :confirm-btn="{
-      content: t('common.confirm'),
-      theme: 'danger',
-      loading: reauthDialog.loading,
-      disabled: !canConfirmReauth,
-    }"
-    :cancel-btn="{ content: t('common.cancel') }"
-    @confirm="onReauthConfirm"
-    @close="onReauthClose"
-  >
-    <p class="confirm-content">
-      {{ t('groups.reauth.content', { name: reauthDialog.groupName }) }}
-    </p>
-    <t-form label-width="80px" :data="reauthDialog">
-      <t-form-item :label="t('groups.reauth.password')">
-        <t-input
-          v-model="reauthDialog.password"
-          type="password"
-          autocomplete="current-password"
-          name="group-reauth"
-          :placeholder="t('groups.reauth.passwordPlaceholder')"
-        />
-      </t-form-item>
-    </t-form>
   </t-dialog>
 </template>
 
@@ -182,7 +139,6 @@ import {
 import { formatDateTime } from '@/utils/datetime'
 import GroupFormDialog from './components/GroupFormDialog.vue'
 import GroupMembersDrawer from './components/GroupMembersDrawer.vue'
-import { reauthApi } from '@/api/modules/auth'
 import type { NotifiedError } from '@/api/request'
 import {
   createUserGroupApi,
@@ -312,26 +268,23 @@ function onOpenMembers(row: UserGroupItem) {
 
 /* ------------------------------- 删除确认 ------------------------------- */
 
-type ReasonAction = (reason: string) => Promise<void>
+type ConfirmAction = () => Promise<void>
 
-const reasonDialog = reactive({
+const confirmDialog = reactive({
   visible: false,
   title: '',
   content: '',
-  reason: '',
   loading: false,
 })
 
-let pendingAction: ReasonAction | null = null
+let pendingAction: ConfirmAction | null = null
 
 const checkingReferences = ref(false)
 const referencedModels = ref<ModelGrantSourceModel[]>([])
 const referencesHasMore = ref(false)
 let referenceRequestId = 0
 
-const canConfirmReason = computed(
-  () => reasonDialog.reason.trim().length > 0 && !checkingReferences.value,
-)
+const canConfirmDelete = computed(() => !checkingReferences.value)
 
 async function checkReferences(id: string) {
   const requestId = ++referenceRequestId
@@ -344,7 +297,7 @@ async function checkReferences(id: string) {
       { page: 1, page_size: 100 },
       { skipErrorHandler: true },
     )
-    if (requestId !== referenceRequestId || !reasonDialog.visible) return
+    if (requestId !== referenceRequestId || !confirmDialog.visible) return
     referencedModels.value = [
       ...new Map(result.items.map(({ model }) => [model.id, model])).values(),
     ]
@@ -357,7 +310,7 @@ async function checkReferences(id: string) {
 }
 
 function showReferenceBlocked() {
-  reasonDialog.visible = false
+  confirmDialog.visible = false
   ++referenceRequestId
   checkingReferences.value = false
   const models = [...referencedModels.value]
@@ -389,107 +342,55 @@ function showReferenceBlocked() {
   })
 }
 
-function openReasonDialog(options: { title: string; content: string; action: ReasonAction }) {
-  reasonDialog.title = options.title
-  reasonDialog.content = options.content
-  reasonDialog.reason = ''
-  reasonDialog.visible = true
+function openConfirmDialog(options: { title: string; content: string; action: ConfirmAction }) {
+  confirmDialog.title = options.title
+  confirmDialog.content = options.content
+  confirmDialog.visible = true
   pendingAction = options.action
 }
 
-async function onReasonConfirm() {
-  const reason = reasonDialog.reason.trim()
-  if (!canConfirmReason.value || !reason || !pendingAction) return
-  reasonDialog.loading = true
+async function onConfirmDelete() {
+  if (!canConfirmDelete.value || !pendingAction) return
+  confirmDialog.loading = true
   try {
-    await pendingAction(reason)
-    reasonDialog.visible = false
+    await pendingAction()
+    confirmDialog.visible = false
     ++referenceRequestId
     pendingAction = null
   } catch {
     // 错误已由请求拦截器统一提示
   } finally {
-    reasonDialog.loading = false
+    confirmDialog.loading = false
   }
 }
 
-function onReasonClose() {
-  if (reasonDialog.loading) return
-  reasonDialog.visible = false
+function onConfirmClose() {
+  if (confirmDialog.loading) return
+  confirmDialog.visible = false
   ++referenceRequestId
   checkingReferences.value = false
   pendingAction = null
 }
 
 function onDelete(row: UserGroupItem) {
-  openReasonDialog({
+  openConfirmDialog({
     title: t('groups.delete.title'),
     content: t('groups.delete.content', { name: row.display_name || row.name }),
-    action: async (reason) => {
-      openReauth(row, reason)
+    action: async () => {
+      try {
+        await deleteUserGroupApi(row.id)
+        MessagePlugin.success(t('groups.deleteSuccess'))
+        await fetchGroups()
+      } catch (error) {
+        if ((error as NotifiedError).code === 'EXTERNAL_REFERENCE_BLOCKED') {
+          showReferenceBlocked()
+          return
+        }
+        throw error
+      }
     },
   })
   void checkReferences(row.id)
-}
-
-/** 二次验证：校验当前登录密码，拿到一次性证明后执行删除 */
-const reauthDialog = reactive({
-  visible: false,
-  loading: false,
-  password: '',
-  groupId: '',
-  groupName: '',
-  reason: '',
-  idempotencyKey: '',
-})
-
-const canConfirmReauth = computed(() => reauthDialog.password.length > 0)
-
-function openReauth(row: UserGroupItem, reason: string) {
-  reauthDialog.groupId = row.id
-  reauthDialog.groupName = row.display_name || row.name
-  reauthDialog.reason = reason
-  reauthDialog.idempotencyKey = crypto.randomUUID()
-  reauthDialog.password = ''
-  reauthDialog.visible = true
-}
-
-async function onReauthConfirm() {
-  const password = reauthDialog.password
-  if (!password || !reauthDialog.groupId || reauthDialog.loading) return
-  const { groupId, reason, idempotencyKey } = reauthDialog
-  const payload = { reason }
-  reauthDialog.loading = true
-  try {
-    const { proof_token } = await reauthApi({
-      password,
-      intent: {
-        operation_id: 'deleteGroup',
-        path: { group_id: groupId },
-        body: payload,
-      },
-    })
-    await deleteUserGroupApi(groupId, payload, proof_token, idempotencyKey)
-    MessagePlugin.success(t('groups.deleteSuccess'))
-    reauthDialog.visible = false
-    await fetchGroups()
-  } catch (error) {
-    if ((error as NotifiedError).code === 'EXTERNAL_REFERENCE_BLOCKED') {
-      reauthDialog.visible = false
-      showReferenceBlocked()
-      return
-    }
-    // 错误已由请求拦截器统一提示
-  } finally {
-    if (!reauthDialog.visible) reauthDialog.password = ''
-    reauthDialog.loading = false
-  }
-}
-
-function onReauthClose() {
-  if (reauthDialog.loading) return
-  reauthDialog.visible = false
-  reauthDialog.password = ''
 }
 
 onMounted(fetchGroups)

@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto'
 import {
   checkToken,
   fail,
   pathId,
   success,
   unauthorized,
+  usernameFromToken,
   type MockMethod,
   type MockRequest,
 } from './_utils'
@@ -691,7 +693,7 @@ interface MockImportPreviewRow {
   password: string
   department_id: string
   role_id: string
-  execution_state: 'APPLIED' | 'SKIPPED'
+  execution_state: 'APPLIED' | 'SKIPPED' | 'FAILED'
 }
 
 interface MockImportTask {
@@ -720,7 +722,6 @@ interface MockImportTask {
 }
 
 const importTasks = new Map<string, MockImportTask>()
-let importSeq = 1
 
 function buildImportPreview(inputRows: unknown[], mode: 'SKIP' | 'OVERWRITE'): MockImportTask {
   const usernameCounts = new Map<string, number>()
@@ -735,14 +736,14 @@ function buildImportPreview(inputRows: unknown[], mode: 'SKIP' | 'OVERWRITE'): M
     const displayName = str(row.display_name)
     const email = str(row.email)
     const phone = str(row.phone)
-    const password = str(row.password)
-    const department = DEPARTMENTS.find((d) => departmentPath(d.id) === str(row.department))
-    const role = resolveRole(str(row.role))
+    const password = str(row.initial_password)
+    const department = DEPARTMENTS.find((d) => departmentPath(d.id) === str(row.department_path))
+    const role = resolveRole(str(row.role_name))
     const errors: string[] = []
 
     const key = username.toLowerCase()
     const exists = users.some((u) => u.username.toLowerCase() === key)
-    if (!username || !displayName || !str(row.department) || !str(row.role)) {
+    if (!username || !displayName || !str(row.department_path) || !str(row.role_name)) {
       errors.push('VALIDATION_FAILED')
     }
     if (!department || !role) errors.push('IMPORT_TARGET_NOT_FOUND')
@@ -767,19 +768,22 @@ function buildImportPreview(inputRows: unknown[], mode: 'SKIP' | 'OVERWRITE'): M
         display_name: displayName,
         email: email || null,
         phone: phone || null,
-        department_path: department ? departmentPath(department.id) : str(row.department),
-        role_name: role ? role.name : str(row.role),
+        department_path: department ? departmentPath(department.id) : str(row.department_path),
+        role_name: role ? role.name : str(row.role_name),
       },
       password,
       department_id: department?.id ?? '',
       role_id: role?.id ?? '',
-      execution_state: 'SKIPPED',
+      execution_state: disposition === 'INVALID' ? 'FAILED' : 'SKIPPED',
     }
   })
 
   const task: MockImportTask = {
-    id: `imp-${String(importSeq).padStart(4, '0')}`,
-    state: 'PREVIEW_READY',
+    id: 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const n = Math.floor(Math.random() * 16)
+      return (c === 'x' ? n : (n & 3) | 8).toString(16)
+    }),
+    state: inputRows.length ? 'DRAFT' : 'PREVIEW_READY',
     total_rows: rows.length,
     created_count: 0,
     failed_count: 0,
@@ -791,9 +795,50 @@ function buildImportPreview(inputRows: unknown[], mode: 'SKIP' | 'OVERWRITE'): M
     last_error_code: null,
     rows,
   }
-  importSeq += 1
   importTasks.set(task.id, task)
   return task
+}
+
+const pendingImportRows = new Map<string, number[]>()
+
+function executeImport(task: MockImportTask, selected: number[]) {
+  let created = 0
+  let overwritten = 0
+  task.rows.forEach((row) => {
+    if (!selected.includes(row.row_number)) return
+    if (row.disposition === 'CREATE') {
+      createUser({
+        username: row.username,
+        display_name: row.fields.display_name,
+        email: row.fields.email ?? '',
+        phone: row.fields.phone ?? '',
+        department_id: row.department_id,
+        role_id: row.role_id,
+      })
+      row.execution_state = 'APPLIED'
+      created += 1
+    } else if (row.disposition === 'OVERWRITE') {
+      const existing = users.find((u) => u.username.toLowerCase() === row.username.toLowerCase())
+      if (existing) {
+        existing.display_name = row.fields.display_name
+        existing.email = row.fields.email
+        existing.phone = row.fields.phone
+        existing.department_id = row.department_id
+        existing.role_id = row.role_id
+        existing.updated_at = toIso(new Date())
+        row.execution_state = 'APPLIED'
+        overwritten += 1
+      }
+    }
+  })
+
+  task.created_count = created
+  task.overwritten_count = overwritten
+  task.skipped_count = task.rows.filter((row) => row.execution_state === 'SKIPPED').length
+  task.failed_count = task.rows.filter((row) => row.disposition === 'INVALID').length
+  task.state = task.failed_count ? 'PARTIAL' : 'SUCCEEDED'
+  task.completed_at = toIso(new Date())
+  pendingImportRows.delete(task.id)
 }
 
 function importTaskPayload(task: MockImportTask) {
@@ -813,13 +858,15 @@ function importRowsPayload(task: MockImportTask) {
       overwrite: task.rows.filter((row) => row.disposition === 'OVERWRITE').length,
       skip: task.rows.filter((row) => row.disposition === 'SKIP').length,
     },
-    rows: task.rows.map((row) => ({
-      row_number: row.row_number,
-      username: row.username,
-      disposition: row.disposition,
-      error_codes: row.error_codes,
-      fields: row.fields,
-    })),
+    rows: task.rows
+      .filter((row) => row.disposition === 'INVALID')
+      .map((row) => ({
+        row_number: row.row_number,
+        username: row.username,
+        disposition: row.disposition,
+        error_codes: row.error_codes,
+        fields: row.fields,
+      })),
   }
 }
 
@@ -841,7 +888,7 @@ function importResultCsv(task: MockImportTask): string {
       row.fields.phone ?? '',
       row.disposition,
       row.execution_state,
-      row.error_codes.join('|'),
+      row.error_codes.join(';'),
       task.state,
       task.last_error_code ?? '',
     ]
@@ -1012,7 +1059,7 @@ function grantSourcesOf(user: MockUser, locale: string): MockGrantSource[] {
   })
 }
 
-/** API Key mock ???/????????????????? */
+/** API Key mock 用户数据 */
 export function managedKeyOwners(locale: string) {
   return users.map((user) => {
     const department = departmentOf(user.department_id)
@@ -1032,6 +1079,17 @@ export function managedKeyOwners(locale: string) {
 export function managedKeyDepartmentIds(id: string) {
   return descendantDepartmentIds(id)
 }
+function batchDeleteDigest(
+  deletable: { user_id: string; username: string; display_name: string; reason: string }[],
+  excluded: { user_id: string; username: string; display_name: string; reason: string }[],
+) {
+  const ordered = (rows: typeof deletable) =>
+    [...rows].sort((a, b) => a.user_id.localeCompare(b.user_id))
+  return createHash('sha256')
+    .update(JSON.stringify({ deletable: ordered(deletable), excluded: ordered(excluded) }))
+    .digest('hex')
+}
+
 export default [
   {
     url: '/api/v1/audit/terms-acceptances',
@@ -1356,7 +1414,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const department = DEPARTMENTS.find((d) => d.id === pathId(req))
       if (!department) return fail('NOT_FOUND', '部门不存在')
-      if (!str(req.body?.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       if (DEPARTMENTS.some((d) => d.parent_id === department.id)) {
         return fail('CONFLICT', '该部门存在子部门，无法删除')
       }
@@ -1569,7 +1626,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const index = GROUPS.findIndex((item) => item.id === pathId(req))
       if (index < 0) return fail('NOT_FOUND', '用户组不存在')
-      if (!str(req.body?.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       // 就地删除，保持 GROUPS 引用不变
       const [removed] = GROUPS.splice(index, 1)
       return success({ applied: true, group_id: removed.id, replayed: false })
@@ -1696,7 +1752,6 @@ export default [
       if (!group) return fail('NOT_FOUND', '用户组不存在')
       const body = req.body ?? {}
       const userIds = Array.isArray(body.user_ids) ? body.user_ids.map(String) : []
-      if (!str(body.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       if (userIds.length === 0 || userIds.length > 100) {
         return fail('INVALID_ARGUMENT', 'user_ids 数量需为 1-100')
       }
@@ -1724,7 +1779,6 @@ export default [
       if (!group) return fail('NOT_FOUND', '用户组不存在')
       const body = req.body ?? {}
       const userIds = Array.isArray(body.user_ids) ? body.user_ids.map(String) : []
-      if (!str(body.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       if (userIds.length === 0 || userIds.length > 100) {
         return fail('INVALID_ARGUMENT', 'user_ids 数量需为 1-100')
       }
@@ -1829,7 +1883,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const body = req.body ?? {}
       const userIds = Array.isArray(body.user_ids) ? body.user_ids.map(String) : []
-      if (!str(body.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       if (!userIds.length || userIds.length > 100) {
         return fail('INVALID_ARGUMENT', 'user_ids 数量需为 1-100')
       }
@@ -1858,7 +1911,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const body = req.body ?? {}
       const userIds = Array.isArray(body.user_ids) ? body.user_ids.map(String) : []
-      if (!str(body.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       if (!userIds.length || userIds.length > 100) {
         return fail('INVALID_ARGUMENT', 'user_ids 数量需为 1-100')
       }
@@ -1881,6 +1933,101 @@ export default [
     },
   },
   {
+    url: '/api/v1/users/batch/delete-preview',
+    method: 'post',
+    timeout: 150,
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      const body = req.body ?? {}
+      const userIds = Array.isArray(body.user_ids) ? body.user_ids.map(String) : []
+      if (!userIds.length || userIds.length > 100) {
+        return fail('VALIDATION_FAILED', 'user_ids 数量需为 1-100')
+      }
+      const requested = users.filter((u) => userIds.includes(u.id))
+      if (requested.length !== new Set(userIds).size) return fail('NOT_FOUND', '用户不存在')
+      const currentUsername = usernameFromToken(req)
+      const excluded = requested
+        .filter((u) => u.username === currentUsername || u.role_id === 'role-super-admin')
+        .map((u) => ({
+          display_name: u.display_name,
+          reason: u.username === currentUsername ? 'SELF_PROTECTED' : 'SUPER_ADMIN_PROTECTED',
+          user_id: u.id,
+          username: u.username,
+        }))
+      const deletable = requested
+        .filter((u) => !excluded.some((item) => item.user_id === u.id))
+        .map((u) => ({
+          display_name: u.display_name,
+          reason: '',
+          user_id: u.id,
+          username: u.username,
+        }))
+      return success({
+        allowed: deletable.length > 0,
+        api_key_count: 0,
+        block_reason: '',
+        deletable,
+        dependency_count: 0,
+        excluded,
+        preview_digest: batchDeleteDigest(deletable, excluded),
+        requested_count: userIds.length,
+      })
+    },
+  },
+  {
+    url: '/api/v1/users/batch/delete',
+    method: 'post',
+    timeout: 250,
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      const body = req.body ?? {}
+      const userIds = Array.isArray(body.user_ids) ? body.user_ids.map(String) : []
+      const digest = str(body.preview_digest)
+      if (digest.length !== 64) return fail('VALIDATION_FAILED', '预览摘要无效')
+      if (!userIds.length || userIds.length > 100) {
+        return fail('BATCH_TOO_LARGE', 'user_ids 数量需为 1-100')
+      }
+      const currentUsername = usernameFromToken(req)
+      const requested = users.filter((u) => userIds.includes(u.id))
+      if (requested.length !== new Set(userIds).size) return fail('NOT_FOUND', '用户不存在')
+      const excludedUsers = requested.filter(
+        (u) => u.username === currentUsername || u.role_id === 'role-super-admin',
+      )
+      const deletableUsers = requested.filter((u) => !excludedUsers.includes(u))
+      if (!deletableUsers.length) return fail('ACTION_CHANGED', '没有可删除的用户')
+      const deletable = deletableUsers.map((u) => ({
+        display_name: u.display_name,
+        reason: '',
+        user_id: u.id,
+        username: u.username,
+      }))
+      const excluded = excludedUsers.map((u) => ({
+        display_name: u.display_name,
+        reason: u.username === currentUsername ? 'SELF_PROTECTED' : 'SUPER_ADMIN_PROTECTED',
+        user_id: u.id,
+        username: u.username,
+      }))
+      // 预览后集合变化（如新增/移除用户）时摘要不一致，整批拒绝
+      if (batchDeleteDigest(deletable, excluded) !== digest) {
+        return fail('TARGET_SET_CHANGED', '目标集合已变化，请重新预览')
+      }
+      deletableUsers.forEach((user) => {
+        users.splice(
+          users.findIndex((u) => u.id === user.id),
+          1,
+        )
+      })
+      return success({
+        api_key_count: 0,
+        applied: true,
+        deleted_count: deletable.length,
+        excluded_count: excluded.length,
+        replayed: false,
+        requested_count: userIds.length,
+      })
+    },
+  },
+  {
     url: '/api/v1/users/imports/template',
     method: 'get',
     rawResponse: (req, res) => {
@@ -1889,10 +2036,13 @@ export default [
         res.end(JSON.stringify(unauthorized()))
         return
       }
-      const csv = [
-        'username,display_name,email,phone,department,role,password',
-        'zhangsan,张三,zhangsan@example.com,13800000000,总部/技术中心/平台研发部,普通用户,Init@123456',
-      ].join('\n')
+      const format = new URL(req.url ?? '', 'http://localhost').searchParams.get('format')
+      if (format === 'xlsx') {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify(fail('MOCK_XLSX_UNSUPPORTED', 'Mock 模式不支持 XLSX 下载')))
+        return
+      }
+      const csv = 'username,display_name,department_path,role_name,email,phone,initial_password'
       res.setHeader('Content-Type', 'text/csv; charset=utf-8')
       res.setHeader('Content-Disposition', 'attachment; filename="users-import-template.csv"')
       res.end(`\uFEFF${csv}\n`)
@@ -1906,7 +2056,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const body = req.body ?? {}
       const rows = Array.isArray(body.rows) ? body.rows : []
-      if (!rows.length) return fail('VALIDATION_FAILED', '文件中没有可导入的数据')
       if (rows.length > 1000) return fail('IMPORT_LIMIT_EXCEEDED', '单次最多导入 1000 行')
       const mode = body.mode === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
       return success(importTaskPayload(buildImportPreview(rows, mode)))
@@ -1920,6 +2069,10 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const task = importTasks.get(pathId(req))
       if (!task) return fail('NOT_FOUND', '导入任务不存在')
+      if (task.state === 'DRAFT') task.state = 'PREVIEWING'
+      else if (task.state === 'PREVIEWING') task.state = 'PREVIEW_READY'
+      else if (task.state === 'QUEUED') task.state = 'RUNNING'
+      else if (task.state === 'RUNNING') executeImport(task, pendingImportRows.get(task.id) ?? [])
       return success(importTaskPayload(task))
     },
   },
@@ -1946,59 +2099,63 @@ export default [
       if (!task) return fail('NOT_FOUND', '导入任务不存在')
       if (task.state !== 'PREVIEW_READY') return fail('IMPORT_PREVIEW_CHANGED', '导入预览已失效')
 
-      const body = req.body ?? {}
-      const selected = Array.isArray(body.selected_rows) ? body.selected_rows.map(Number) : []
-      if (!selected.length || selected.length > 1000) {
-        return fail('VALIDATION_FAILED', 'selected_rows 数量需为 1-1000')
-      }
-
-      if (
-        selected.some(
-          (number) =>
-            !Number.isInteger(number) ||
-            !task.rows.some((row) => row.row_number === number && row.disposition !== 'INVALID'),
-        )
+      pendingImportRows.set(
+        task.id,
+        task.rows.filter((row) => row.disposition !== 'INVALID').map((row) => row.row_number),
       )
-        return fail('VALIDATION_FAILED', 'Selected rows are invalid')
-      let created = 0
-      let overwritten = 0
-      task.rows.forEach((row) => {
-        if (!selected.includes(row.row_number)) return
-        if (row.disposition === 'CREATE') {
-          createUser({
-            username: row.username,
-            display_name: row.fields.display_name,
-            email: row.fields.email ?? '',
-            phone: row.fields.phone ?? '',
-            department_id: row.department_id,
-            role_id: row.role_id,
-          })
-          row.execution_state = 'APPLIED'
-          created += 1
-        } else if (row.disposition === 'OVERWRITE') {
-          const existing = users.find(
-            (u) => u.username.toLowerCase() === row.username.toLowerCase(),
-          )
-          if (existing) {
-            existing.display_name = row.fields.display_name
-            existing.email = row.fields.email
-            existing.phone = row.fields.phone
-            existing.department_id = row.department_id
-            existing.role_id = row.role_id
-            existing.updated_at = toIso(new Date())
-            row.execution_state = 'APPLIED'
-            overwritten += 1
-          }
-        }
-      })
-
-      task.created_count = created
-      task.overwritten_count = overwritten
-      task.skipped_count = task.rows.filter((row) => row.execution_state === 'SKIPPED').length
-      task.failed_count = 0
-      task.state = 'SUCCEEDED'
-      task.completed_at = toIso(new Date())
+      task.state = 'QUEUED'
       return success(importTaskPayload(task))
+    },
+  },
+  {
+    url: '/api/v1/users/imports/:task_id/errors',
+    method: 'get',
+    rawResponse: (req, res) => {
+      if (!checkToken({ headers: req.headers })) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify(unauthorized()))
+        return
+      }
+      const format = new URL(req.url ?? '', 'http://localhost').searchParams.get('format') ?? 'csv'
+      if (format === 'xlsx') {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify(fail('MOCK_XLSX_UNSUPPORTED', 'XLSX unsupported')))
+        return
+      }
+      const task = importTasks.get(segmentBefore(req.url, 'errors'))
+      if (!task || task.state !== 'PREVIEW_READY') {
+        res.statusCode = task ? 400 : 404
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(
+          JSON.stringify(
+            fail(task ? 'IMPORT_PREVIEW_CHANGED' : 'NOT_FOUND', 'Import task unavailable'),
+          ),
+        )
+        return
+      }
+      const rows = task.rows
+        .filter((row) => row.disposition === 'INVALID')
+        .map((row) =>
+          [
+            row.username,
+            row.fields.display_name,
+            row.fields.email ?? '',
+            row.fields.phone ?? '',
+            row.password,
+            row.fields.department_path,
+            row.fields.role_name,
+            row.error_codes.join(';'),
+          ]
+            .map(csvEscape)
+            .join(','),
+        )
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', 'attachment; filename="user-import-errors-v2.csv"')
+      res.end(
+        '\uFEFF' +
+          ['用户名,姓名,邮箱,手机号,初始密码,部门路径,角色名称,错误原因', ...rows].join('\r\n') +
+          '\r\n',
+      )
     },
   },
   {
@@ -2008,6 +2165,11 @@ export default [
       if (!checkToken({ headers: req.headers })) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         res.end(JSON.stringify(unauthorized()))
+        return
+      }
+      if (new URL(req.url ?? '', 'http://mock').searchParams.get('format') === 'xlsx') {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify(fail('MOCK_XLSX_UNSUPPORTED', 'XLSX unsupported')))
         return
       }
       const task = importTasks.get(segmentBefore(req.url, 'result'))
@@ -2031,7 +2193,6 @@ export default [
 
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'reset-password'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (!str(req.body?.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
 
       const temporary = `Tmp@${Math.random().toString(36).slice(2, 8)}${Math.floor(
         Math.random() * 90 + 10,
@@ -2052,7 +2213,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'enable'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (!str(req.body?.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
 
       const changed = user.status !== 'ACTIVE'
       user.status = 'ACTIVE'
@@ -2074,7 +2234,6 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'disable'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (!str(req.body?.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
       if (user.username === 'admin') return fail('FORBIDDEN', '内置管理员不允许停用')
 
       const changed = user.status !== 'DISABLED'
@@ -2150,7 +2309,6 @@ export default [
       const user = users.find((u) => u.id === pathId(req))
       if (!user) return fail('NOT_FOUND', '用户不存在')
       if (user.username === 'admin') return fail('FORBIDDEN', '内置管理员不允许删除')
-      if (!str(req.body?.reason)) return fail('INVALID_ARGUMENT', '请填写操作原因')
 
       // 就地删除，保持 users 数组引用不变（各 mock 路由共享同一实例）
       users.splice(

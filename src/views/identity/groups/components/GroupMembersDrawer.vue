@@ -112,23 +112,13 @@
         content: t('common.confirm'),
         theme: 'danger',
         loading: removeDialog.loading,
-        disabled: !canWrite || !removeDialog.reason.trim(),
+        disabled: !canWrite,
       }"
       :cancel-btn="{ content: t('common.cancel') }"
       @confirm="confirmRemove"
       @close="removeDialog.visible = false"
     >
       <p class="confirm-content">{{ removeContent }}</p>
-      <t-form label-width="80px" :data="removeDialog">
-        <t-form-item :label="t('groups.membersDrawer.removeReason')">
-          <t-textarea
-            v-model="removeDialog.reason"
-            :placeholder="t('groups.membersDrawer.removeReasonPlaceholder')"
-            :maxlength="512"
-            :autosize="{ minRows: 3, maxRows: 4 }"
-          />
-        </t-form-item>
-      </t-form>
     </t-dialog>
 
     <add-members-dialog
@@ -290,7 +280,7 @@ function onClose() {
 
 /* ------------------------------- 移除成员 ------------------------------- */
 
-const removeDialog = reactive({ visible: false, loading: false, reason: '' })
+const removeDialog = reactive({ visible: false, loading: false })
 const removeTargets = ref<string[]>([])
 
 const removeContent = computed(() =>
@@ -307,18 +297,14 @@ function openRemove(ids: string[]) {
     return
   }
   removeTargets.value = ids
-  removeDialog.reason = ''
   removeDialog.visible = true
 }
 
 async function confirmRemove() {
   if (!canWrite.value || !props.group || !removeTargets.value.length) return
-  const reason = removeDialog.reason.trim()
-  if (!reason) return
   removeDialog.loading = true
   try {
     await removeUserGroupMembersApi(props.group.id, {
-      reason,
       user_ids: removeTargets.value,
     })
     MessagePlugin.success(t('groups.membersDrawer.removeSuccess'))

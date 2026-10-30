@@ -63,78 +63,62 @@ export function getManagedKeysApi(params: ManagedKeysQuery) {
   })
 }
 
-function managedHeaders(idempotencyKey: string, proof?: string) {
+function managedHeaders(idempotencyKey: string) {
   return {
     'Idempotency-Key': idempotencyKey,
-    ...(proof ? { 'X-Reauth-Proof': proof } : {}),
   }
 }
 
 export function enableManagedKeyApi(
   id: string,
-  data: { reason: string },
+  data: { key_ids?: string[] },
   idempotencyKey: string,
-  proof?: string,
 ) {
   return request.post<ManagedKeyMutationResult>(
     `/api-keys/${encodeURIComponent(id)}/enable`,
     data,
-    { headers: managedHeaders(idempotencyKey, proof) },
+    { headers: managedHeaders(idempotencyKey) },
   )
 }
 
 export function disableManagedKeyApi(
   id: string,
-  data: { reason: string },
+  data: { key_ids?: string[] },
   idempotencyKey: string,
-  proof?: string,
 ) {
   return request.post<ManagedKeyMutationResult>(
     `/api-keys/${encodeURIComponent(id)}/disable`,
     data,
-    { headers: managedHeaders(idempotencyKey, proof) },
+    { headers: managedHeaders(idempotencyKey) },
   )
 }
 
 export function deleteManagedKeyApi(
   id: string,
-  data: { reason: string },
+  data: { key_ids?: string[] },
   idempotencyKey: string,
-  proof?: string,
 ) {
   return request.delete<ManagedKeyMutationResult>(`/api-keys/${encodeURIComponent(id)}`, {
     data,
-    headers: managedHeaders(idempotencyKey, proof),
+    headers: managedHeaders(idempotencyKey),
   })
 }
 
-export function batchEnableManagedKeysApi(
-  data: { key_ids: string[]; reason: string },
-  idempotencyKey: string,
-  proof?: string,
-) {
+export function batchEnableManagedKeysApi(data: { key_ids: string[] }, idempotencyKey: string) {
   return request.post<ManagedKeysBatchResult>('/api-keys/batch/enable', data, {
-    headers: managedHeaders(idempotencyKey, proof),
+    headers: managedHeaders(idempotencyKey),
   })
 }
 
-export function batchDisableManagedKeysApi(
-  data: { key_ids: string[]; reason: string },
-  idempotencyKey: string,
-  proof?: string,
-) {
+export function batchDisableManagedKeysApi(data: { key_ids: string[] }, idempotencyKey: string) {
   return request.post<ManagedKeysBatchResult>('/api-keys/batch/disable', data, {
-    headers: managedHeaders(idempotencyKey, proof),
+    headers: managedHeaders(idempotencyKey),
   })
 }
 
-export function batchDeleteManagedKeysApi(
-  data: { key_ids: string[]; reason: string },
-  idempotencyKey: string,
-  proof?: string,
-) {
+export function batchDeleteManagedKeysApi(data: { key_ids: string[] }, idempotencyKey: string) {
   return request.post<ManagedKeysBatchResult>('/api-keys/batch/delete', data, {
-    headers: managedHeaders(idempotencyKey, proof),
+    headers: managedHeaders(idempotencyKey),
   })
 }
 
@@ -178,17 +162,11 @@ export function updateMyKeyApi(id: string, data: { name: string }, idempotencyKe
     headers: { 'Idempotency-Key': idempotencyKey },
   })
 }
-export function deleteMyKeyApi(
-  id: string,
-  data: { reason: string },
-  idempotencyKey: string,
-  proof?: string,
-) {
+export function deleteMyKeyApi(id: string, data: { key_ids?: string[] }, idempotencyKey: string) {
   return request.delete<DeleteMyKeyResult>(`/me/keys/${encodeURIComponent(id)}`, {
     data,
     headers: {
       'Idempotency-Key': idempotencyKey,
-      ...(proof ? { 'X-Reauth-Proof': proof } : {}),
     },
   })
 }

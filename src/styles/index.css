@@ -28,6 +28,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 5px 间距来自原型实测（用户管理列表用户组单元格），TDesign 无对应变量。
+   +N 标签字号 14px 来自原型实测，TDesign size=small 默认 12px。 */
+.group-text {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.group-text .t-tag {
+  font-size: var(--td-font-size-body-medium);
+}
+
 /* API Keys 原型个人中心搜索框为 360px；TDesign 无对应业务宽度 token。 */
 .personal-key-panel .key-search {
   width: 360px;
@@ -68,4 +80,14 @@ body {
 .t-tree__item:hover .t-tree__operations .department-tree-node-refresh,
 .t-tree__item:focus-within .t-tree__operations .department-tree-node-refresh {
   opacity: 1;
+}
+
+/* 供应商弹窗按本期原型约 575px；TDesign 无对应业务宽度 token。 */
+:root {
+  --provider-dialog-width: 575px;
+}
+
+/* 获取模型弹窗业务宽度为 900px；TDesign 无对应业务宽度 token。 */
+:root {
+  --provider-model-dialog-width: 900px;
 }

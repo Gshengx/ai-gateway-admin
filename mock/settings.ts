@@ -49,14 +49,7 @@ export default authMock([
       if (!checkToken(req)) return unauthorized()
       if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
       const body = req.body ?? {}
-      if (
-        typeof body.reason !== 'string' ||
-        !body.reason.trim() ||
-        body.reason.length > 512 ||
-        Object.keys(body).some(
-          (key) => key !== 'reason' && !Object.prototype.hasOwnProperty.call(ranges, key),
-        )
-      )
+      if (Object.keys(body).some((key) => !Object.prototype.hasOwnProperty.call(ranges, key)))
         return fail('VALIDATION_FAILED', '')
       const keys = Object.keys(ranges) as Array<keyof typeof ranges>
       if (
@@ -68,8 +61,6 @@ export default authMock([
         Number(body.min_length) > Number(body.max_length)
       )
         return fail('VALIDATION_FAILED', '')
-      if (!req.headers?.['x-reauth-proof'] && !req.headers?.['X-Reauth-Proof'])
-        return fail('REAUTH_REQUIRED', '')
       const changed = keys.some((key) => body[key] !== passwordPolicy[key])
       if (changed) {
         passwordPolicy.version_updated_at = new Date().toISOString()

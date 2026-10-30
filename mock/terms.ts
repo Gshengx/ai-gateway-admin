@@ -123,11 +123,6 @@ function validTranslations(value: unknown): value is TermsTranslation[] {
 function mutationGuard(req: MockRequest) {
   if (!checkToken(req)) return unauthorized()
   if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
-  const reason = req.body?.reason
-  if (typeof reason !== 'string' || !reason.trim() || reason.length > 512)
-    return fail('MALFORMED_REQUEST', '')
-  if (!req.headers?.['x-reauth-proof'] && !req.headers?.['X-Reauth-Proof'])
-    return fail('REAUTH_REQUIRED', '')
 }
 function result(changed: boolean) {
   return success({ applied: true, changed, replayed: false, terms_id: state.config.terms_id })

@@ -9,7 +9,7 @@
     :confirm-btn="{
       content: t('groups.addMembers.submit', { n: selectedKeys.length }),
       loading: submitting,
-      disabled: !selectedKeys.length || loading || !reason.trim(),
+      disabled: !selectedKeys.length || loading,
     }"
     :cancel-btn="{ content: t('common.cancel') }"
     @confirm="handleSubmit"
@@ -66,17 +66,6 @@
         @page-size-change="onPageSizeChange"
       />
     </div>
-
-    <t-form class="add-reason" label-width="80px" :data="{ reason }">
-      <t-form-item :label="t('groups.addMembers.reason')">
-        <t-textarea
-          v-model="reason"
-          :placeholder="t('groups.addMembers.reasonPlaceholder')"
-          :maxlength="512"
-          :autosize="{ minRows: 2, maxRows: 3 }"
-        />
-      </t-form-item>
-    </t-form>
   </t-dialog>
 </template>
 
@@ -109,7 +98,6 @@ const loading = ref(false)
 const submitting = ref(false)
 const candidates = ref<UserGroupMember[]>([])
 const search = ref('')
-const reason = ref('')
 const departmentId = ref('')
 const { selectedKeys, selectRows, clearSelection } = usePageSelection(candidates)
 const pagination = reactive<PaginationProps>({
@@ -207,7 +195,6 @@ watch(
     resetting = true
     search.value = ''
     departmentId.value = ''
-    reason.value = ''
     clearSelection()
     candidates.value = []
     pagination.current = 1
@@ -246,15 +233,14 @@ function onClose() {
 
 async function handleSubmit() {
   const userIds = [...selectedKeys.value]
-  const value = reason.value.trim()
-  if (!userIds.length || !value) return
+  if (!userIds.length) return
   if (userIds.length > 100) {
     MessagePlugin.warning(t('common.selectionLimit', { n: 100 }))
     return
   }
   submitting.value = true
   try {
-    await addUserGroupMembersApi(props.groupId, { reason: value, user_ids: userIds })
+    await addUserGroupMembersApi(props.groupId, { user_ids: userIds })
     MessagePlugin.success(t('groups.addMembers.success'))
     emit('added')
     emit('update:visible', false)
@@ -290,14 +276,6 @@ async function handleSubmit() {
   display: flex;
   justify-content: flex-end;
   margin-top: var(--td-comp-margin-s, 12px);
-}
-
-.add-reason {
-  margin-top: var(--td-comp-margin-l, 16px);
-}
-
-.add-reason :deep(.t-form__item) {
-  margin-bottom: var(--td-comp-margin-l, 16px);
 }
 
 .cell-empty {
