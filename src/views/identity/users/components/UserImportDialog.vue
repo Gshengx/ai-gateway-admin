@@ -98,7 +98,7 @@
           {{ t('users.importDialog.countUnit', { n: displayCounts.invalid }) }}</span
         >
         <t-button
-          v-if="stage === 'preview' && counts.invalid > 0"
+          v-if="stage === 'preview' && canDownloadErrors"
           class="import-summary__download"
           variant="outline"
           size="small"
@@ -159,7 +159,7 @@
         <t-button
           v-else-if="stage === 'preview'"
           theme="primary"
-          :disabled="accepted || !importable"
+          :disabled="accepted || !canConfirm"
           :loading="confirming"
           @click="handleConfirm"
           >{{ t('users.importDialog.confirmImport') }}</t-button
@@ -282,6 +282,7 @@ let controller = new AbortController()
 let uploadCommand: { signature: string; key: string } | null = null
 let confirmCommand: { signature: string; key: string } | null = null
 const previewRows = ref<PreviewRow[]>([])
+const previewCapabilities = ref<{ can_confirm?: boolean; can_download_errors?: boolean }>({})
 const previewNeedsUpload = computed(() => stage.value === 'preview' && !taskId.value)
 const previewCurrent = ref(1)
 const previewPageSize = ref(20)
@@ -307,6 +308,10 @@ const displayCounts = computed(() =>
 /** 仅有失败记录时不可导入 */
 const importable = computed(
   () => counts.value.create + counts.value.overwrite + counts.value.skip > 0,
+)
+const canConfirm = computed(() => previewCapabilities.value.can_confirm ?? importable.value)
+const canDownloadErrors = computed(
+  () => previewCapabilities.value.can_download_errors ?? counts.value.invalid > 0,
 )
 const resultAlert = computed(() => {
   if (taskState.value === 'FAILED') {
@@ -494,13 +499,19 @@ async function showTask(task: ImportTask, currentSession: number) {
     return
   }
   counts.value = rowsResult.preview_counts
+  previewCapabilities.value = {
+    can_confirm: rowsResult.can_confirm,
+    can_download_errors: rowsResult.can_download_errors,
+  }
   previewRows.value = rowsResult.rows.map((row: ImportPreviewRow) => ({
     row_number: row.row_number,
     username: row.username,
     display_name: row.fields.display_name,
     department_path: row.fields.department_path,
     role_name: row.fields.role_name,
-    errorText: row.error_codes.map(importErrorText).join(', '),
+    errorText: row.errors?.length
+      ? row.errors.map((item) => item.message).join(', ')
+      : row.error_codes.map(importErrorText).join(', '),
   }))
   previewCurrent.value = 1
   stage.value = 'preview'
@@ -546,6 +557,7 @@ function resetPreview() {
   accepted.value = false
   queryError.value = ''
   previewRows.value = []
+  previewCapabilities.value = {}
   previewCurrent.value = 1
   counts.value = { create: 0, invalid: 0, overwrite: 0, skip: 0 }
   resultTask.value = null
@@ -680,7 +692,7 @@ function onPreviewPageChange(pageInfo: PageInfo) {
 }
 
 async function handleConfirm() {
-  if (confirming.value || accepted.value || !taskId.value || !importable.value) return
+  if (confirming.value || accepted.value || !taskId.value || !canConfirm.value) return
   const signature = taskId.value
   if (!confirmCommand || confirmCommand.signature !== signature)
     confirmCommand = { signature, key: createIdempotencyKey() }
@@ -773,6 +785,7 @@ watch(
     session += 1
     previewing.value = false
     confirming.value = false
+    previewCapabilities.value = {}
     if (!visible) return
     stage.value = 'upload'
     files.value = []

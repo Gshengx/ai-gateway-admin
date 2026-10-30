@@ -413,6 +413,11 @@ export interface ImportTask {
   id: string
   state: ImportTaskState
   total_rows: number
+  valid_rows?: number
+  can_confirm?: boolean
+  can_download_errors?: boolean
+  input_template_locale?: string | null
+  input_template_version?: number | null
   created_count: number
   failed_count: number
   skipped_count: number
@@ -430,6 +435,7 @@ export interface ImportPreviewRow {
   username: string
   disposition: ImportRowDisposition
   error_codes: string[]
+  errors?: { code: string; field?: string | null; message: string }[]
   fields: {
     display_name: string
     email: string | null
@@ -442,6 +448,10 @@ export interface ImportPreviewRow {
 export interface ImportRowsResult {
   task_id: string
   state: ImportTaskState
+  valid_rows?: number
+  can_confirm?: boolean
+  can_download_errors?: boolean
+  response_locale?: string
   duplicate_mode: ImportDuplicateMode
   preview_counts: {
     create: number
