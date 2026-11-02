@@ -78,14 +78,20 @@ export const businessRoutes: RouteRecordRaw[] = [
       {
         path: 'models',
         name: 'ModelModels',
-        component: () => import('@/views/common/placeholder.vue'),
+        component: () => import('@/views/model/models/index.vue'),
         meta: { title: 'route.model.models', permission: 'model.models' },
       },
       {
         path: 'logical',
         name: 'ModelLogical',
-        component: () => import('@/views/common/placeholder.vue'),
+        component: () => import('@/views/model/logical/index.vue'),
         meta: { title: 'route.model.logical', permission: 'model.logical' },
+      },
+      {
+        path: 'logical/:logical_model_id',
+        name: 'ModelLogicalDetail',
+        component: () => import('@/views/model/logical/detail.vue'),
+        meta: { title: 'route.model.logicalDetail', permission: 'model.logical', hideInMenu: true },
       },
     ],
   },

@@ -80,6 +80,9 @@ export const publishTermsVersionApi = (
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
+// Login guidance reads the terms bound to the current session.
+export const getRequiredTermsApi = () => request.get<TermsStatus>('/terms/required')
+// In-app reading uses the globally current terms.
 export const getTermsStatusApi = () => request.get<TermsStatus>('/terms/current')
 export const acceptTermsApi = (payload: {
   terms_id: string

@@ -139,6 +139,7 @@
 </template>
 
 <script setup lang="ts">
+import { copyText } from '@/utils/clipboard'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
@@ -258,10 +259,9 @@ function closeSecret() {
   plaintext.value = ''
 }
 async function copySecret() {
-  try {
-    await navigator.clipboard.writeText(plaintext.value)
+  if (await copyText(plaintext.value)) {
     MessagePlugin.success(t('myKeys.copied'))
-  } catch {
+  } else {
     MessagePlugin.error(t('myKeys.copyFailed'))
   }
 }

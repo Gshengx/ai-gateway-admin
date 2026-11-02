@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { useUserStore } from './user'
-import { acceptTermsApi, getTermsStatusApi, type TermsStatus } from '@/api/modules/terms'
+import { acceptTermsApi, getRequiredTermsApi, type TermsStatus } from '@/api/modules/terms'
 import type { NotifiedError } from '@/api/request'
 
 export const useTermsStore = defineStore('terms', {
@@ -21,7 +21,7 @@ export const useTermsStore = defineStore('terms', {
     async loadStatus() {
       this.loaded = false
       this.status = null
-      this.status = await getTermsStatusApi()
+      this.status = await getRequiredTermsApi()
       this.loaded = true
       this.visible =
         this.requireConfirmation || (this.status.login_popup_enabled && !this.status.accepted)

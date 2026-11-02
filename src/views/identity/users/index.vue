@@ -354,6 +354,7 @@
 </template>
 
 <script setup lang="ts">
+import { copyText } from '@/utils/clipboard'
 import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -1254,10 +1255,9 @@ function onResetPassword(row: UserItem) {
 }
 
 async function copyPassword() {
-  try {
-    await navigator.clipboard.writeText(passwordDialog.password)
+  if (await copyText(passwordDialog.password)) {
     MessagePlugin.success(t('users.reset.copySuccess'))
-  } catch {
+  } else {
     MessagePlugin.warning(t('users.reset.copyFailed'))
   }
 }

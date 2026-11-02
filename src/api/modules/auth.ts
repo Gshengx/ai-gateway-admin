@@ -33,7 +33,9 @@ export interface PasswordRules {
 export interface AuthContext {
   session: SessionInfo
   password_rules: PasswordRules
+  // Login snapshot compatibility field; false for old sessions. Use session.gate for access.
   terms_confirmation_required: boolean
+  // Login snapshot compatibility field; empty for old sessions. Use session.gate for access.
   current_terms_id: string
   csrf_token: string
   csrf_header: string

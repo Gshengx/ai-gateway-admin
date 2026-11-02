@@ -1,6 +1,8 @@
 import request from '@/api/request'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 
+const DEFAULT_DISCOVERY_REASON = '由管理端发起供应商模型发现'
+
 export const publicConfigKeys = [
   'api_version',
   'client_id',
@@ -78,6 +80,7 @@ export interface ProviderPayload {
   security_level: SecurityLevel
   notes: string
   public_config: Partial<Record<PublicConfigKey, string>>
+  reason?: string
   secret_actions: Partial<
     Record<SecretKey, { operation: 'KEEP' | 'REPLACE' | 'CLEAR'; value?: string }>
   >
@@ -96,13 +99,36 @@ export function getProvidersApi(params: OffsetPageQuery & { search?: string }) {
   return request.get<OffsetPageResult<ProviderItem>>('/providers', { params })
 }
 export function getProviderApi(id: string) {
-  return request.get<ProviderItem>(`/providers/${encodeURIComponent(id)}`)
+  return request.get<ProviderItem>(`/providers/${encodeURIComponent(id)}`, { skipLocale: true })
 }
 export function createProviderApi(data: ProviderPayload) {
   return request.post<ProviderMutationResult>('/providers', data)
 }
 export function updateProviderApi(id: string, data: ProviderPayload) {
   return request.put<ProviderMutationResult>(`/providers/${encodeURIComponent(id)}`, data)
+}
+
+export function deleteProviderApi(id: string, reason: string) {
+  return request.delete<ProviderMutationResult>(`/providers/${encodeURIComponent(id)}`, {
+    data: { reason },
+  })
+}
+export interface ProviderModel {
+  id: string
+  model_id_at_provider: string
+  model_type: ProviderModelType
+  status: 'DRAFT' | 'TESTING' | 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED'
+  mounts: {
+    display_name: string
+    logical_name: string
+    logical_model_id: string
+    priority: number
+  }[]
+}
+export function getProviderModelsApi(provider_id: string, page: number, page_size: number) {
+  return request.get<OffsetPageResult<ProviderModel>>('/models', {
+    params: { provider_id, page, page_size },
+  })
 }
 
 export type ProviderModelType = 'LLM' | 'EMBEDDING' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'MULTIMODAL'
@@ -166,7 +192,7 @@ export interface ModelImportBatch {
 export function discoverProviderModelsApi(id: string, signal: AbortSignal) {
   return request.post<{ discovery_id: string; replayed: boolean }>(
     `/providers/${encodeURIComponent(id)}/models/discover`,
-    {},
+    { reason: DEFAULT_DISCOVERY_REASON },
     { signal },
   )
 }
@@ -174,6 +200,7 @@ export function getModelDiscoveryApi(id: string, signal: AbortSignal, timeout: n
   return request.get<ModelDiscovery>(`/model-discoveries/${encodeURIComponent(id)}`, {
     signal,
     timeout,
+    skipLocale: true,
   })
 }
 export function getModelDiscoveryItemsApi(id: string, page: number, signal: AbortSignal) {
@@ -197,5 +224,6 @@ export function getModelImportBatchApi(id: string, signal: AbortSignal, timeout:
   return request.get<ModelImportBatch>(`/model-admission-batches/${encodeURIComponent(id)}`, {
     signal,
     timeout,
+    skipLocale: true,
   })
 }

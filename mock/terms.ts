@@ -197,6 +197,14 @@ export default authMock([
     },
   },
   {
+    url: '/api/v1/terms/required',
+    method: 'get',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      return success(currentTerms(req))
+    },
+  },
+  {
     url: '/api/v1/terms/current',
     method: 'get',
     response: (req: MockRequest) => {

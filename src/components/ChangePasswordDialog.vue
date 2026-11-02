@@ -57,10 +57,12 @@ import { MessagePlugin, type FormRule, type FormInstanceFunctions } from 'tdesig
 import type { NotifiedError } from '@/api/request'
 import { changePasswordApi } from '@/api/modules/auth'
 import { useUserStore } from '@/stores/modules/user'
+import { useTermsStore } from '@/stores/modules/terms'
 
 const { t } = useI18n()
 const router = useRouter()
 const userStore = useUserStore()
+const termsStore = useTermsStore()
 const visible = computed(() => userStore.context.session?.gate === 'NEEDS_PASSWORD')
 watch(visible, () => {
   for (const field of fields) formData[field] = ''
@@ -71,6 +73,12 @@ async function continueAfterPassword() {
   if (session?.gate !== 'READY' || session.scope !== 'FULL') return
   const route = router.currentRoute.value
   if (route.path !== '/login') return
+  try {
+    await termsStore.loadStatus()
+    if (termsStore.visible) return
+  } catch {
+    // A failed optional prompt must not prevent login.
+  }
   const target = route.query.redirect
   await router.replace(
     typeof target === 'string' &&

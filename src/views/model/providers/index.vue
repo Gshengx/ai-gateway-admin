@@ -33,7 +33,7 @@
       <template #name="{ row }">
         <div class="provider-name">
           <t-avatar size="small">{{ badge(row.template_key) }}</t-avatar>
-          <t-link theme="primary">{{ row.name }}</t-link>
+          <t-link theme="primary" @click="openDetail(row.id)">{{ row.name }}</t-link>
         </div>
       </template>
       <template #template_key="{ row }">{{ templateName(row.template_key) }}</template>
@@ -48,17 +48,99 @@
             @click="modelProvider = row"
             >{{ t('providers.getModels') }}</t-link
           >
-          <t-link
-            v-permission.write="'model.providers'"
-            theme="primary"
-            :disabled="detailLoading"
-            @click="openEdit(row.id)"
-            >{{ t('providers.edit') }}</t-link
-          >
         </div>
       </template>
     </t-table>
   </section>
+  <t-drawer v-model:visible="detailVisible" :header="false" :footer="false" size="large">
+    <t-loading :loading="detailLoading" show-overlay>
+      <t-alert v-if="detailError" theme="error" :message="t('providers.detailError')" />
+      <template v-if="detail">
+        <div class="detail-header">
+          <div class="detail-title">
+            <strong>{{ detail.name }}</strong>
+            <t-tag>{{ t(`providers.security.${detail.security_level}`) }}</t-tag>
+          </div>
+          <div class="actions">
+            <t-button
+              v-permission.write="'model.providers'"
+              theme="default"
+              @click="modelProvider = detail"
+              >{{ t('providers.getModels') }}</t-button
+            >
+            <t-button
+              v-permission.write="'model.providers'"
+              theme="default"
+              @click="openEdit(detail.id)"
+              >{{ t('providers.edit') }}</t-button
+            >
+            <t-button
+              v-permission.write="'model.providers'"
+              theme="danger"
+              variant="outline"
+              @click="deleteVisible = true"
+              >{{ t('providers.delete') }}</t-button
+            >
+          </div>
+        </div>
+        <t-descriptions :column="1" bordered class="detail-section">
+          <t-descriptions-item :label="t('providers.template')">{{
+            templateName(detail.template_key)
+          }}</t-descriptions-item>
+          <t-descriptions-item :label="t('providers.api')">{{
+            detail.base_url
+          }}</t-descriptions-item>
+          <t-descriptions-item :label="t('providers.securityLevel')">{{
+            t(`providers.security.${detail.security_level}`)
+          }}</t-descriptions-item>
+          <t-descriptions-item :label="t('providers.notes')">{{
+            detail.notes || '—'
+          }}</t-descriptions-item>
+          <t-descriptions-item :label="t('providers.createdAt')">—</t-descriptions-item>
+          <t-descriptions-item :label="t('providers.auth')">{{
+            detail.configured_secret_fields.length
+              ? detail.configured_secret_fields.join(', ') + ' — ' + t('providers.secretConfigured')
+              : '—'
+          }}</t-descriptions-item>
+        </t-descriptions>
+        <div class="detail-section">
+          <h3>{{ t('providers.relatedModels', { n: modelPagination.total }) }}</h3>
+          <t-table
+            row-key="id"
+            :data="models"
+            :columns="modelColumns"
+            :loading="modelsLoading"
+            :pagination="modelPagination"
+            :disable-data-page="true"
+            @page-change="changeModelPage"
+          >
+            <template #mounts="{ row }">{{
+              row.mounts
+                .map(
+                  (mount: ProviderModel['mounts'][number]) =>
+                    mount.display_name || mount.logical_name,
+                )
+                .join(', ') || '—'
+            }}</template>
+            <template #status="{ row }">{{
+              t(`providers.modelStatus.${row.mounts.length ? row.status : 'UNMOUNTED'}`)
+            }}</template>
+          </t-table>
+        </div>
+      </template>
+    </t-loading>
+  </t-drawer>
+  <t-dialog
+    v-model:visible="deleteVisible"
+    :header="t('providers.deleteTitle')"
+    :confirm-btn="{ content: t('providers.delete'), theme: 'danger', loading: deleting }"
+    :cancel-btn="{ content: t('common.cancel'), disabled: deleting }"
+    :close-on-overlay-click="false"
+    @confirm="deleteProvider"
+  >
+    <p>{{ t('providers.deleteConfirm', { name: detail?.name }) }}</p>
+    <t-input v-model="deleteReason" :placeholder="t('providers.reasonRequired')" :maxlength="512" />
+  </t-dialog>
   <GetModelsDialog
     v-if="modelProvider"
     :provider="modelProvider"
@@ -125,6 +207,7 @@
           v-if="supportedField(field)"
           v-model="form.values[field.key]"
           :type="field.value_type === 'SECRET' ? 'password' : 'text'"
+          :disabled="!!editing && field.value_type === 'SECRET'"
           autocomplete="off"
           :maxlength="field.max_length"
           :placeholder="fieldPlaceholder(field)"
@@ -133,6 +216,9 @@
       </t-form-item>
       <t-form-item name="security_level" :label="t('providers.securityLevel')">
         <t-select v-model="form.security_level" :options="securityOptions" />
+      </t-form-item>
+      <t-form-item v-if="editing" name="reason" :label="t('providers.reason')">
+        <t-input v-model="form.reason" :maxlength="512" />
       </t-form-item>
       <t-form-item name="notes" :label="t('providers.notes')">
         <t-textarea
@@ -161,6 +247,8 @@ import FilterBar from '@/components/FilterBar.vue'
 import GetModelsDialog from './GetModelsDialog.vue'
 import {
   createProviderApi,
+  deleteProviderApi,
+  getProviderModelsApi,
   getProviderApi,
   getProvidersApi,
   getProviderTemplatesApi,
@@ -168,6 +256,7 @@ import {
   publicConfigKeys,
   secretKeys,
   type ProviderItem,
+  type ProviderModel,
   type ProviderPayload,
   type ProviderTemplate,
   type PublicConfigKey,
@@ -177,6 +266,87 @@ import {
 } from '@/api/modules/providers'
 
 const { t, locale } = useI18n()
+const detailVisible = ref(false)
+const detail = ref<ProviderItem | null>(null)
+const detailError = ref(false)
+const models = ref<ProviderModel[]>([])
+const modelsLoading = ref(false)
+const deleteVisible = ref(false)
+const deleteReason = ref('')
+const deleting = ref(false)
+const modelPagination = reactive<PaginationProps>({ current: 1, pageSize: 20, total: 0 })
+const modelColumns = computed<PrimaryTableCol<ProviderModel>[]>(() => [
+  { colKey: 'model_id_at_provider', title: t('providers.providerModelId') },
+  { colKey: 'mounts', title: t('providers.logicalModel') },
+  { colKey: 'model_type', title: t('providerModels.type') },
+  { colKey: 'status', title: t('providerModels.status') },
+])
+let detailRequest = 0
+let modelRequest = 0
+async function openDetail(id: string) {
+  const requestId = ++detailRequest
+  detailVisible.value = true
+  detail.value = null
+  detailError.value = false
+  detailLoading.value = true
+  ++modelRequest
+  models.value = []
+  modelPagination.current = 1
+  modelPagination.total = 0
+  try {
+    const result = await getProviderApi(id)
+    if (requestId !== detailRequest) return
+    detail.value = result
+    void fetchModels(id)
+  } catch {
+    if (requestId === detailRequest) detailError.value = true
+  } finally {
+    if (requestId === detailRequest) detailLoading.value = false
+  }
+}
+async function fetchModels(id: string) {
+  const requestId = ++modelRequest
+  modelsLoading.value = true
+  try {
+    const result = await getProviderModelsApi(
+      id,
+      modelPagination.current ?? 1,
+      modelPagination.pageSize ?? 20,
+    )
+    if (requestId !== modelRequest) return
+    models.value = result.items
+    modelPagination.total = result.total
+  } catch {
+    if (requestId === modelRequest) models.value = []
+  } finally {
+    if (requestId === modelRequest) modelsLoading.value = false
+  }
+}
+function changeModelPage(info: PageInfo) {
+  modelPagination.current = info.pageSize !== modelPagination.pageSize ? 1 : info.current
+  modelPagination.pageSize = info.pageSize
+  if (detail.value) void fetchModels(detail.value.id)
+}
+async function deleteProvider() {
+  if (!detail.value || deleting.value) return
+  if (!deleteReason.value.trim()) {
+    MessagePlugin.warning(t('providers.reasonRequired'))
+    return
+  }
+  deleting.value = true
+  try {
+    await deleteProviderApi(detail.value.id, deleteReason.value.trim())
+    MessagePlugin.success(t('providers.deleted'))
+    deleteVisible.value = false
+    detailVisible.value = false
+    deleteReason.value = ''
+    await fetchList()
+  } catch {
+    /* Errors are handled by the request interceptor. */
+  } finally {
+    deleting.value = false
+  }
+}
 const modelProvider = ref<ProviderItem | null>(null)
 const search = ref('')
 const items = ref<ProviderItem[]>([])
@@ -193,6 +363,7 @@ const form = reactive({
   base_url: '',
   security_level: 'INTERNET' as SecurityLevel,
   notes: '',
+  reason: '',
   values: {} as Record<string, string>,
 })
 const pagination = reactive<PaginationProps>({
@@ -259,6 +430,7 @@ const rules = computed<FormRules>(() => {
     template_key: required(t('providers.template')),
     base_url: required(t('providers.baseUrl')),
     security_level: required(t('providers.securityLevel')),
+    ...(editing.value ? { reason: required(t('providers.reason')) } : {}),
   }
   for (const field of selectedTemplate.value?.fields ?? []) {
     if (!supportedField(field)) continue
@@ -344,6 +516,7 @@ async function openEdit(id: string) {
       base_url: detail.base_url,
       security_level: detail.security_level,
       notes: detail.notes,
+      reason: '',
       values: {},
     })
     for (const field of selectedTemplate.value?.fields ?? []) {
@@ -370,12 +543,15 @@ async function submit() {
   if (saving.value || !selectedTemplate.value || !selectedCombination.value) return
   if ((await formRef.value?.validate()) !== true) return
   const publicConfig: ProviderPayload['public_config'] = { ...(editing.value?.public_config ?? {}) }
-  const secretActions: ProviderPayload['secret_actions'] = {}
+  const secretActions: ProviderPayload['secret_actions'] = editing.value
+    ? Object.fromEntries(secretKeys.map((key) => [key, { operation: 'KEEP' }]))
+    : {}
   for (const field of selectedTemplate.value.fields) {
     if (!supportedField(field)) continue
     const value = form.values[field.key] ?? ''
     if (field.value_type === 'STRING') publicConfig[field.key as PublicConfigKey] = value
-    else if (value) secretActions[field.key as SecretKey] = { operation: 'REPLACE', value }
+    else if (value && !editing.value)
+      secretActions[field.key as SecretKey] = { operation: 'REPLACE', value }
     else if (editing.value) secretActions[field.key as SecretKey] = { operation: 'KEEP' }
   }
   // 白名单过滤：模板字段或详情中的额外键均不得进入请求。
@@ -383,8 +559,8 @@ async function submit() {
     template_key: form.template_key,
     name: form.name.trim(),
     base_url: form.base_url.trim(),
-    auth_mode: selectedCombination.value.auth_mode,
-    endpoint_profile: selectedCombination.value.endpoint_profile,
+    auth_mode: editing.value?.auth_mode ?? selectedCombination.value.auth_mode,
+    endpoint_profile: editing.value?.endpoint_profile ?? selectedCombination.value.endpoint_profile,
     security_level: form.security_level,
     notes: form.notes,
     public_config: Object.fromEntries(
@@ -393,6 +569,7 @@ async function submit() {
       ),
     ),
     secret_actions: secretActions,
+    ...(editing.value ? { reason: form.reason.trim() } : {}),
   }
   saving.value = true
   try {
@@ -421,6 +598,22 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.detail-header,
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--td-comp-margin-s);
+}
+.detail-header {
+  justify-content: space-between;
+}
+.detail-section {
+  margin-top: var(--td-comp-margin-l);
+}
+.detail-section h3 {
+  margin: 0 0 var(--td-comp-margin-l);
+}
+
 .model-list-panel {
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
   background: var(--td-bg-color-container);
@@ -460,9 +653,6 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-:deep(.t-table__pagination) {
-  margin-top: var(--td-comp-margin-l);
 }
 .provider-form :deep(.t-form__item) {
   margin-bottom: var(--td-comp-margin-m);

@@ -11,7 +11,6 @@
       </div>
 
       <t-form
-        ref="formRef"
         :data="formData"
         :rules="formRules"
         label-width="0"
@@ -66,7 +65,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { MessagePlugin, type FormInstanceFunctions, type FormRule } from 'tdesign-vue-next'
+import { MessagePlugin, type FormRule } from 'tdesign-vue-next'
 
 import LocaleSelect from '@/components/LocaleSelect.vue'
 import { useTermsStore } from '@/stores/modules/terms'
@@ -105,7 +104,7 @@ watch(
       completeLogin()
   },
 )
-const formRef = ref<FormInstanceFunctions>()
+
 const loading = ref(false)
 const formData = reactive({
   username: '',
@@ -152,7 +151,6 @@ async function onSubmit(ctx: { validateResult: boolean | Record<string, unknown>
     const err = error as Error & { notified?: boolean }
     if (!err.notified) MessagePlugin.warning(t('authErrors.fallback'))
   } finally {
-    formData.password = ''
     loading.value = false
   }
 }
