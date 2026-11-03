@@ -708,6 +708,8 @@ export default {
     updateSuccess: 'User updated successfully',
     enableSuccess: 'Selected users have been enabled',
     disableSuccess: 'Selected users have been disabled',
+    enableSingleSuccess: 'User enabled',
+    disableSingleSuccess: 'User disabled',
     resetSuccess: 'Password reset successfully',
     partialFailed: 'Completed with {n} failure(s)',
     departments: {

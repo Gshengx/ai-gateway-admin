@@ -173,7 +173,7 @@
             :loading="loading"
             :selected-row-keys="selectedKeys"
             :pagination="pagination"
-            :scroll="{ x: 1408 }"
+            :scroll="{ x: 1458 }"
             hover
             @select-change="onSelectChange"
             @page-change="onPageChange"
@@ -207,7 +207,7 @@
               </span>
             </template>
             <template #status="{ row }">
-              <span class="status-cell">
+              <span class="status-cell" :class="`status-cell--${row.status}`">
                 <span class="status-dot" :class="`status-dot--${row.status}`"></span>
                 {{ row.status === 'ACTIVE' ? t('users.statusEnabled') : t('users.statusDisabled') }}
               </span>
@@ -234,6 +234,14 @@
                   @click="onResetPassword(row)"
                 >
                   {{ t('users.resetPassword') }}
+                </t-link>
+                <t-link
+                  v-permission.write="'identity.users'"
+                  theme="primary"
+                  hover="color"
+                  @click="onToggleStatus(row)"
+                >
+                  {{ row.status === 'ACTIVE' ? t('users.disable') : t('users.enable') }}
                 </t-link>
               </t-space>
             </template>
@@ -383,6 +391,8 @@ import {
   createDepartmentApi,
   createUserApi,
   deleteDepartmentApi,
+  disableUserApi,
+  enableUserApi,
   getDepartmentDeletePreviewApi,
   getDepartmentListApi,
   getRoleOptionsApi,
@@ -676,7 +686,7 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
   { colKey: 'role', title: t('users.columns.role'), width: 120 },
   { colKey: 'status', title: t('users.columns.status'), width: 100 },
   { colKey: 'last_login_at', title: t('users.columns.lastLogin'), width: 170 },
-  { colKey: 'action', title: t('users.columns.action'), width: 140, fixed: 'right' },
+  { colKey: 'action', title: t('users.columns.action'), width: 190, fixed: 'right' },
 ])
 
 /**
@@ -1182,6 +1192,27 @@ function onBatchStatus(status: UserStatus) {
   })
 }
 
+/** 单用户启用 / 禁用 */
+function onToggleStatus(row: UserItem) {
+  const enabling = row.status === 'DISABLED'
+  openConfirmDialog({
+    title: enabling ? t('users.confirm.enableTitle') : t('users.confirm.disableTitle'),
+    content: enabling
+      ? t('users.confirm.enableSingle', { name: row.display_name })
+      : t('users.confirm.disableSingle', { name: row.display_name }),
+    action: async () => {
+      if (enabling) {
+        await enableUserApi(row.id)
+        MessagePlugin.success(t('users.enableSingleSuccess'))
+      } else {
+        await disableUserApi(row.id)
+        MessagePlugin.success(t('users.disableSingleSuccess'))
+      }
+      await fetchUsers()
+    },
+  })
+}
+
 function onBatchDelete() {
   const ids = [...selectedKeys.value]
   if (!ids.length) return
@@ -1406,6 +1437,14 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.status-cell--ACTIVE {
+  color: var(--td-success-color);
+}
+
+.status-cell--DISABLED {
+  color: var(--td-text-color-placeholder);
 }
 
 .status-dot {

@@ -685,6 +685,8 @@ export default {
     updateSuccess: '用户更新成功',
     enableSuccess: '已启用所选用户',
     disableSuccess: '已禁用所选用户',
+    enableSingleSuccess: '用户已启用',
+    disableSingleSuccess: '用户已禁用',
     resetSuccess: '密码已重置',
     partialFailed: '操作完成，{n} 项失败',
     departments: {
