@@ -1,22 +1,31 @@
 ﻿<template>
   <section class="panel">
-    <div class="toolbar">
-      <div class="actions">
-        <t-button @click="openCreate">{{ t('logicalModels.create') }}</t-button>
-        <t-button theme="default" :disabled="!selected.length" @click="openGrant">
-          {{ t('logicalModels.batchGrant') }}（{{ selected.length }}）
-        </t-button>
-      </div>
-      <div class="actions">
-        <t-input
-          v-model="search"
-          :placeholder="t('logicalModels.searchPlaceholder')"
-          clearable
-          @enter="query"
-        />
-        <t-button theme="default" @click="query">{{ t('logicalModels.search') }}</t-button>
-      </div>
-    </div>
+    <FilterBar>
+      <template #content>
+        <div class="toolbar">
+          <t-space>
+            <t-button v-permission.write="'model.logical'" @click="openCreate">{{
+              t('logicalModels.create')
+            }}</t-button>
+            <t-button
+              v-permission.write="'model.permissions'"
+              theme="default"
+              :disabled="!selected.length"
+              @click="openGrant"
+              >{{ t('logicalModels.batchGrant') }}（{{ selected.length }}）</t-button
+            >
+          </t-space>
+          <t-input
+            v-model="search"
+            :placeholder="t('logicalModels.searchPlaceholder')"
+            clearable
+            @enter="query"
+            @clear="query"
+            @change="queueSearch"
+          />
+        </div>
+      </template>
+    </FilterBar>
     <t-table
       v-model:selected-row-keys="selected"
       row-key="id"
@@ -27,343 +36,263 @@
       :disable-data-page="true"
       @page-change="changePage"
     >
-      <template #name="{ row }">{{ row.display_name || row.localized_name }}</template>
-      <template #grants>
-        <t-space size="8px"
-          ><t-tag>{{ t('logicalModels.department') }} 1</t-tag
-          ><t-tag>{{ t('logicalModels.group') }} 1</t-tag
-          ><t-tag>{{ t('logicalModels.user') }} 0</t-tag></t-space
-        >
-      </template>
+      <template #name="{ row }"
+        ><t-link theme="primary" @click="router.push(`/model/logical/${row.id}`)">{{
+          row.logical_name
+        }}</t-link></template
+      >
+      <template #grants="{ row }"
+        ><t-space
+          ><t-tag v-for="type in types" :key="type"
+            >{{ t(`logicalModels.${type.toLowerCase()}`) }}
+            {{ grantCounts[row.id]?.[type] ?? '—' }}</t-tag
+          ></t-space
+        ></template
+      >
       <template #mounts="{ row }"
-        >{{ row.ready ? row.mounts.length : 0 }} / {{ row.mounts.length }}
+        >{{ activeCounts[row.id] ?? '—' }} / {{ row.mounts.length }}
         {{ t('logicalModels.available') }}</template
       >
-      <template #status="{ row }">{{
-        t(row.status === 'ACTIVE' ? 'logicalModels.statusActive' : 'logicalModels.statusDisabled')
+      <template #status="{ row }"
+        ><t-tag :theme="activeCounts[row.id] ? 'success' : 'default'">{{
+          t(activeCounts[row.id] ? 'logicalModels.statusActive' : 'logicalModels.unavailable')
+        }}</t-tag></template
+      >
+      <template #created="{ row }">{{
+        row.created_at ? formatDateTime(row.created_at) : '—'
       }}</template>
-      <template #created>—</template>
-      <template #action="{ row }">
-        <t-space
-          ><t-link theme="primary" @click="router.push(`/model/logical/${row.id}`)">{{
+      <template #action="{ row }"
+        ><t-space>
+          <t-link theme="primary" @click="router.push(`/model/logical/${row.id}`)">{{
             t('logicalModels.detail')
           }}</t-link>
-          <t-link theme="primary" @click="openEdit(row)">{{ t('logicalModels.edit') }}</t-link>
-          <t-link theme="danger" @click="openDelete(row)">{{
+          <t-link v-permission.write="'model.logical'" theme="primary" @click="openEdit(row)">{{
+            t('logicalModels.edit')
+          }}</t-link>
+          <t-link v-permission.write="'model.logical'" theme="danger" @click="openDelete(row)">{{
             t('logicalModels.delete')
-          }}</t-link></t-space
-        >
-      </template>
+          }}</t-link>
+        </t-space></template
+      >
     </t-table>
-    <t-dialog
-      v-model:visible="formVisible"
-      :header="t(editing ? 'logicalModels.edit' : 'logicalModels.create')"
-      :confirm-btn="t('logicalModels.save')"
-      :cancel-btn="t('logicalModels.cancel')"
-      :confirm-loading="saving"
-      @confirm="save"
-    >
-      <t-form label-align="top">
-        <t-form-item :label="t('logicalModels.name')" required>
-          <t-input
-            v-model="name"
-            :maxlength="128"
-            :placeholder="t('logicalModels.namePlaceholder')"
-          />
-        </t-form-item>
-        <p>{{ t('logicalModels.nameHint') }}</p>
-        <t-form-item :label="t('logicalModels.description')">
-          <t-textarea
-            v-model="description"
-            :maxlength="240"
-            :placeholder="t('logicalModels.descriptionPlaceholder')"
-            indicator
-          />
-        </t-form-item>
-        <template v-if="!editing">
-          <t-form-item :label="t('logicalModels.initialMounts')">
-            <t-checkbox-group v-model="mountIds" class="mount-list">
-              <t-checkbox v-for="model in physicalModels" :key="model.id" :value="model.id">
-                {{
-                  [model.model_id_at_provider, model.status, model.provider_id]
-                    .filter(Boolean)
-                    .join(' · ')
-                }}
-              </t-checkbox>
-            </t-checkbox-group>
-          </t-form-item>
-          <p>
-            {{ t('logicalModels.initialMountsHint') }}
-          </p>
-        </template>
-      </t-form>
-    </t-dialog>
+    <LogicalModelForm v-model:visible="formVisible" :model="editing" @saved="load" />
     <t-dialog
       v-model:visible="deleteVisible"
-      :header="t('logicalModels.delete')"
-      :confirm-btn="{ content: t('logicalModels.delete'), theme: 'danger' }"
+      :header="t('logicalModels.deleteTitle')"
+      :confirm-btn="{
+        content: t('logicalModels.delete'),
+        theme: 'danger',
+        loading: saving,
+        disabled: !reason.trim(),
+      }"
       :cancel-btn="t('logicalModels.cancel')"
-      :confirm-loading="saving"
       @confirm="remove"
     >
-      {{
-        t('logicalModels.deleteConfirm', {
-          name: current?.display_name || current?.localized_name || '',
-        })
-      }}
+      <p>{{ t('logicalModels.deleteConfirm', { name: current?.logical_name }) }}</p>
+      <t-textarea
+        v-model="reason"
+        :maxlength="512"
+        :placeholder="t('logicalModels.reasonPlaceholder')"
+      />
     </t-dialog>
     <t-dialog
       v-model:visible="grantVisible"
       :header="t('logicalModels.grantTitle')"
-      :confirm-btn="t('logicalModels.confirmGrant')"
+      :confirm-btn="{
+        content: t('logicalModels.confirmGrant'),
+        loading: saving,
+        disabled: !subjectIds.length,
+      }"
       :cancel-btn="t('logicalModels.cancel')"
-      :confirm-loading="saving"
       @confirm="grant"
     >
-      <p>
-        {{ t('logicalModels.grantHint', { n: selected.length }) }}
-      </p>
-      <t-form label-align="top">
-        <t-form-item :label="t('logicalModels.subjectType')" required>
-          <t-select v-model="subjectType" :options="subjectTypes" @change="loadSubjects" />
-        </t-form-item>
-        <t-form-item :label="t('logicalModels.subject')" required>
-          <t-select v-model="subjectId" :options="subjects" filterable />
-        </t-form-item>
-      </t-form>
+      <div class="grant-form">
+        <p>{{ t('logicalModels.grantHint', { n: selected.length }) }}</p>
+        <t-select v-model="subjectType" :options="subjectTypes" @change="subjectIds = []" />
+        <SubjectPicker v-if="grantVisible" v-model="subjectIds" :type="subjectType" />
+      </div>
     </t-dialog>
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import type { PageInfo, PrimaryTableCol } from 'tdesign-vue-next'
 import {
-  MessagePlugin,
-  type PageInfo,
-  type PaginationProps,
-  type PrimaryTableCol,
-} from 'tdesign-vue-next'
-import {
-  getLogicalModelsApi as getLogicalListApi,
-  createLogicalModelApi,
-  updateLogicalModelApi,
+  getLogicalModelsApi,
   deleteLogicalModelApi,
-  mountLogicalModelApi,
-  addLogicalModelPermissionsApi,
+  getLogicalModelPermissionsApi,
+  batchGrantLogicalModelsApi,
   type LogicalModel,
   type SubjectType,
 } from '@/api/modules/logicalModels'
-import { getModelsApi, type PhysicalModelItem } from '@/api/modules/models'
-import { getDepartmentListApi, getUserGroupListApi, getUserListApi } from '@/api/modules/identity'
-
+import { getModelsApi } from '@/api/modules/models'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
+import { formatDateTime } from '@/utils/datetime'
+import FilterBar from '@/components/FilterBar.vue'
+import LogicalModelForm from './LogicalModelForm.vue'
+import SubjectPicker from './SubjectPicker.vue'
+import '@/styles/logical-models.css'
 const { t } = useI18n()
 const router = useRouter()
+const user = useUserStore()
 const items = ref<LogicalModel[]>([])
 const selected = ref<(string | number)[]>([])
 const search = ref('')
 const loading = ref(false)
 const saving = ref(false)
-const pagination = reactive<PaginationProps>({
+const formVisible = ref(false)
+const editing = ref<LogicalModel | null>(null)
+const current = ref<LogicalModel | null>(null)
+const deleteVisible = ref(false)
+const reason = ref('')
+const grantVisible = ref(false)
+const types: SubjectType[] = ['DEPARTMENT', 'GROUP', 'USER']
+const subjectType = ref<SubjectType>('DEPARTMENT')
+const subjectIds = ref<string[]>([])
+const subjectTypes = computed(() =>
+  types.map((value) => ({ value, label: t(`logicalModels.${value.toLowerCase()}`) })),
+)
+const pagination = reactive({
   current: 1,
   pageSize: 20,
   total: 0,
   showJumper: true,
   pageSizeOptions: [20, 50, 100],
 })
-// TODO: replace placeholder counts when model authorization counts are available.
+const grantCounts = ref<Record<string, Record<SubjectType, number>>>({})
+const activeCounts = ref<Record<string, number>>({})
 const columns = computed<PrimaryTableCol<LogicalModel>[]>(() => [
   { colKey: 'row-select', type: 'multiple', width: 48 },
   { colKey: 'name', title: t('logicalModels.colName'), minWidth: 160 },
-  { colKey: 'description', title: t('logicalModels.colDescription'), minWidth: 200 },
-  { colKey: 'grants', title: t('logicalModels.colGrants'), width: 220 },
+  { colKey: 'description', title: t('logicalModels.colDescription'), minWidth: 180 },
+  { colKey: 'grants', title: t('logicalModels.colGrants'), minWidth: 220 },
   { colKey: 'mounts', title: t('logicalModels.colMounts'), width: 140 },
   { colKey: 'status', title: t('logicalModels.colStatus'), width: 110 },
-  { colKey: 'created', title: t('logicalModels.colCreated'), width: 140 },
+  { colKey: 'created', title: t('logicalModels.colCreated'), minWidth: 180 },
   { colKey: 'action', title: t('logicalModels.colAction'), width: 160 },
 ])
+let version = 0
 async function load() {
+  const currentVersion = ++version
   loading.value = true
   try {
-    const result = await getLogicalListApi({
-      page: pagination.current || 1,
-      page_size: pagination.pageSize || 20,
+    const result = await getLogicalModelsApi({
+      page: pagination.current,
+      page_size: pagination.pageSize,
       search: search.value || undefined,
     })
+    if (currentVersion !== version) return
+    if (!result.items.length && pagination.current > 1) {
+      pagination.current--
+      return void load()
+    }
     items.value = result.items
     pagination.total = result.total
+    selected.value = selected.value.filter((id) => items.value.some((x) => x.id === id))
+    grantCounts.value = {}
+    activeCounts.value = {}
+    await Promise.all(
+      result.items.map(async (row) => {
+        const physical = await getModelsApi({
+          page: 1,
+          page_size: 100,
+          logical_model_id: row.id,
+          status: 'ACTIVE',
+        })
+        if (currentVersion === version) activeCounts.value[row.id] = physical.total
+        if (!canReadResource(user.permissions, 'model.permissions')) return
+        const counts: Record<SubjectType, number> = { DEPARTMENT: 0, GROUP: 0, USER: 0 }
+        let page = 1,
+          total = 1
+        while (page <= total) {
+          const grants = await getLogicalModelPermissionsApi(row.id, { page, page_size: 100 })
+          grants.items.forEach((g) => counts[g.subject_type]++)
+          total = grants.total_pages
+          page++
+        }
+        if (currentVersion === version) grantCounts.value[row.id] = counts
+      }),
+    )
+  } catch {
+    /* 拦截器统一提示。 */
   } finally {
-    loading.value = false
+    if (currentVersion === version) loading.value = false
   }
 }
 function query() {
+  clearTimeout(timer)
   pagination.current = 1
   void load()
+}
+let timer: ReturnType<typeof setTimeout> | undefined
+function queueSearch() {
+  clearTimeout(timer)
+  timer = setTimeout(query, 300)
 }
 function changePage(page: PageInfo) {
   pagination.current = page.current
   pagination.pageSize = page.pageSize
   void load()
 }
-const formVisible = ref(false)
-const deleteVisible = ref(false)
-const grantVisible = ref(false)
-const editing = ref(false)
-const current = ref<LogicalModel | null>(null)
-const name = ref('')
-const description = ref('')
-const mountIds = ref<string[]>([])
-const physicalModels = ref<PhysicalModelItem[]>([])
-async function openCreate() {
-  editing.value = false
-  current.value = null
-  name.value = ''
-  description.value = ''
-  mountIds.value = []
+function openCreate() {
+  editing.value = null
   formVisible.value = true
-  physicalModels.value = []
-  let page = 1
-  let totalPages = 1
-  while (page <= totalPages) {
-    const result = await getModelsApi({ page, page_size: 100 })
-    physicalModels.value.push(...result.items)
-    totalPages = result.total_pages
-    page++
-  }
 }
 function openEdit(row: LogicalModel) {
-  current.value = row
-  editing.value = true
-  name.value = row.display_name || row.localized_name
-  description.value = row.description
+  editing.value = row
   formVisible.value = true
 }
 function openDelete(row: LogicalModel) {
   current.value = row
+  reason.value = ''
   deleteVisible.value = true
 }
-async function save() {
-  if (!name.value.trim() || saving.value) return
-  saving.value = true
-  try {
-    if (editing.value && current.value) {
-      const changed = name.value !== (current.value.display_name || current.value.localized_name)
-      await updateLogicalModelApi(current.value.id, {
-        display_name: name.value,
-        description: description.value,
-        reason: 'ui-confirm',
-      })
-      // TODO: support changing the API model name when the backend supports it.
-      if (changed) MessagePlugin.warning(t('logicalModels.notSupported'))
-    } else {
-      const result = await createLogicalModelApi({
-        logical_name: name.value,
-        display_name: name.value,
-        description: description.value,
-        reason: 'ui-confirm',
-        translations: [],
-      })
-      let failures = 0
-      for (const [index, id] of mountIds.value.entries()) {
-        try {
-          await mountLogicalModelApi(result.resource_id, {
-            physical_model_id: id,
-            confirm_existing_grant_impact: false,
-            reason: 'ui-confirm',
-            priority: index + 1,
-          })
-        } catch {
-          failures++
-        }
-      }
-      if (failures)
-        MessagePlugin.warning(
-          `${t('logicalModels.createdToast')}，${t('logicalModels.mountFailedToast', { n: failures })}`,
-        )
-    }
-    formVisible.value = false
-    await load()
-  } finally {
-    saving.value = false
-  }
-}
 async function remove() {
-  if (!current.value || saving.value) return
+  if (!current.value || !reason.value.trim() || saving.value) return
   saving.value = true
   try {
-    await deleteLogicalModelApi(current.value.id, { reason: 'ui-confirm' })
+    await deleteLogicalModelApi(current.value.id, { reason: reason.value.trim() })
     deleteVisible.value = false
     await load()
+  } catch {
+    /* 已提示 */
   } finally {
     saving.value = false
-  }
-}
-const subjectType = ref<SubjectType>('DEPARTMENT')
-const subjectId = ref('')
-const subjects = ref<{ label: string; value: string }[]>([])
-const subjectTypes = computed(() => [
-  { label: t('logicalModels.department'), value: 'DEPARTMENT' },
-  { label: t('logicalModels.group'), value: 'GROUP' },
-  { label: t('logicalModels.user'), value: 'USER' },
-])
-async function loadSubjects() {
-  subjectId.value = ''
-  subjects.value = []
-  if (subjectType.value === 'DEPARTMENT') {
-    const result = await getDepartmentListApi({})
-    subjects.value = result.items.map((item) => ({
-      label: item.display_name || item.name,
-      value: item.id,
-    }))
-  } else {
-    let page = 1
-    let totalPages = 1
-    while (page <= totalPages) {
-      if (subjectType.value === 'GROUP') {
-        const result = await getUserGroupListApi({ page, page_size: 100 })
-        subjects.value.push(
-          ...result.items.map((item) => ({
-            label: item.display_name || item.name,
-            value: item.id,
-          })),
-        )
-        totalPages = result.total_pages
-      } else {
-        const result = await getUserListApi({ page, page_size: 100 })
-        subjects.value.push(
-          ...result.items.map((item) => ({
-            label: item.display_name || item.username,
-            value: item.id,
-          })),
-        )
-        totalPages = result.total_pages
-      }
-      page++
-    }
   }
 }
 function openGrant() {
-  grantVisible.value = true
   subjectType.value = 'DEPARTMENT'
-  void loadSubjects()
+  subjectIds.value = []
+  grantVisible.value = true
 }
 async function grant() {
-  if (!subjectId.value || saving.value) return
+  if (!subjectIds.value.length || saving.value) return
   saving.value = true
   try {
-    for (const id of selected.value)
-      await addLogicalModelPermissionsApi(String(id), {
-        reason: 'ui-confirm',
-        relations: [{ subject_id: subjectId.value, subject_type: subjectType.value }],
-      })
-    selected.value = []
+    await batchGrantLogicalModelsApi({
+      logical_model_ids: selected.value.map(String),
+      subjects: subjectIds.value.map((subject_id) => ({
+        subject_id,
+        subject_type: subjectType.value,
+      })),
+      reason: 'admin-console',
+    })
     grantVisible.value = false
+    selected.value = []
     await load()
+  } catch {
+    /* 已提示 */
   } finally {
     saving.value = false
   }
 }
 onMounted(load)
+onBeforeUnmount(() => {
+  clearTimeout(timer)
+  version++
+})
 </script>
 <style scoped>
 .panel {
@@ -373,20 +302,22 @@ onMounted(load)
 .toolbar {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: var(--td-comp-margin-l);
-  margin-bottom: var(--td-comp-margin-l);
 }
-.actions {
-  display: flex;
-  gap: var(--td-comp-margin-s);
+.toolbar :deep(.t-input__wrap) {
+  max-width: var(--logical-search-width);
 }
-.mount-list {
+.grant-form {
   display: flex;
   flex-direction: column;
-  gap: var(--td-comp-margin-s);
+  gap: var(--td-comp-margin-l);
+}
+.panel :deep(.filter-bar) {
+  margin-bottom: var(--td-comp-margin-l);
 }
 p {
-  margin: var(--td-comp-margin-s) 0 var(--td-comp-margin-l);
+  margin: 0 0 var(--td-comp-margin-l);
   color: var(--td-text-color-secondary);
 }
 </style>

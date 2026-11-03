@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto'
+import { logicalState } from './_logical'
+import type { LogicalModel } from '../src/api/modules/logicalModels'
 import {
   checkToken,
+  checkCsrf,
+  mockId,
   fail,
   pathId,
   success,
@@ -1090,7 +1094,129 @@ function batchDeleteDigest(
     .digest('hex')
 }
 
+function logicalGrantModel(model: LogicalModel, locale: string) {
+  return {
+    id: model.id,
+    display_name: model.logical_name,
+    localized_name: model.logical_name,
+    logical_name: model.logical_name,
+    description: model.description,
+    localized_description: model.description,
+    requested_locale: locale,
+    resolved_locale: null,
+    selectable: true,
+    status: model.status,
+  }
+}
+function logicalSources(user: MockUser, locale: string) {
+  return logicalState.grants
+    .filter(
+      (g) =>
+        (g.subject_type === 'USER' && g.subject_id === user.id) ||
+        (g.subject_type === 'GROUP' &&
+          GROUPS.some(
+            (group) => group.id === g.subject_id && group.member_ids.includes(user.id),
+          )) ||
+        (g.subject_type === 'DEPARTMENT' &&
+          !!user.department_id &&
+          descendantDepartmentIds(g.subject_id).includes(user.department_id)),
+    )
+    .flatMap((g) => {
+      const model = logicalState.logical.find((m) => m.id === g.logical_model_id)
+      if (!model) return []
+      const source =
+        g.subject_type === 'DEPARTMENT'
+          ? DEPARTMENTS.find((d) => d.id === g.subject_id)?.name
+          : g.subject_type === 'GROUP'
+            ? GROUPS.find((group) => group.id === g.subject_id)?.name
+            : user.display_name
+      return [
+        {
+          model: logicalGrantModel(model, locale),
+          source_type: g.subject_type,
+          source_id: g.subject_id,
+          source_display_name: source || null,
+          source_in_scope: true,
+          scope_mode: g.subject_type === 'DEPARTMENT' ? 'SUBTREE' : 'SELF',
+        },
+      ]
+    })
+}
 export default [
+  {
+    url: '/api/v1/logical-models/options',
+    method: 'get',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      return success(
+        groupOffsetPage(
+          logicalState.logical.map((l) => ({
+            id: l.id,
+            logical_name: l.logical_name,
+            display_name: l.logical_name,
+            localized_name: l.logical_name,
+            status: l.status,
+            workload_kind: l.workload_kind,
+          })),
+          req,
+        ),
+      )
+    },
+  },
+  {
+    url: '/api/v1/users/:user_id/model-grants',
+    method: 'get',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      const user = users.find((u) => u.id === pathSegmentBefore(req, 'model-grants'))
+      if (!user) return fail('NOT_FOUND', '')
+      const items = logicalSources(user, requestLocale(req))
+        .filter((g) => g.source_type === 'USER')
+        .map((g) => ({
+          id: mockId(`direct-${user.id}-${g.model.id}`),
+          granted_at: '2026-11-03T00:00:00Z',
+          source_type: 'USER',
+          source_id: user.id,
+          scope_mode: 'SELF',
+          model: g.model,
+        }))
+      return success(groupOffsetPage(items, req))
+    },
+  },
+  {
+    url: '/api/v1/users/:user_id/model-grants',
+    method: 'put',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
+      const id = pathSegmentBefore(req, 'model-grants')
+      if (!users.some((u) => u.id === id)) return fail('NOT_FOUND', '')
+      const ids = req.body?.model_ids as string[]
+      if (!Array.isArray(ids) || ids.some((x) => !logicalState.logical.some((m) => m.id === x)))
+        return fail('VALIDATION_FAILED', '')
+      for (let i = logicalState.grants.length - 1; i >= 0; i--)
+        if (
+          logicalState.grants[i].subject_type === 'USER' &&
+          logicalState.grants[i].subject_id === id
+        )
+          logicalState.grants.splice(i, 1)
+      ids.forEach((modelId) =>
+        logicalState.grants.push({
+          grant_id: mockId(`grant-${modelId}-USER-${id}`),
+          logical_model_id: modelId,
+          subject_type: 'USER',
+          subject_id: id,
+        }),
+      )
+      return success({
+        applied: true,
+        changed: true,
+        replayed: false,
+        subject_id: id,
+        subject_type: 'USER',
+      })
+    },
+  },
   {
     url: '/api/v1/audit/terms-acceptances',
     method: 'get',
@@ -1146,6 +1272,8 @@ export default [
       const locale = requestLocale(req)
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'model-grant-sources'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
+      if (logicalState.logical.length || logicalState.models.length)
+        return success(groupOffsetPage(logicalSources(user, locale), req))
       const items = grantSourcesOf(user, locale).map((item) => {
         const model = MODELS.find((m) => m.id === item.model_id)
         return {

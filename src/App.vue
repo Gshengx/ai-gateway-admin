@@ -16,5 +16,11 @@ import TermsAcceptDialog from '@/components/TermsAcceptDialog.vue'
 
 // 组件库内置文案（分页/弹窗/日期等）跟随应用语言切换
 const { locale } = useI18n()
-const tdesignLocale = computed(() => (locale.value === 'en-US' ? enUS : zhCN))
+const tdesignLocale = computed(() => {
+  const messages = locale.value === 'en-US' ? enUS : zhCN
+  return {
+    ...messages,
+    dialog: { ...messages.dialog, placement: 'center' as const },
+  }
+})
 </script>

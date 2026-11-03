@@ -211,7 +211,7 @@ export function getModelDiscoveryItemsApi(id: string, page: number, signal: Abor
 }
 export function importProviderModelsApi(
   id: string,
-  data: { discovery_id?: string; items: ModelImportItem[] },
+  data: { discovery_id?: string; items: ModelImportItem[]; reason: string },
   signal: AbortSignal,
 ) {
   return request.post<{ accepted: boolean; batch_id: string; replayed: boolean }>(

@@ -205,7 +205,8 @@ function canSelect(row: DiscoveryItem) {
   return row.auto_create_allowed && !!combination(row.model_type)
 }
 const eligible = computed(() => candidates.value.filter(canSelect))
-const count = computed(() => selected.value.length + manual.value.length)
+const filledManual = computed(() => manual.value.filter((row) => row.model_id_at_provider.trim()))
+const count = computed(() => selected.value.length + filledManual.value.length)
 const typeOptions = (['LLM', 'EMBEDDING', 'IMAGE', 'AUDIO', 'VIDEO', 'MULTIMODAL'] as const).map(
   (value) => ({ label: value, value }),
 )
@@ -280,6 +281,7 @@ async function discover() {
           candidateTotal.value = list.total
           if (page >= list.total_pages) break
         }
+        selected.value = eligible.value.map((row) => row.candidate_id)
         return
       }
       await wait(deadline)
@@ -295,10 +297,6 @@ async function discover() {
 async function submit() {
   if (busy.value || templateError.value || !count.value) return
   notice.value = ''
-  if (manual.value.some((row) => !row.model_id_at_provider.trim())) {
-    notice.value = t('providerModels.requiredId')
-    return
-  }
   const chosen = candidates.value.filter((row) => selected.value.includes(row.candidate_id))
   const rows = [
     ...chosen.map((row) => ({
@@ -307,7 +305,7 @@ async function submit() {
       model_type: row.model_type ?? undefined,
       id: row.model_id_at_provider,
     })),
-    ...manual.value.map((row) => ({
+    ...filledManual.value.map((row) => ({
       source: 'MANUAL' as const,
       model_id_at_provider: row.model_id_at_provider.trim(),
       model_type: row.model_type,
@@ -350,6 +348,7 @@ async function submit() {
       {
         ...(discoveryId.value ? { discovery_id: discoveryId.value } : {}),
         items,
+        reason: t('providerModels.importReason'),
       },
       controller.signal,
     )

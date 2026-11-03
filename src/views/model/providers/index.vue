@@ -48,6 +48,12 @@
             @click="modelProvider = row"
             >{{ t('providers.getModels') }}</t-link
           >
+          <t-link v-permission.write="'model.providers'" theme="primary" @click="openEdit(row.id)">
+            {{ t('providers.edit') }}
+          </t-link>
+          <t-link v-permission.write="'model.providers'" theme="danger" @click="openDelete(row)">
+            {{ t('providers.delete') }}
+          </t-link>
         </div>
       </template>
     </t-table>
@@ -78,7 +84,7 @@
               v-permission.write="'model.providers'"
               theme="danger"
               variant="outline"
-              @click="deleteVisible = true"
+              @click="openDelete(detail)"
               >{{ t('providers.delete') }}</t-button
             >
           </div>
@@ -138,7 +144,14 @@
     :close-on-overlay-click="false"
     @confirm="deleteProvider"
   >
-    <p>{{ t('providers.deleteConfirm', { name: detail?.name }) }}</p>
+    <p>
+      {{
+        t('providers.deleteConfirm', {
+          name: deletingProvider?.name,
+          n: deletingProvider?.model_count,
+        })
+      }}
+    </p>
     <t-input v-model="deleteReason" :placeholder="t('providers.reasonRequired')" :maxlength="512" />
   </t-dialog>
   <GetModelsDialog
@@ -149,6 +162,7 @@
     @imported="fetchList"
   />
   <t-dialog
+    destroy-on-close
     :visible="visible"
     :header="t(editing ? 'providers.editTitle' : 'providers.create')"
     width="var(--provider-dialog-width)"
@@ -170,21 +184,23 @@
       :disabled="saving"
       class="provider-form"
     >
-      <t-form-item name="name" :label="t('providers.name')">
-        <t-input
-          v-model="form.name"
-          :maxlength="128"
-          :placeholder="t('providers.namePlaceholder')"
-        />
-      </t-form-item>
-      <t-form-item name="template_key" :label="t('providers.template')">
-        <t-select
-          v-model="form.template_key"
-          :options="templateOptions"
-          :disabled="!!editing || saving"
-          @change="changeTemplate"
-        />
-      </t-form-item>
+      <div class="provider-form-row">
+        <t-form-item name="name" :label="t('providers.name')">
+          <t-input
+            v-model="form.name"
+            :maxlength="128"
+            :placeholder="t('providers.namePlaceholder')"
+          />
+        </t-form-item>
+        <t-form-item name="template_key" :label="t('providers.template')">
+          <t-select
+            v-model="form.template_key"
+            :options="templateOptions"
+            :disabled="!!editing || saving"
+            @change="changeTemplate"
+          />
+        </t-form-item>
+      </div>
       <t-form-item name="base_url" :label="t('providers.baseUrl')">
         <t-input
           v-model="form.base_url"
@@ -196,8 +212,11 @@
         <div>{{ t('providers.auth') }}</div>
         <p>{{ t('providers.authHint') }}</p>
       </div>
+      <t-form-item v-if="variantOptions.length > 1" :label="t('providers.authMode')">
+        <t-select v-model="form.auth_mode" :options="variantOptions" @change="changeAuthMode" />
+      </t-form-item>
       <t-form-item
-        v-for="field in selectedTemplate?.fields ?? []"
+        v-for="field in selectedFields"
         :key="`${form.template_key}-${field.key}`"
         :name="`values.${field.key}`"
         :label="fieldLabel(field)"
@@ -207,7 +226,6 @@
           v-if="supportedField(field)"
           v-model="form.values[field.key]"
           :type="field.value_type === 'SECRET' ? 'password' : 'text'"
-          :disabled="!!editing && field.value_type === 'SECRET'"
           autocomplete="off"
           :maxlength="field.max_length"
           :placeholder="fieldPlaceholder(field)"
@@ -272,6 +290,7 @@ const detailError = ref(false)
 const models = ref<ProviderModel[]>([])
 const modelsLoading = ref(false)
 const deleteVisible = ref(false)
+const deletingProvider = ref<ProviderItem | null>(null)
 const deleteReason = ref('')
 const deleting = ref(false)
 const modelPagination = reactive<PaginationProps>({ current: 1, pageSize: 20, total: 0 })
@@ -328,14 +347,14 @@ function changeModelPage(info: PageInfo) {
   if (detail.value) void fetchModels(detail.value.id)
 }
 async function deleteProvider() {
-  if (!detail.value || deleting.value) return
+  if (!deletingProvider.value || deleting.value) return
   if (!deleteReason.value.trim()) {
     MessagePlugin.warning(t('providers.reasonRequired'))
     return
   }
   deleting.value = true
   try {
-    await deleteProviderApi(detail.value.id, deleteReason.value.trim())
+    await deleteProviderApi(deletingProvider.value.id, deleteReason.value.trim())
     MessagePlugin.success(t('providers.deleted'))
     deleteVisible.value = false
     detailVisible.value = false
@@ -346,6 +365,11 @@ async function deleteProvider() {
   } finally {
     deleting.value = false
   }
+}
+function openDelete(provider: ProviderItem) {
+  deletingProvider.value = provider
+  deleteReason.value = ''
+  deleteVisible.value = true
 }
 const modelProvider = ref<ProviderItem | null>(null)
 const search = ref('')
@@ -360,6 +384,7 @@ const formRef = ref<FormInstanceFunctions>()
 const form = reactive({
   name: '',
   template_key: '',
+  auth_mode: '',
   base_url: '',
   security_level: 'INTERNET' as SecurityLevel,
   notes: '',
@@ -372,15 +397,27 @@ const pagination = reactive<PaginationProps>({
   total: 0,
   showJumper: true,
   pageSizeOptions: [10, 20, 50, 100],
-  totalContent: (): string => t('providers.total', { n: pagination.total ?? 0 }),
 })
 const selectedTemplate = computed(() =>
   templates.value.find((item) => item.template_key === form.template_key),
 )
 const selectedCombination = computed(
   () =>
-    selectedTemplate.value?.combinations.find((item) => item.support_status !== 'UNAVAILABLE') ??
-    selectedTemplate.value?.variants[0],
+    selectedTemplate.value?.combinations.find(
+      (item) => item.auth_mode === form.auth_mode && item.support_status !== 'UNAVAILABLE',
+    ) ?? selectedTemplate.value?.variants.find((item) => item.auth_mode === form.auth_mode),
+)
+const selectedVariant = computed(() =>
+  selectedTemplate.value?.variants.find((item) => item.auth_mode === form.auth_mode),
+)
+const selectedFields = computed(
+  () => selectedVariant.value?.fields ?? selectedTemplate.value?.fields ?? [],
+)
+const variantOptions = computed(() =>
+  (selectedTemplate.value?.variants ?? []).map((item) => ({
+    value: item.auth_mode,
+    label: locale.value === 'en-US' ? item.label_en : item.label_zh,
+  })),
 )
 const templateOptions = computed(() => {
   const options = templates.value.map((item) => ({
@@ -417,6 +454,7 @@ function fieldLabel(field: TemplateField) {
 }
 function fieldPlaceholder(field: TemplateField) {
   return field.value_type === 'SECRET' &&
+    editing.value?.auth_mode === form.auth_mode &&
     editing.value?.configured_secret_fields.includes(field.key)
     ? t('providers.configured')
     : t('providers.enterField', { label: fieldLabel(field) })
@@ -428,14 +466,29 @@ const rules = computed<FormRules>(() => {
   const result: FormRules = {
     name: required(t('providers.name')),
     template_key: required(t('providers.template')),
-    base_url: required(t('providers.baseUrl')),
+    base_url: [
+      ...required(t('providers.baseUrl')),
+      {
+        validator: (value: string) => {
+          try {
+            const url = new URL(value.trim())
+            return url.protocol === 'http:' || url.protocol === 'https:'
+          } catch {
+            return false
+          }
+        },
+        message: t('providers.invalidUrl'),
+      },
+    ],
     security_level: required(t('providers.securityLevel')),
     ...(editing.value ? { reason: required(t('providers.reason')) } : {}),
   }
-  for (const field of selectedTemplate.value?.fields ?? []) {
+  for (const field of selectedFields.value) {
     if (!supportedField(field)) continue
     const configured =
-      field.value_type === 'SECRET' && editing.value?.configured_secret_fields.includes(field.key)
+      field.value_type === 'SECRET' &&
+      editing.value?.auth_mode === form.auth_mode &&
+      editing.value?.configured_secret_fields.includes(field.key)
     if (field.required && !configured) result[`values.${field.key}`] = required(fieldLabel(field))
   }
   return result
@@ -485,9 +538,16 @@ function changePage(info: PageInfo) {
   void fetchList()
 }
 function changeTemplate() {
-  form.values = {}
-  for (const field of selectedTemplate.value?.fields ?? []) form.values[field.key] = ''
+  form.auth_mode = selectedTemplate.value?.variants[0]?.auth_mode ?? ''
+  changeAuthMode()
   form.base_url = selectedTemplate.value?.default_base_url ?? ''
+}
+function changeAuthMode() {
+  form.values = {}
+  for (const field of selectedFields.value) form.values[field.key] = ''
+  if (form.template_key === 'anthropic' && 'api_version' in form.values) {
+    form.values.api_version = '2023-06-01'
+  }
   void nextTick(() => formRef.value?.clearValidate())
 }
 function openCreate() {
@@ -513,13 +573,14 @@ async function openEdit(id: string) {
     Object.assign(form, {
       name: detail.name,
       template_key: detail.template_key,
+      auth_mode: detail.auth_mode,
       base_url: detail.base_url,
       security_level: detail.security_level,
       notes: detail.notes,
       reason: '',
       values: {},
     })
-    for (const field of selectedTemplate.value?.fields ?? []) {
+    for (const field of selectedFields.value) {
       form.values[field.key] =
         field.value_type === 'STRING'
           ? (detail.public_config[field.key as PublicConfigKey] ?? '')
@@ -543,24 +604,27 @@ async function submit() {
   if (saving.value || !selectedTemplate.value || !selectedCombination.value) return
   if ((await formRef.value?.validate()) !== true) return
   const publicConfig: ProviderPayload['public_config'] = { ...(editing.value?.public_config ?? {}) }
-  const secretActions: ProviderPayload['secret_actions'] = editing.value
-    ? Object.fromEntries(secretKeys.map((key) => [key, { operation: 'KEEP' }]))
-    : {}
-  for (const field of selectedTemplate.value.fields) {
+  // 仅提交当前认证方式对应的密钥字段，后端会拒绝模板之外的密钥键。
+  // 切换认证方式时旧密钥由后端自动清理，无需显式 CLEAR。
+  const secretActions: ProviderPayload['secret_actions'] = {}
+  for (const field of selectedFields.value) {
     if (!supportedField(field)) continue
     const value = form.values[field.key] ?? ''
     if (field.value_type === 'STRING') publicConfig[field.key as PublicConfigKey] = value
-    else if (value && !editing.value)
-      secretActions[field.key as SecretKey] = { operation: 'REPLACE', value }
-    else if (editing.value) secretActions[field.key as SecretKey] = { operation: 'KEEP' }
+    else if (value) secretActions[field.key as SecretKey] = { operation: 'REPLACE', value }
+    else if (
+      editing.value?.auth_mode === form.auth_mode &&
+      editing.value.configured_secret_fields.includes(field.key)
+    )
+      secretActions[field.key as SecretKey] = { operation: 'KEEP' }
   }
   // 白名单过滤：模板字段或详情中的额外键均不得进入请求。
   const payload: ProviderPayload = {
     template_key: form.template_key,
     name: form.name.trim(),
     base_url: form.base_url.trim(),
-    auth_mode: editing.value?.auth_mode ?? selectedCombination.value.auth_mode,
-    endpoint_profile: editing.value?.endpoint_profile ?? selectedCombination.value.endpoint_profile,
+    auth_mode: selectedCombination.value.auth_mode,
+    endpoint_profile: selectedCombination.value.endpoint_profile,
     security_level: form.security_level,
     notes: form.notes,
     public_config: Object.fromEntries(
@@ -569,16 +633,19 @@ async function submit() {
       ),
     ),
     secret_actions: secretActions,
-    ...(editing.value ? { reason: form.reason.trim() } : {}),
+    reason: editing.value ? form.reason.trim() : t('providers.create'),
   }
   saving.value = true
   try {
-    if (editing.value) await updateProviderApi(editing.value.id, payload)
-    else await createProviderApi(payload)
+    const isCreating = !editing.value
+    const result = editing.value
+      ? await updateProviderApi(editing.value.id, payload)
+      : await createProviderApi(payload)
     MessagePlugin.success(t('providers.saved'))
     saving.value = false
     close()
     await fetchList()
+    if (isCreating) modelProvider.value = await getProviderApi(result.resource_id)
   } catch {
     /* 请求层统一提示 */
   } finally {
@@ -656,6 +723,11 @@ onMounted(() => {
 }
 .provider-form :deep(.t-form__item) {
   margin-bottom: var(--td-comp-margin-m);
+}
+.provider-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--td-comp-margin-l);
 }
 .auth-heading {
   margin: var(--td-comp-margin-l) 0;

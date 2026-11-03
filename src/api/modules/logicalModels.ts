@@ -12,6 +12,8 @@ export interface LogicalModelTranslation {
 }
 
 export interface LogicalModel {
+  /** Mock 扩展：当前后端未返回创建时间。 */
+  created_at?: string
   id: string
   logical_name: string
   display_name: string
@@ -55,6 +57,27 @@ export interface UpdateLogicalModelPayload {
   status?: LogicalModelStatus
   translations?: LogicalModelTranslation[]
   workload_confirmation?: unknown
+}
+
+export const supportsLogicalRename = import.meta.env.VITE_USE_MOCK === 'true'
+
+/** 仅 mock 支持 API 名称修改，不向真实接口发送未声明字段。 */
+export function renameLogicalModelApi(id: string, name: string, description: string) {
+  if (!supportsLogicalRename) return Promise.reject(new Error('Logical rename unavailable'))
+  return request.put<unknown>(`/logical-models/${encodeURIComponent(id)}`, {
+    logical_name: name,
+    display_name: name,
+    description,
+    reason: 'admin-console',
+  })
+}
+
+export function batchGrantLogicalModelsApi(data: {
+  logical_model_ids: string[]
+  subjects: { subject_id: string; subject_type: SubjectType }[]
+  reason: string
+}) {
+  return request.post<unknown>('/logical-model-permission-batches', data)
 }
 
 export interface MountLogicalModelPayload {

@@ -7,6 +7,12 @@
   --layout-aside-width-collapsed: 64px;
 }
 
+/* 原型浅色页面底色实测值；在主题入口统一覆盖 TDesign 页面背景 token，
+   各页面及布局继续使用 --td-bg-color-page，暗色主题保留组件库定义。 */
+:root:not([theme-mode='dark']) {
+  --td-bg-color-page: #f5f7fa;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -90,4 +96,18 @@ body {
 /* 获取模型弹窗业务宽度为 900px；TDesign 无对应业务宽度 token。 */
 :root {
   --provider-model-dialog-width: 900px;
+}
+
+/* 模型管理截图按常规桌面比例：侧栏 240px，搜索框 280px，筛选框 144px；无对应 TDesign 宽度 token。 */
+:root {
+  --model-sidebar-width: 240px;
+  --model-search-width: 280px;
+  --model-filter-width: 144px;
+}
+
+/* 创建/编辑模型原型弹窗约 760 CSS px，准入结果使用相同宽度；无对应 TDesign 宽度 token。 */
+:root {
+  --physical-model-dialog-width: 760px;
+  /* 发起检测弹窗按原型约 560 CSS px；额外额度引用由用户确认临时增加。 */
+  --admission-start-dialog-width: 560px;
 }

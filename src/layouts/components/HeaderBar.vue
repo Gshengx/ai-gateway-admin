@@ -72,6 +72,10 @@ const breadcrumbs = computed(() => {
     if (menu.path === route.path) return [menu]
     const child = menu.children?.find((c) => c.path === route.path)
     if (child) return [menu, child]
+    const parent = menu.children?.find((c) => route.path.startsWith(`${c.path}/`))
+    if (parent && route.meta.title) {
+      return [menu, parent, { path: route.path, title: String(route.meta.title) }]
+    }
   }
   return []
 })

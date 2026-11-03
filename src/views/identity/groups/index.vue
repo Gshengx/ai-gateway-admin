@@ -316,6 +316,7 @@ function showReferenceBlocked() {
   const models = [...referencedModels.value]
   const hasMore = referencesHasMore.value
   const dialog = DialogPlugin.alert({
+    placement: 'center',
     header: t('groups.delete.blockedTitle'),
     body: () =>
       h('div', [

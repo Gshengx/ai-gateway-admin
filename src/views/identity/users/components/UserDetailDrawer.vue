@@ -293,6 +293,7 @@
     <p v-else class="detail-empty-value">{{ t('users.detail.empty') }}</p>
 
     <t-dialog
+      attach="body"
       :visible="grantDialog.visible"
       :header="
         grantDialog.mode === 'add'
@@ -327,6 +328,7 @@
       </t-form>
     </t-dialog>
     <t-dialog
+      attach="body"
       :visible="keyConfirmVisible"
       :header="keyDialogTitle"
       :close-on-overlay-click="false"
@@ -495,7 +497,7 @@ const modelRows = computed<ModelRow[]>(() => {
         ? t('users.detail.models.sourceOutOfScope')
         : item.source_type === 'DEPARTMENT'
           ? t('users.detail.models.sourceDepartment', { name: item.source_display_name })
-          : item.source_type === 'USER_GROUP'
+          : ['GROUP', 'USER_GROUP'].includes(item.source_type)
             ? t('users.detail.models.sourceGroup', { name: item.source_display_name })
             : item.source_display_name
     if (!row.sources.includes(label)) row.sources.push(label)

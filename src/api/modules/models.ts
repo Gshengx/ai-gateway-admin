@@ -84,13 +84,22 @@ export interface CreatePhysicalModelPayload {
   provider_id: string
   reason: string
 }
-export type UpdatePhysicalModelPayload = CreatePhysicalModelPayload
+export type UpdatePhysicalModelPayload = Pick<
+  CreatePhysicalModelPayload,
+  | 'declared_capabilities'
+  | 'description'
+  | 'invocation_api'
+  | 'invocation_config'
+  | 'model_type'
+  | 'operation_profile'
+  | 'reason'
+>
 export interface DeletePhysicalModelPayload {
   reason: string
 }
 export type ModelCommand = 'PAUSE' | 'RESUME' | 'RETIRE' | 'REACTIVATE'
 export interface ModelPricing {
-  cached_input_price: string
+  cached_input_price: string | null
   coverage_status: string
   currency: string
   input_price: string
@@ -101,7 +110,7 @@ export interface ModelPricing {
   unit: string
 }
 export interface ModelPricingBody {
-  cached_input_price: string
+  cached_input_price: string | null
   currency: 'CNY' | 'USD' | 'EUR'
   input_price: string
   output_price: string
@@ -111,7 +120,7 @@ export interface ModelPricingBody {
 export interface ModelPricingStatus {
   cost_status: string
   pricing_status: string
-  price: ModelPricing
+  price: ModelPricing | null
 }
 export interface LogicalModelItem {
   candidate_count: number
@@ -149,7 +158,7 @@ function normalizeCapability(value: string | number | null): string | null {
   if (typeof value === 'number' && !Number.isFinite(value)) return null
   return String(value)
 }
-function normalizePayload(data: CreatePhysicalModelPayload) {
+function normalizePayload<T extends { declared_capabilities: CapabilityInput }>(data: T) {
   return {
     ...data,
     declared_capabilities: {
@@ -198,4 +207,86 @@ export function getLogicalModelsApi(params: OffsetPageQuery & { search?: string 
 }
 export function mountLogicalModelApi(logicalModelId: string, data: MountPhysicalModelPayload) {
   return request.post<unknown>(`/logical-models/${encodeURIComponent(logicalModelId)}/mount`, data)
+}
+
+export interface AdmissionMetric {
+  p50_ms: string | null
+  p95_ms: string | null
+}
+export interface AdmissionCheck {
+  check_key: string
+  duration_ms: string | null
+  safe_error_code: string | null
+  status: 'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'ERROR'
+  reliability_metrics?: {
+    success_rate_percent: string
+    ttft: { observed: AdmissionMetric }
+    successful_latency: AdmissionMetric
+  } | null
+}
+export interface AdmissionRun {
+  run_id: string
+  status: AdmissionCheck['status']
+  admission_valid: boolean
+  checks: AdmissionCheck[]
+  sealed_at: string | null
+  invalid_reason: string | null
+}
+export interface LatestAdmission {
+  admission_valid: boolean
+  invalid_reason: string | null
+  latest_run: AdmissionRun | null
+}
+export function getLatestAdmissionApi(modelId: string) {
+  return request.get<LatestAdmission>(
+    `/models/${encodeURIComponent(modelId)}/admission-tests/latest`,
+    { skipLocale: true },
+  )
+}
+export function reviewModelApi(
+  modelId: string,
+  data: { decision: 'PUBLISH' | 'REJECT'; reason: string; run_id: string },
+) {
+  return request.post<unknown>(`/models/${encodeURIComponent(modelId)}/review`, data)
+}
+export function startModelAdmissionApi(
+  modelId: string,
+  data: {
+    budget_authorization_ref: string
+    reason: string
+    selected_checks: string[]
+    test_profile_version: string
+  },
+) {
+  return request.post<{
+    accepted: boolean
+    job_id: string
+    budget_batch_id: string
+    replayed: boolean
+  }>(`/models/${encodeURIComponent(modelId)}/admission-tests`, data)
+}
+export function getModelAdmissionJobApi(jobId: string) {
+  return request.get<{
+    job_id: string
+    run_id: string | null
+    safe_error_code: string | null
+    status: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'ERROR' | 'CANCELLED'
+  }>(`/model-admission-jobs/${encodeURIComponent(jobId)}`, { skipLocale: true })
+}
+
+export interface ModelPriceHistory extends ModelPricing {
+  created_at: string
+  created_by: string
+}
+export function getModelPriceHistoryApi(id: string, params: OffsetPageQuery) {
+  return request.get<OffsetPageResult<ModelPriceHistory>>(
+    `/models/${encodeURIComponent(id)}/pricing`,
+    { params },
+  )
+}
+export function getModelAdmissionHistoryApi(id: string, params: OffsetPageQuery) {
+  return request.get<OffsetPageResult<AdmissionRun>>(
+    `/models/${encodeURIComponent(id)}/admission-tests`,
+    { params },
+  )
 }

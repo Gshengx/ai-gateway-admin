@@ -1,0 +1,17 @@
+/* 业务尺寸无 TDesign 对应 token。基本信息 130px 标签列、780px 内容宽度来自原型实测。
+ * 授权输入框按原型多标签布局使用 560px，弹层保持 400px；列表最多 240px/视口 30%。 */
+:root {
+  --logical-search-width: 240px;
+  --logical-subject-type-width: 140px;
+  --logical-subject-field-width: 560px;
+  --logical-subject-popup-width: 400px;
+  --logical-subject-list-height: min(240px, 30vh);
+  --logical-basic-label-width: 130px;
+  --logical-basic-width: 780px;
+}
+.logical-subject-popup {
+  width: var(--logical-subject-popup-width);
+  max-width: calc(100vw - var(--layout-aside-width) - var(--td-comp-margin-l) * 4);
+  max-height: calc(100vh - var(--td-comp-margin-l) * 2);
+  overflow: auto;
+}
