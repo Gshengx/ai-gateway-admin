@@ -213,7 +213,7 @@ import {
   type KeyControlCondition,
 } from '@/api/modules/apiKeys'
 import { getTermsConfigApi } from '@/api/modules/terms'
-import type { NotifiedError } from '@/api/request'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 
@@ -434,7 +434,7 @@ function prepareAttempt(): Attempt | null {
     id,
     operation: action,
     body,
-    key: globalThis.crypto.randomUUID(),
+    key: createIdempotencyKey(),
   }
 }
 function callAttempt(attempt: Attempt) {

@@ -66,6 +66,7 @@
   <terms-preview-dialog v-model:visible="previewVisible" :translations="translations" />
 </template>
 <script setup lang="ts">
+import { createIdempotencyKey } from '@/api/request'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -200,11 +201,11 @@ async function save() {
   let changed = false
   try {
     if (text) {
-      await publishTermsVersionApi({ translations: text }, crypto.randomUUID())
+      await publishTermsVersionApi({ translations: text }, createIdempotencyKey())
       changed = true
     }
     if (Object.keys(switches).length) {
-      await updateTermsConfigApi(switches, crypto.randomUUID())
+      await updateTermsConfigApi(switches, createIdempotencyKey())
       changed = true
     }
     apply(await getTermsConfigApi())

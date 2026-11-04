@@ -372,7 +372,7 @@ import {
   batchDeleteManagedKeysApi,
 } from '@/api/modules/apiKeys'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
-import type { NotifiedError } from '@/api/request'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
 
 const props = defineProps<{
@@ -676,7 +676,7 @@ async function submitKeyOperation() {
   if (!userId) return
   const action = keyOperation.value
   const body = { key_ids: keyTargets.value.map((item) => item.id) }
-  const idempotencyKey = globalThis.crypto.randomUUID()
+  const idempotencyKey = createIdempotencyKey()
   keyBusy.value = true
   try {
     const api =

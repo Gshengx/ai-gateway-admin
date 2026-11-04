@@ -384,7 +384,7 @@ import {
 
 import FilterBar from '@/components/FilterBar.vue'
 import { canWriteResource, useUserStore } from '@/stores/modules/user'
-import type { NotifiedError } from '@/api/request'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
 import DepartmentFormDialog from './components/DepartmentFormDialog.vue'
 import UserDetailDrawer from './components/UserDetailDrawer.vue'
@@ -1250,7 +1250,7 @@ async function openBatchDeleteDialog(ids: string[]) {
     action: async () => {
       await batchDeleteUsersApi(
         { preview_digest: preview.preview_digest, user_ids: ids },
-        crypto.randomUUID(),
+        createIdempotencyKey(),
       ).catch((error: unknown) => {
         if ((error as NotifiedError).code === 'EXTERNAL_REFERENCE_BLOCKED') {
           MessagePlugin.warning(t('users.confirm.deleteExternalBlocked'))

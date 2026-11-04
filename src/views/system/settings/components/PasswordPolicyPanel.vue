@@ -126,6 +126,7 @@
   </t-card>
 </template>
 <script setup lang="ts">
+import { createIdempotencyKey } from '@/api/request'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type FormInstanceFunctions, type FormRule } from 'tdesign-vue-next'
@@ -213,7 +214,7 @@ async function save() {
   if (!fields.some(({ key }) => payload[key] !== saved.value?.[key])) {
     return
   }
-  const idempotencyKey = crypto.randomUUID()
+  const idempotencyKey = createIdempotencyKey()
   submitting.value = true
   try {
     const result = await updatePasswordPolicyApi(payload, idempotencyKey)

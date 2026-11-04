@@ -183,7 +183,7 @@ import { businessRoutes } from '@/router/routes'
 import { mergeRoleGrants } from './permissions'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
-import type { NotifiedError } from '@/api/request'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import {
   getRolesApi,
   getRoleApi,
@@ -458,7 +458,7 @@ function save() {
     let metadataSaved = false
     let permissionsSaved = false
     try {
-      const idempotencyKey = crypto.randomUUID()
+      const idempotencyKey = createIdempotencyKey()
       let id = role?.id || ''
       if (currentMode === 'copy' && role) {
         const result = await copyRoleApi(role.id, payload)
