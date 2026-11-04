@@ -49,7 +49,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, ref, reactive, watch } from 'vue'
+import { computed, ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PageInfo, PrimaryTableCol, TreeProps, TreeSelectProps } from 'tdesign-vue-next'
 import DepartmentTreeSelect from '@/components/DepartmentTreeSelect.vue'
@@ -78,6 +78,7 @@ const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'name', title: t('logicalModels.subject') },
 ])
 let version = 0
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 let queriedDepartment = ''
 function nodes(items: Awaited<ReturnType<typeof getDepartmentListApi>>['items']): Node[] {
   emit('names', Object.fromEntries(items.map((x) => [x.id, x.display_name || x.name])))
@@ -136,6 +137,7 @@ async function load() {
   }
 }
 function query() {
+  clearTimeout(searchTimer)
   queriedDepartment = department.value
   pagination.current = 1
   void load()
@@ -158,6 +160,15 @@ watch(
   },
   { immediate: true },
 )
+watch(search, () => {
+  version++
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(query, 250)
+})
+onBeforeUnmount(() => {
+  version++
+  clearTimeout(searchTimer)
+})
 </script>
 <style scoped>
 .picker {

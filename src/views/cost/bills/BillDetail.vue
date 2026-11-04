@@ -295,4 +295,7 @@ watch(locale, reset)
 .toolbar > :deep(.t-tree-select) {
   width: var(--cost-filter-width);
 }
+.toolbar > :deep(.cost-department-select) {
+  width: var(--cost-search-width);
+}
 </style>

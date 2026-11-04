@@ -1,6 +1,6 @@
 ﻿<template>
   <div class="layout">
-    <aside class="panel sidebar">
+    <CollapsibleSidebar class="panel sidebar">
       <t-radio-group v-model="view" class="view-tabs" variant="default-filled" @change="switchView">
         <t-radio-button value="provider">{{ t('models.providerView') }}</t-radio-button>
         <t-radio-button value="logical">{{ t('models.logicalView') }}</t-radio-button>
@@ -30,7 +30,7 @@
         <span>{{ t('models.unassociated') }}</span>
         <span class="count">{{ unmountedTotal }}</span>
       </div>
-    </aside>
+    </CollapsibleSidebar>
     <section class="panel content">
       <FilterBar class="model-filter"
         ><template #content>
@@ -188,6 +188,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {

@@ -136,14 +136,14 @@
       :cancel-btn="t('cost.cancel')"
       @confirm="submit"
     >
-      <t-form label-align="top" class="form">
-        <t-form-item :label="t(tab === 'bills' ? 'cost.period' : 'cost.schedule')" required
+      <t-form label-align="top" class="form" required-mark-position="right">
+        <t-form-item :label="t(tab === 'bills' ? 'cost.period' : 'cost.schedule')" required-mark
           ><t-radio-group v-model="form.period_type" :options="periodOptions"
         /></t-form-item>
         <template v-if="tab === 'bills'"
           ><t-form-item
             :label="t(form.period_type === 'MONTHLY' ? 'cost.month' : 'cost.date')"
-            required
+            required-mark
             ><t-date-picker
               v-model="form.period_value"
               :mode="form.period_type === 'MONTHLY' ? 'month' : 'date'"
@@ -153,7 +153,7 @@
               " /></t-form-item
         ></template>
         <p v-else class="hint">{{ t('cost.scheduleHint') }}</p>
-        <t-form-item :label="t('cost.departmentScope')" required
+        <t-form-item :label="t('cost.departmentScope')" required-mark
           ><DepartmentSelect
             v-model="form.department_id"
             :searchable="false"
@@ -167,7 +167,7 @@
             ><t-checkbox v-model="form.email_enabled">{{
               t('cost.emailSend')
             }}</t-checkbox></t-form-item
-          ><t-form-item v-if="form.email_enabled" :label="t('cost.recipients')" required
+          ><t-form-item v-if="form.email_enabled" :label="t('cost.recipients')" required-mark
             ><t-textarea v-model="form.emails" :placeholder="t('cost.emailHint')" /></t-form-item
         ></template>
         <t-alert v-if="formError" theme="error" :message="formError" />
@@ -520,6 +520,9 @@ onBeforeUnmount(() => {
 }
 .primary-action {
   margin-inline-start: auto;
+}
+.toolbar > :deep(.cost-department-select) {
+  width: var(--cost-search-width);
 }
 .form {
   display: flex;

@@ -2,27 +2,29 @@
   <t-dialog
     :visible="visible"
     :header="t('cost.editBudget')"
-    width="var(--cost-dialog-width)"
-    :confirm-btn="{ content: t('cost.save'), loading: saving }"
+    width="var(--cost-budget-dialog-width)"
+    :confirm-btn="{ content: t('cost.save'), loading: saving || optionsLoading }"
     :cancel-btn="t('cost.cancel')"
     @close="emit('close')"
     @confirm="submit"
   >
-    <t-form class="budget-form" label-align="top">
-      <t-form-item v-if="kind === 'departments'" :label="t('cost.selectDepartmentLabel')" required
+    <t-form class="budget-form" label-align="top" required-mark-position="right">
+      <t-form-item
+        v-if="kind === 'departments'"
+        :label="t('cost.selectDepartmentLabel')"
+        required-mark
         ><t-input :value="deptName(departmentId)" readonly
       /></t-form-item>
-      <t-form-item v-else :label="t('cost.selectUsers')" required
-        ><t-select
+      <t-form-item v-else :label="t('cost.selectUsers')" required-mark
+        ><UserPicker
           v-model="userIds"
-          multiple
-          filterable
           :disabled="Boolean(budget)"
           :options="userOptions"
+          :loading="optionsLoading"
           :placeholder="t('cost.selectUsers')"
       /></t-form-item>
       <template v-if="kind === 'departments'"
-        ><t-form-item :label="t('cost.mode')" required
+        ><t-form-item :label="t('cost.mode')" required-mark
           ><t-radio-group v-model="form.budget_mode" :options="modeOptions" /></t-form-item
         ><t-alert
           :theme="form.budget_mode === 'INDEPENDENT' ? 'warning' : 'info'"
@@ -30,58 +32,72 @@
             t(form.budget_mode === 'INDEPENDENT' ? 'cost.independentHint' : 'cost.sharedHint')
           "
       /></template>
-      <t-form-item :label="t(kind === 'users' ? 'cost.baseInput' : 'cost.amountInput')" required
-        ><t-input-number v-model="form.budget_amount" :min="0" :decimal-places="6" theme="normal"
-      /></t-form-item>
-      <t-form-item :label="t('cost.currency')" required
-        ><t-select v-model="form.currency" :options="currencyOptions" :disabled="!isHq"
-      /></t-form-item>
+      <div class="form-row">
+        <t-form-item
+          :label="t(kind === 'users' ? 'cost.baseInput' : 'cost.amountInput')"
+          required-mark
+          ><t-input-number v-model="form.budget_amount" :min="0" :decimal-places="2" theme="normal"
+        /></t-form-item>
+        <t-form-item :label="t('cost.currency')" required-mark
+          ><t-select v-model="form.currency" :options="currencyOptions" :disabled="!isHq"
+        /></t-form-item>
+      </div>
       <t-alert
         v-if="isHq && form.currency !== budget?.currency"
         theme="warning"
         :message="t('cost.currencyHint')"
       />
-      <t-form-item :label="t('cost.budgetPeriod')" required
-        ><t-select v-model="form.period_type" :options="periodOptions" :disabled="!isHq"
-      /></t-form-item>
-      <p v-if="!isHq" class="hint">{{ t('cost.followHq') }}</p>
-      <t-form-item :label="t('cost.warningThreshold')" required
-        ><t-input-number
-          v-model="form.warning_threshold"
-          :min="1"
-          :max="98"
-          :decimal-places="0"
-          theme="normal"
-      /></t-form-item>
-      <t-form-item :label="t('cost.criticalThreshold')" required
-        ><t-input-number
-          v-model="form.critical_threshold"
-          :min="2"
-          :max="99"
-          :decimal-places="0"
-          theme="normal"
-      /></t-form-item>
-      <t-form-item :label="t('cost.overAction')" required
-        ><t-select v-model="form.over_budget_action" :options="actionOptions"
-      /></t-form-item>
-      <p class="hint">
-        {{ t(form.over_budget_action === 'ALERT_ONLY' ? 'cost.alertHint' : 'cost.blockHint') }}
-      </p>
+      <div class="field-group">
+        <t-form-item :label="t('cost.budgetPeriod')" required-mark
+          ><t-select v-model="form.period_type" :options="periodOptions" :disabled="!isHq"
+        /></t-form-item>
+        <p v-if="!isHq" class="hint">{{ t('cost.followHq') }}</p>
+      </div>
+      <div class="form-row">
+        <t-form-item :label="t('cost.warningThreshold')" required-mark
+          ><t-input-number
+            v-model="form.warning_threshold"
+            :min="1"
+            :max="98"
+            :decimal-places="0"
+            theme="normal"
+        /></t-form-item>
+        <t-form-item :label="t('cost.criticalThreshold')" required-mark
+          ><t-input-number
+            v-model="form.critical_threshold"
+            :min="2"
+            :max="99"
+            :decimal-places="0"
+            theme="normal"
+        /></t-form-item>
+      </div>
+      <div class="field-group">
+        <t-form-item :label="t('cost.overAction')" required-mark
+          ><t-select v-model="form.over_budget_action" :options="actionOptions"
+        /></t-form-item>
+        <p class="hint">
+          {{ t(form.over_budget_action === 'ALERT_ONLY' ? 'cost.alertHint' : 'cost.blockHint') }}
+        </p>
+      </div>
       <div class="notification">
         <h4>{{ t('cost.notificationSettings') }}</h4>
         <p class="hint">
           {{ t(kind === 'users' ? 'cost.userNotifyHint' : 'cost.departmentNotifyHint') }}
         </p>
         <div v-for="level in levels" :key="level" class="notification-level">
-          <label>{{ t(`cost.notify${level}`) }}</label>
-          <t-select
+          <div class="notification-heading">
+            <label>{{ t(`cost.notify${level}`) }}</label>
+            <t-checkbox-group
+              v-model="form.notification_channels[level]"
+              :options="channelOptions"
+            />
+          </div>
+          <UserPicker
             v-model="form.notification_recipients[level]"
-            multiple
-            filterable
             :options="recipientOptions(level)"
+            :loading="optionsLoading"
             :placeholder="t('cost.selectRecipients')"
           />
-          <t-checkbox-group v-model="form.notification_channels[level]" :options="channelOptions" />
         </div>
       </div>
       <t-alert
@@ -100,7 +116,7 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onBeforeUnmount, toRaw } from 'vue'
+import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   saveBudget,
@@ -110,6 +126,7 @@ import {
   type Level,
 } from '@/api/modules/cost'
 import { useCost } from '../useCost'
+import UserPicker from '../UserPicker.vue'
 const props = defineProps<{
   visible: boolean
   kind: 'departments' | 'users'
@@ -119,7 +136,8 @@ const props = defineProps<{
   selectedUsers: string[]
 }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
-const { t, users, deptName, ensureDepartments, money, error } = useCost()
+const { t, users, deptName, init, ensureDepartments, money, error } = useCost()
+const optionsLoading = ref(false)
 const levels: Level[] = ['WARNING', 'CRITICAL', 'EXCEEDED']
 const emptyForm = (): BudgetConfig => ({
   budget_amount: 5000,
@@ -188,12 +206,11 @@ watch(
     formError.value = ''
     warnings.value = []
     const source = props.budget?.configured ? props.budget : null
+    // Budget configuration is JSON data; serialization also unwraps nested Vue proxies.
+    const sourceConfig = source ? (JSON.parse(JSON.stringify(source)) as BudgetConfig) : null
     const configuration = source
       ? Object.fromEntries(
-          Object.keys(emptyForm()).map((key) => [
-            key,
-            structuredClone(toRaw(source)[key as keyof BudgetConfig]),
-          ]),
+          Object.keys(emptyForm()).map((key) => [key, sourceConfig![key as keyof BudgetConfig]]),
         )
       : {}
     Object.assign(form, emptyForm(), configuration, {
@@ -204,10 +221,14 @@ watch(
         (props.kind === 'departments' ? 'BLOCK_DEPARTMENT' : 'ALERT_ONLY'),
     })
     userIds.value = props.budget?.user_id ? [props.budget.user_id] : [...props.selectedUsers]
+    optionsLoading.value = true
     try {
-      await ensureDepartments(users.map((u) => u.department_id))
+      await init()
+      await ensureDepartments([props.departmentId, ...users.map((u) => u.department_id)])
     } catch (err) {
       error(err)
+    } finally {
+      optionsLoading.value = false
     }
   },
 )
@@ -235,6 +256,7 @@ watch(
   { deep: true },
 )
 async function submit() {
+  if (optionsLoading.value) return
   formError.value = ''
   if (!(form.budget_amount > 0) || !Number.isFinite(form.budget_amount)) {
     formError.value = t('cost.amountPositive')
@@ -272,7 +294,7 @@ async function submit() {
   }
   saving.value = true
   try {
-    const data = structuredClone(toRaw(form))
+    const data = JSON.parse(JSON.stringify(form)) as BudgetConfig
     await saveBudget(
       props.kind,
       { ...data, department_id: props.departmentId, user_ids: userIds.value },
@@ -297,12 +319,27 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--td-comp-margin-l);
-  max-height: var(--cost-form-max-height);
+  max-height: var(--cost-budget-form-max-height);
   overflow-y: auto;
   padding-inline-end: var(--td-comp-paddingLR-s);
 }
 .budget-form :deep(.t-form__item) {
   margin: 0;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--td-comp-margin-l);
+  row-gap: var(--td-comp-margin-xs);
+}
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-comp-margin-xs);
+}
+.form-row :deep(.t-form__item),
+.form-row :deep(.t-form__controls) {
+  min-width: 0;
 }
 .budget-form :deep(.t-input-number),
 .budget-form :deep(.t-select__wrap) {
@@ -325,6 +362,13 @@ onBeforeUnmount(() => {
 .notification-level {
   display: flex;
   flex-direction: column;
+  gap: var(--td-comp-margin-s);
+}
+.notification-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--td-comp-margin-s);
 }
 </style>

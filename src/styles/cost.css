@@ -7,4 +7,16 @@
   --cost-budget-drawer-width: 760px;
   --cost-trend-height: 240px;
   --cost-form-max-height: 65vh;
+  /* User-requested wider budget form; reserve room for dialog header, footer and viewport edges. */
+  --cost-budget-dialog-width: min(640px, calc(100vw - 48px));
+  --cost-budget-form-max-height: calc(100dvh - 200px);
+  /* User picker follows the logical-model subject dropdown panel dimensions. */
+  --cost-user-popup-width: 480px;
+  --cost-user-list-height: min(240px, 30vh);
+}
+.cost-user-popup {
+  width: var(--cost-user-popup-width);
+  max-width: calc(100vw - var(--td-comp-margin-l) * 2);
+  max-height: calc(100vh - var(--td-comp-margin-l) * 2);
+  overflow: auto;
 }

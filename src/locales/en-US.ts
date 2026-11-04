@@ -3,8 +3,10 @@
  * Note: each key segment must match the object nesting (no dot-in-leaf keys).
  */
 import { costEn } from './cost'
+import { securityEn } from './security'
 
 export default {
+  security: securityEn,
   cost: costEn,
   model: {
     modelsForm: {
@@ -479,6 +481,7 @@ export default {
     delete: 'Delete',
     detailTitle: 'Preset role details',
     editTitle: 'Edit role',
+    copyTitle: 'Copy role',
     createTitle: 'Create custom role',
     namePlaceholder: 'e.g. Department operations admin',
     nameRequired: 'Enter a role name',
@@ -692,7 +695,10 @@ export default {
     },
     security: {
       label: 'AI Security Governance',
-      accessControl: 'Access Control',
+      accessControl: 'Access Control Policies',
+      dataControl: 'Data Control Policies',
+      audit: 'Audit Policies',
+      allowlist: 'Allowlists',
       contentRules: 'Sensitive Data Rules',
       detection: 'Security Detection',
     },
@@ -728,6 +734,8 @@ export default {
     notFound: 'Not Found',
   },
   common: {
+    collapseSidebar: 'Collapse left panel',
+    expandSidebar: 'Expand left panel',
     clearSelection: 'Clear selection',
     departmentTree: {
       refreshNode: 'Refresh direct children of "{name}"',
@@ -898,6 +906,7 @@ export default {
       username: 'Username',
       displayName: 'Name',
       email: 'Email',
+      phone: 'Phone',
       department: 'Department',
       groups: 'Groups',
       role: 'Role',

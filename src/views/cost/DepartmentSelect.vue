@@ -1,24 +1,30 @@
 <template>
-  <t-tree-select
-    :value="modelValue"
-    :data="nodes"
-    :tree-props="treeProps"
-    :placeholder="placeholder || t('cost.allDepartments')"
-    :value-display="() => (deptName(modelValue) === '—' ? '' : deptName(modelValue))"
-    :filterable="searchable"
-    :clearable="clearable"
-    :filter="() => true"
-    :loading="loading"
-    @change="change"
-    @search="search"
-    @popup-visible-change="open"
-  />
+  <div ref="root" class="cost-department-select">
+    <t-tree-select
+      :value="modelValue"
+      :data="nodes"
+      :tree-props="treeProps"
+      :placeholder="placeholder || t('cost.allDepartments')"
+      :value-display="() => (deptName(modelValue) === '—' ? '' : deptName(modelValue))"
+      :filterable="searchable"
+      :clearable="clearable"
+      :filter="() => true"
+      :loading="loading"
+      :popup-props="popupProps"
+      @change="change"
+      @search="search"
+      @popup-visible-change="open"
+    />
+  </div>
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TreeProps, TreeSelectProps } from 'tdesign-vue-next'
 import { getCostContext, type CostDepartment } from '@/api/modules/cost'
 import { useCost } from './useCost'
+import { useDepartmentPopup } from './useDepartmentPopup'
+const root = ref<HTMLElement>()
+const { popupProps, setVisible } = useDepartmentPopup(root)
 const props = withDefaults(
   defineProps<{
     modelValue: string
@@ -60,6 +66,7 @@ const treeProps = computed<TreeProps>(() => ({
   },
 }))
 async function open(visible: boolean) {
+  setVisible(visible)
   if (!visible) return
   loading.value = true
   try {
@@ -109,3 +116,9 @@ watch(english, () => {
   nodes.value = []
 })
 </script>
+<style scoped>
+.cost-department-select {
+  min-width: 0;
+  max-width: 100%;
+}
+</style>

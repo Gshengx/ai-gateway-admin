@@ -4,8 +4,10 @@
  * 注意：key 的每一段必须与对象嵌套层级一致（勿用带点的叶子键，避免解析歧义）。
  */
 import { costZh } from './cost'
+import { securityZh } from './security'
 
 export default {
+  security: securityZh,
   cost: costZh,
   model: {
     modelsForm: {
@@ -463,6 +465,7 @@ export default {
     delete: '删除',
     detailTitle: '预置角色详情',
     editTitle: '编辑角色',
+    copyTitle: '复制角色',
     createTitle: '创建自定义角色',
     namePlaceholder: '例如：部门运营管理员',
     nameRequired: '请输入角色名称（最多30字），描述最多200字',
@@ -671,7 +674,10 @@ export default {
     },
     security: {
       label: 'AI 安全治理',
-      accessControl: '访问控制',
+      accessControl: '访问控制策略',
+      dataControl: '数据控制策略',
+      audit: '审计策略',
+      allowlist: '白名单',
       contentRules: '敏感数据规则',
       detection: '安全检测',
     },
@@ -707,6 +713,8 @@ export default {
     notFound: '页面不存在',
   },
   common: {
+    collapseSidebar: '收起左侧面板',
+    expandSidebar: '展开左侧面板',
     clearSelection: '清空选择',
     departmentTree: {
       refreshNode: '刷新「{name}」的直接子部门',
@@ -869,6 +877,7 @@ export default {
       username: '用户名',
       displayName: '姓名',
       email: '邮箱',
+      phone: '手机号',
       department: '所属部门',
       groups: '用户组',
       role: '角色',

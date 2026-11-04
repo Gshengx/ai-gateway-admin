@@ -143,6 +143,9 @@ export const getCostContext = (parent_id?: string, search?: string, scope_id?: s
   })
 export const getCostDepartment = (id: string) =>
   request.get<CostDepartment>(`/cost/mock-departments/${id}`, mock)
+export const getCostUsers = (
+  params: OffsetPageQuery & { search: string; department_id: string; allowed_ids: string },
+) => request.get<OffsetPageResult<CostUser>>('/cost/mock-users', { ...mock, params })
 export const getBills = (params: CostQuery) =>
   request.get<OffsetPageResult<Bill>>('/bills', { ...mock, params })
 export const generateBill = (data: {

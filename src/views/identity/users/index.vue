@@ -1,88 +1,90 @@
 <template>
   <div class="page-container">
     <div class="users-layout">
-      <t-card :bordered="false" class="users-dept">
-        <div class="dept-header">
-          <span class="dept-header__title">{{ t('users.departments.title') }}</span>
-          <t-button
-            variant="text"
-            shape="square"
-            size="small"
-            :loading="departmentRefreshing"
-            :title="t('users.departments.refresh')"
-            :aria-label="t('users.departments.refresh')"
-            @click="onRefreshDepartments"
+      <CollapsibleSidebar class="users-dept">
+        <div class="users-dept-content">
+          <div class="dept-header">
+            <span class="dept-header__title">{{ t('users.departments.title') }}</span>
+            <t-button
+              variant="text"
+              shape="square"
+              size="small"
+              :loading="departmentRefreshing"
+              :title="t('users.departments.refresh')"
+              :aria-label="t('users.departments.refresh')"
+              @click="onRefreshDepartments"
+            >
+              <template #icon><t-icon name="refresh" /></template>
+            </t-button>
+          </div>
+          <t-input
+            v-model="departmentKeyword"
+            name="department-filter"
+            autocomplete="off"
+            :placeholder="t('users.departments.searchPlaceholder')"
+            clearable
           >
-            <template #icon><t-icon name="refresh" /></template>
-          </t-button>
-        </div>
-        <t-input
-          v-model="departmentKeyword"
-          name="department-filter"
-          autocomplete="off"
-          :placeholder="t('users.departments.searchPlaceholder')"
-          clearable
-        >
-          <template #prefix-icon><t-icon name="search" /></template>
-        </t-input>
+            <template #prefix-icon><t-icon name="search" /></template>
+          </t-input>
 
-        <t-tree
-          v-if="treeData.length"
-          class="dept-tree"
-          :data="treeData"
-          lazy
-          :load="loadDepartmentChildren"
-          :keys="{ value: 'id', label: 'label' }"
-          :label="true"
-          activable
-          :actived="activedKeys"
-          :expanded="treeExpandedKeys"
-          :draggable="canWriteUsers"
-          :allow-drop="allowDrop"
-          hover
-          value-mode="all"
-          @active="onTreeActive"
-          @expand="onTreeExpand"
-          @drop="onTreeDrop"
-        >
-          <template #label="{ node }">
-            <span class="dept-node">
-              <span
-                class="dept-node__name"
-                :title="node.data?.path"
-                v-html="highlightName(node.data?.name ?? '')"
-              ></span>
-              <span class="dept-count">{{ node.data?.user_count }}</span>
-              <span v-if="canWriteUsers" class="dept-node__more-wrap" @click.stop>
-                <t-dropdown
-                  trigger="click"
-                  placement="bottom-right"
-                  :options="departmentMenuOptions(node.data)"
-                  @click="onDepartmentMenu($event, node.data)"
-                >
-                  <t-button
-                    class="dept-node__more"
-                    variant="text"
-                    shape="square"
-                    size="small"
-                    :aria-label="t('users.departments.actions')"
+          <t-tree
+            v-if="treeData.length"
+            class="dept-tree"
+            :data="treeData"
+            lazy
+            :load="loadDepartmentChildren"
+            :keys="{ value: 'id', label: 'label' }"
+            :label="true"
+            activable
+            :actived="activedKeys"
+            :expanded="treeExpandedKeys"
+            :draggable="canWriteUsers"
+            :allow-drop="allowDrop"
+            hover
+            value-mode="all"
+            @active="onTreeActive"
+            @expand="onTreeExpand"
+            @drop="onTreeDrop"
+          >
+            <template #label="{ node }">
+              <span class="dept-node">
+                <span
+                  class="dept-node__name"
+                  :title="node.data?.path"
+                  v-html="highlightName(node.data?.name ?? '')"
+                ></span>
+                <span class="dept-count">{{ node.data?.user_count }}</span>
+                <span v-if="canWriteUsers" class="dept-node__more-wrap" @click.stop>
+                  <t-dropdown
+                    trigger="click"
+                    placement="bottom-right"
+                    :options="departmentMenuOptions(node.data)"
+                    @click="onDepartmentMenu($event, node.data)"
                   >
-                    <t-icon name="ellipsis" />
-                  </t-button>
-                </t-dropdown>
+                    <t-button
+                      class="dept-node__more"
+                      variant="text"
+                      shape="square"
+                      size="small"
+                      :aria-label="t('users.departments.actions')"
+                    >
+                      <t-icon name="ellipsis" />
+                    </t-button>
+                  </t-dropdown>
+                </span>
               </span>
-            </span>
-          </template>
-        </t-tree>
-        <p v-else class="dept-empty">
-          {{
-            departmentKeyword ? t('users.departments.searchEmpty') : t('users.departments.empty')
-          }}
-        </p>
-      </t-card>
+            </template>
+          </t-tree>
+          <p v-else class="dept-empty">
+            {{
+              departmentKeyword ? t('users.departments.searchEmpty') : t('users.departments.empty')
+            }}
+          </p>
+        </div>
+      </CollapsibleSidebar>
 
       <div class="users-main">
-        <filter-bar @search="onSearch" @reset="onReset">
+        <filter-bar class="users-filter" @search="onSearch" @reset="onReset">
           <t-col :span="5">
             <t-input
               v-model="query.search"
@@ -110,7 +112,7 @@
           </t-col>
         </filter-bar>
 
-        <t-card :bordered="false">
+        <div class="users-list">
           <div class="table-toolbar">
             <t-space>
               <t-button v-permission.write="'identity.users'" theme="primary" @click="onCreate">
@@ -173,7 +175,7 @@
             :loading="loading"
             :selected-row-keys="selectedKeys"
             :pagination="pagination"
-            :scroll="{ x: 1458 }"
+            :scroll="{ x: 1598 }"
             hover
             @select-change="onSelectChange"
             @page-change="onPageChange"
@@ -185,6 +187,9 @@
             </template>
             <template #email="{ row }">
               <span :class="{ 'cell-empty': !row.email }">{{ row.email ?? '—' }}</span>
+            </template>
+            <template #phone="{ row }">
+              <span :class="{ 'cell-empty': !row.phone }">{{ row.phone || '—' }}</span>
             </template>
             <template #department="{ row }">
               <span :class="{ 'cell-empty': !row.department }">
@@ -246,7 +251,7 @@
               </t-space>
             </template>
           </t-table>
-        </t-card>
+        </div>
       </div>
     </div>
 
@@ -362,6 +367,7 @@
 </template>
 
 <script setup lang="ts">
+import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
 import { copyText } from '@/utils/clipboard'
 import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -681,6 +687,7 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
   { colKey: 'username', title: t('users.columns.username'), width: 140 },
   { colKey: 'display_name', title: t('users.columns.displayName'), width: 100 },
   { colKey: 'email', title: t('users.columns.email'), width: 200, ellipsis: true },
+  { colKey: 'phone', title: t('users.columns.phone'), width: 140 },
   { colKey: 'department', title: t('users.columns.department'), width: 160, ellipsis: true },
   { colKey: 'groups', title: t('users.columns.groups'), width: 130 },
   { colKey: 'role', title: t('users.columns.role'), width: 120 },
@@ -1302,18 +1309,34 @@ onMounted(async () => {
 <style scoped>
 .users-layout {
   display: flex;
-  align-items: flex-start;
-  gap: var(--td-comp-margin-l, 16px);
+  align-items: stretch;
+  background: var(--td-bg-color-container);
+  border-radius: var(--td-radius-medium);
+  overflow: hidden;
 }
 
 .users-dept {
   flex: none;
-  width: 260px;
+  width: var(--users-sidebar-width);
+  border-right: 1px solid var(--td-component-stroke);
+}
+
+.users-dept-content,
+.users-main {
+  padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
 }
 
 .users-main {
   flex: 1;
   min-width: 0;
+}
+
+.users-filter {
+  margin-bottom: var(--td-comp-margin-l);
+}
+
+.users-filter :deep(.t-card__body) {
+  padding: 0;
 }
 
 .dept-header {

@@ -13,6 +13,7 @@ import {
 import { usePermissionStore } from './permission'
 import { clearSession, clearCsrf, setCsrfToken } from '@/utils/auth'
 import { costMockCapabilities, setCostMockActor } from '@/api/mock/cost'
+import { securityMockCapabilities, setSecurityMockActor } from '@/api/mock/security'
 
 export interface UserInfo {
   id: string
@@ -102,14 +103,20 @@ export const useUserStore = defineStore('user', {
       const permissions = await getPermissionsApi()
       // Cost P0 menus and capabilities are explicitly mocked until its backend is available.
       setCostMockActor(session.user_id)
+      setSecurityMockActor(session.user_id)
       this.userInfo = {
         id: session.user_id,
         username: session.username,
         name: session.display_name || session.username,
         roles: [],
         permissions: derivePermissions([
-          ...permissions.capabilities.filter((item) => !item.resource_code.startsWith('cost.')),
+          ...permissions.capabilities.filter(
+            (item) =>
+              !item.resource_code.startsWith('cost.') &&
+              !item.resource_code.startsWith('security.'),
+          ),
           ...costMockCapabilities,
+          ...securityMockCapabilities,
         ]),
       }
       this.loaded = true
@@ -120,6 +127,7 @@ export const useUserStore = defineStore('user', {
     },
     /** 本地登出（401 等场景，不调接口） */
     reset() {
+      setSecurityMockActor('')
       useTermsStore().reset()
       usePermissionStore().reset()
       this.context = {}

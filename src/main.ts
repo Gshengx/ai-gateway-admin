@@ -9,6 +9,7 @@ import { permissionDirective } from '@/directives/permission'
 
 import 'tdesign-vue-next/es/style/index.css'
 import '@/styles/index.css'
+import '@/styles/security.css'
 
 const app = createApp(App)
 

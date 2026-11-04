@@ -487,6 +487,20 @@ function handle(
   }
   if (path.startsWith('/cost/mock-departments/'))
     return departments.find((d) => d.id === path.split('/').slice(-1)[0]) ?? fail('NOT_FOUND')
+  if (path === '/cost/mock-users') {
+    const allowed = q.allowed_ids.split(',')
+    const keyword = q.search.trim().toLowerCase()
+    const range = q.department_id ? subtree(q.department_id) : subtree('hq')
+    return rows(
+      users.filter(
+        (u) =>
+          allowed.includes(u.id) &&
+          range.includes(u.department_id) &&
+          (!keyword || `${u.name} ${u.username}`.toLowerCase().includes(keyword)),
+      ),
+      q,
+    )
+  }
   if (path === '/cost/mock-context')
     return {
       departments: departments.filter(

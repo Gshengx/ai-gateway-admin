@@ -111,3 +111,8 @@ body {
   /* 发起检测弹窗按原型约 560 CSS px；额外额度引用由用户确认临时增加。 */
   --admission-start-dialog-width: 560px;
 }
+
+/* 用户管理部门侧栏沿用页面原有 260px 宽度，无对应 TDesign 业务宽度 token。 */
+:root {
+  --users-sidebar-width: 260px;
+}

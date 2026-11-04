@@ -602,6 +602,9 @@ h3 {
 .primary-action {
   margin-inline-start: auto;
 }
+.toolbar > :deep(.cost-department-select) {
+  width: var(--cost-search-width);
+}
 .usage {
   display: flex;
   align-items: center;
