@@ -111,11 +111,20 @@
               theme="info"
               :message="t('logicalModels.permissionHint')"
             />
-            <div v-permission.write="'model.permissions'" class="grant-toolbar block">
+            <div
+              v-if="activeTab === 'permissions'"
+              v-permission.write="'model.permissions'"
+              class="grant-toolbar block"
+            >
               <t-select
                 v-model="subjectType"
                 :options="subjectTypes"
-                @change="selectedSubjects = []"
+                @change="
+                  () => {
+                    selectedSubjects = []
+                    pickerVisible = false
+                  }
+                "
               />
               <SubjectPicker
                 v-if="subjectType === 'DEPARTMENT'"
@@ -145,6 +154,7 @@
                 <template #suffixIcon><t-icon name="chevron-down" /></template>
                 <template #panel>
                   <SubjectPicker
+                    v-if="pickerVisible"
                     v-model="selectedSubjects"
                     :type="subjectType"
                     @names="mergeNames"
@@ -412,26 +422,51 @@ async function loadGrants() {
   if (id !== logicalModelId.value) return
   grants.value = all
   selectedGrants.value = []
-  await Promise.all(
-    all.map(async (g) => {
-      if (names.value[g.subject_id]) return
+  if (activeTab.value === 'permissions') await loadGrantNames()
+}
+let namesRequest: Promise<void> | undefined
+async function loadGrantNames() {
+  if (namesRequest) await namesRequest
+  const id = logicalModelId.value
+  const currentVersion = version
+  const request = (async () => {
+    for (const g of grants.value) {
+      if (
+        id !== logicalModelId.value ||
+        currentVersion !== version ||
+        activeTab.value !== 'permissions'
+      )
+        return
+      if (names.value[g.subject_id]) continue
       try {
+        let name: string
         if (g.subject_type === 'DEPARTMENT') {
           const r = await getDepartmentDetailApi(g.subject_id)
-          names.value[g.subject_id] = r.name
+          name = r.name
         } else if (g.subject_type === 'GROUP') {
           const r = await getGroupApi(g.subject_id)
-          names.value[g.subject_id] = r.group.display_name || r.group.name
+          name = r.group.display_name || r.group.name
         } else {
           const r = await getUserDetailApi(g.subject_id)
-          names.value[g.subject_id] = r.user.display_name || r.user.username
+          name = r.user.display_name || r.user.username
         }
+        if (id !== logicalModelId.value || currentVersion !== version) return
+        names.value[g.subject_id] = name
       } catch {
         /* 保留 ID，不猜测不可见对象名称。 */
       }
-    }),
-  )
+    }
+  })()
+  namesRequest = request
+  void request.finally(() => {
+    if (namesRequest === request) namesRequest = undefined
+  })
+  return request
 }
+watch(activeTab, (tab) => {
+  pickerVisible.value = false
+  if (tab === 'permissions') void loadGrantNames()
+})
 async function initialize() {
   const v = ++version
   model.value = null
@@ -569,6 +604,7 @@ watch(
     mountPagination.current = 1
     activeTab.value = 'basic'
     names.value = {}
+    namesRequest = undefined
     subjectLabels.value = {}
     grants.value = []
     void initialize()

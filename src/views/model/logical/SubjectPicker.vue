@@ -15,7 +15,7 @@
         v-if="type === 'USER'"
         v-model="department"
         :placeholder="t('logicalModels.departmentFilter')"
-        @change="query"
+        @change="changeDepartment"
       />
       <t-input
         v-model="search"
@@ -78,6 +78,7 @@ const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'name', title: t('logicalModels.subject') },
 ])
 let version = 0
+let queriedDepartment = ''
 function nodes(items: Awaited<ReturnType<typeof getDepartmentListApi>>['items']): Node[] {
   emit('names', Object.fromEntries(items.map((x) => [x.id, x.display_name || x.name])))
   return items.map((x) => ({
@@ -135,8 +136,12 @@ async function load() {
   }
 }
 function query() {
+  queriedDepartment = department.value
   pagination.current = 1
   void load()
+}
+function changeDepartment() {
+  if (department.value !== queriedDepartment) query()
 }
 function changePage(page: PageInfo) {
   pagination.current = page.current
