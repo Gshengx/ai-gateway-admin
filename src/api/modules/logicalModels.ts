@@ -148,10 +148,14 @@ export function unmountLogicalModelApi(id: string, modelId: string, data: { reas
   )
 }
 
-export function getLogicalModelPermissionsApi(id: string, params: LogicalModelPermissionQuery) {
+export function getLogicalModelPermissionsApi(
+  id: string,
+  params: LogicalModelPermissionQuery,
+  signal?: AbortSignal,
+) {
   return request.get<OffsetPageResult<LogicalModelPermission>>(
     `/logical-models/${encodeURIComponent(id)}/permissions`,
-    { params },
+    { params, signal },
   )
 }
 

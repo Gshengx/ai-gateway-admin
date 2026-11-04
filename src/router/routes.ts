@@ -100,25 +100,19 @@ export const businessRoutes: RouteRecordRaw[] = [
   {
     path: 'cost',
     name: 'Cost',
-    redirect: '/cost/overview',
+    redirect: '/cost/bills',
     meta: { title: 'route.cost.label', icon: 'wallet' },
     children: [
       {
-        path: 'overview',
-        name: 'CostOverview',
-        component: () => import('@/views/common/placeholder.vue'),
-        meta: { title: 'route.cost.overview', permission: 'cost.overview' },
-      },
-      {
         path: 'bills',
         name: 'CostBills',
-        component: () => import('@/views/common/placeholder.vue'),
+        component: () => import('@/views/cost/bills/index.vue'),
         meta: { title: 'route.cost.bills', permission: 'cost.bills' },
       },
       {
         path: 'budgets',
         name: 'CostBudgets',
-        component: () => import('@/views/common/placeholder.vue'),
+        component: () => import('@/views/cost/budgets/index.vue'),
         meta: { title: 'route.cost.budgets', permission: 'cost.budgets' },
       },
     ],

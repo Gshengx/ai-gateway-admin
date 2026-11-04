@@ -1,0 +1,10 @@
+/* Business widths measured from the cost prototype; TDesign has no page width tokens. */
+:root {
+  --cost-filter-width: 180px;
+  --cost-search-width: 280px;
+  --cost-dialog-width: 560px;
+  --cost-drawer-width: 960px;
+  --cost-budget-drawer-width: 760px;
+  --cost-trend-height: 240px;
+  --cost-form-max-height: 65vh;
+}

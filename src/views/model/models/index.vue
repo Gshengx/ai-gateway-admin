@@ -44,7 +44,7 @@
               ><template #prefix-icon><t-icon name="search" /></template
             ></t-input>
             <t-select v-model="status" :options="statusOptions" @change="filterChanged" />
-            <t-select v-model="mount" :options="mountOptions" @change="filterChanged" />
+            <t-select v-model="mount" :options="mountOptions" @change="mountChanged" />
             <t-button theme="default" @click="reset">{{ t('models.reset') }}</t-button>
           </div>
         </template></FilterBar
@@ -144,6 +144,7 @@
       :provider="providers.find((p) => p.id === detail?.provider_id)"
       @close="detail = undefined"
       @edit="openForm"
+      @review="(id) => openReview(id, 'PUBLISH')"
       @result="(model, run) => openAdmission(model, true, run)"
     />
     <ModelFormDialog v-model:visible="dialogVisible" :model-id="editingId" @success="handleSaved" />
@@ -187,7 +188,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   MessagePlugin,
@@ -268,6 +269,7 @@ async function openReview(id: string, decision: 'PUBLISH' | 'REJECT') {
     } else {
       await reviewModelApi(id, { decision, run_id: reviewRunId.value, reason: t('models.publish') })
       admissionModel.value = undefined
+      detail.value = undefined
       await handleSaved()
     }
   } catch {
@@ -309,7 +311,14 @@ function openForm(id?: string) {
   dialogVisible.value = true
 }
 async function handleSaved() {
-  await Promise.all([fetchList(), fetchSidebar()])
+  sidebarVersion++
+  sidebarController.abort()
+  sidebarController = new AbortController()
+  logicalSidebarTask = undefined
+  logicalStatsExpiresAt = 0
+  completeModelPage = undefined
+  logicalCounts.value = {}
+  await Promise.all([fetchList(), fetchProviders()])
 }
 function openAction(id: string, action: ModelCommand | 'DELETE') {
   actionId.value = id
@@ -352,6 +361,13 @@ const total = ref(0)
 const unmountedTotal = ref(0)
 const logicalCounts = ref<Record<string, string>>({})
 const loading = ref(false)
+const sidebarCacheTtl = 30_000
+let listVersion = 0
+let sidebarVersion = 0
+let sidebarController = new AbortController()
+let logicalStatsExpiresAt = 0
+let logicalSidebarTask: Promise<void> | undefined
+let completeModelPage: { items: PhysicalModelItem[]; expiresAt: number } | undefined
 const pagination = reactive<PaginationProps>({
   current: 1,
   pageSize: 20,
@@ -391,6 +407,8 @@ const columns = computed<PrimaryTableCol<PhysicalModelItem>[]>(() => [
   { colKey: 'action', title: t('models.actions'), fixed: 'right', width: 140 },
 ])
 async function fetchList() {
+  const currentVersion = ++listVersion
+  const unfiltered = !selected.value && !search.value && !status.value && mount.value === 'all'
   loading.value = true
   try {
     const result = await getModelsApi({
@@ -398,22 +416,26 @@ async function fetchList() {
       page_size: pagination.pageSize ?? 20,
       search: search.value || undefined,
       status: status.value || undefined,
-      unmounted:
-        selected.value === 'unmounted' && view.value === 'logical'
-          ? true
-          : mount.value === 'all'
-            ? undefined
-            : mount.value === 'unmounted',
+      unmounted: mount.value === 'all' ? undefined : mount.value === 'unmounted',
       provider_id: view.value === 'provider' ? selected.value || undefined : undefined,
       logical_model_id:
         view.value === 'logical' && selected.value !== 'unmounted'
           ? selected.value || undefined
           : undefined,
     })
+    if (currentVersion !== listVersion) return
     items.value = result.items
     pagination.total = result.total
+    if (unfiltered) {
+      total.value = result.total
+      completeModelPage =
+        result.items.length === result.total
+          ? { items: result.items, expiresAt: Date.now() + sidebarCacheTtl }
+          : undefined
+    }
+    if (view.value === 'logical') void fetchLogicalSidebar().catch(() => {})
   } finally {
-    loading.value = false
+    if (currentVersion === listVersion) loading.value = false
   }
 }
 function filterChanged() {
@@ -422,6 +444,14 @@ function filterChanged() {
 }
 function selectItem(id: string) {
   selected.value = id
+  if (view.value === 'logical') mount.value = id === 'unmounted' ? 'unmounted' : 'all'
+  filterChanged()
+}
+function mountChanged() {
+  if (view.value === 'logical') {
+    if (mount.value === 'unmounted') selected.value = 'unmounted'
+    else if (selected.value === 'unmounted') selected.value = ''
+  }
   filterChanged()
 }
 function switchView(value: string | number | boolean) {
@@ -430,13 +460,14 @@ function switchView(value: string | number | boolean) {
   search.value = ''
   status.value = ''
   mount.value = 'all'
-  filterChanged()
+  pagination.current = 1
+  void fetchList()
 }
 function reset() {
   search.value = ''
   status.value = ''
   mount.value = 'all'
-  filterChanged()
+  mountChanged()
 }
 function changePage(page: PageInfo) {
   pagination.current = page.pageSize !== pagination.pageSize ? 1 : page.current
@@ -452,31 +483,92 @@ function statusTheme(s: ModelStatus) {
         ? 'danger'
         : 'default'
 }
-async function fetchSidebar() {
-  const [p, l, all, unmounted] = await Promise.all([
-    getProvidersApi({ page: 1, page_size: 100 }),
-    getLogicalModelsApi({ page: 1, page_size: 100 }),
-    getModelsApi({ page: 1, page_size: 20 }),
-    getModelsApi({ page: 1, page_size: 1, unmounted: true }),
-  ])
+async function fetchProviders() {
+  const p = await getProvidersApi({ page: 1, page_size: 100 })
   providers.value = p.items
-  logicalModels.value = l.items
-  total.value = all.total
-  unmountedTotal.value = unmounted.total
-  logicalCounts.value = Object.fromEntries(
+  // 当前列表有筛选时，不能用筛选后的 total 覆盖侧栏的全部模型数量。
+  if (selected.value || search.value || status.value || mount.value !== 'all') {
+    const all = await getModelsApi({ page: 1, page_size: 1 })
+    total.value = all.total
+  }
+}
+function fetchLogicalSidebar(): Promise<void> {
+  if (view.value !== 'logical' || logicalStatsExpiresAt > Date.now()) return Promise.resolve()
+  if (logicalSidebarTask) return logicalSidebarTask
+  const currentVersion = sidebarVersion
+  const signal = sidebarController.signal
+  const current = () => currentVersion === sidebarVersion && !signal.aborted
+  const load = async () => {
+    const l = await getLogicalModelsApi({ page: 1, page_size: 100 })
+    if (!current()) return
+    logicalModels.value = l.items
+    const complete =
+      completeModelPage && completeModelPage.expiresAt > Date.now() ? completeModelPage : undefined
+    if (complete) {
+      logicalCounts.value = Object.fromEntries(
+        l.items.map((model) => {
+          const mounted = complete.items.filter((m) =>
+            m.mounts.some((binding) => binding.logical_model_id === model.id),
+          )
+          return [
+            model.id,
+            `${mounted.filter((m) => m.status === 'ACTIVE').length}/${mounted.length}`,
+          ]
+        }),
+      )
+      unmountedTotal.value = complete.items.filter((m) => !m.mounts.length).length
+      logicalStatsExpiresAt = complete.expiresAt
+      return
+    }
+    const tasks: (() => Promise<void>)[] = [
+      async () => {
+        const result = await getModelsApi({ page: 1, page_size: 1, unmounted: true }, signal)
+        if (current()) unmountedTotal.value = result.total
+      },
+    ]
+    for (const model of l.items) {
+      if (!model.mounts.length) {
+        logicalCounts.value[model.id] = '0/0'
+        continue
+      }
+      tasks.push(async () => {
+        const all = await getModelsApi(
+          { page: 1, page_size: 100, logical_model_id: model.id },
+          signal,
+        )
+        const active =
+          all.items.length === all.total
+            ? all.items.filter((m) => m.status === 'ACTIVE').length
+            : (
+                await getModelsApi(
+                  { page: 1, page_size: 1, logical_model_id: model.id, status: 'ACTIVE' },
+                  signal,
+                )
+              ).total
+        if (current()) logicalCounts.value[model.id] = `${active}/${all.total}`
+      })
+    }
+    let next = 0
     await Promise.all(
-      l.items.map(async (model) => {
-        const [active, allMounted] = await Promise.all([
-          getModelsApi({ page: 1, page_size: 1, logical_model_id: model.id, status: 'ACTIVE' }),
-          getModelsApi({ page: 1, page_size: 1, logical_model_id: model.id }),
-        ])
-        return [model.id, `${active.total}/${allMounted.total}`]
+      Array.from({ length: 3 }, async () => {
+        while (current() && view.value === 'logical' && next < tasks.length) await tasks[next++]()
       }),
-    ),
-  )
+    )
+    if (current() && view.value === 'logical') logicalStatsExpiresAt = Date.now() + sidebarCacheTtl
+  }
+  const task = load().finally(() => {
+    if (logicalSidebarTask === task) logicalSidebarTask = undefined
+  })
+  logicalSidebarTask = task
+  return task
 }
 onMounted(() => {
   void handleSaved()
+})
+onBeforeUnmount(() => {
+  listVersion++
+  sidebarVersion++
+  sidebarController.abort()
 })
 </script>
 <style scoped>

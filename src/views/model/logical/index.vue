@@ -55,7 +55,9 @@
       >
       <template #status="{ row }"
         ><t-tag :theme="activeCounts[row.id] ? 'success' : 'default'">{{
-          t(activeCounts[row.id] ? 'logicalModels.statusActive' : 'logicalModels.unavailable')
+          activeCounts[row.id] === undefined
+            ? '—'
+            : t(activeCounts[row.id] ? 'logicalModels.statusActive' : 'logicalModels.unavailable')
         }}</t-tag></template
       >
       <template #created="{ row }">{{
@@ -75,7 +77,7 @@
         </t-space></template
       >
     </t-table>
-    <LogicalModelForm v-model:visible="formVisible" :model="editing" @saved="load" />
+    <LogicalModelForm v-model:visible="formVisible" :model="editing" @saved="handleSaved" />
     <t-dialog
       v-model:visible="deleteVisible"
       :header="t('logicalModels.deleteTitle')"
@@ -163,6 +165,111 @@ const pagination = reactive({
 })
 const grantCounts = ref<Record<string, Record<SubjectType, number>>>({})
 const activeCounts = ref<Record<string, number>>({})
+type GrantCounts = Record<SubjectType, number>
+interface StatsCacheEntry<T> {
+  signature: string
+  expiresAt: number
+  value?: T
+  pending?: Promise<T>
+}
+const activeCache = new Map<string, StatsCacheEntry<number>>()
+const grantCache = new Map<string, StatsCacheEntry<GrantCounts>>()
+const statsController = new AbortController()
+const statsCacheTtl = 30_000
+const statsConcurrency = 3
+let statsWorkers = 0
+let statsQueue: { version: number; run: () => Promise<void> }[] = []
+
+function cachedStats<T>(
+  cache: Map<string, StatsCacheEntry<T>>,
+  id: string,
+  signature: string,
+  fetcher: () => Promise<T>,
+): Promise<T> {
+  const cached = cache.get(id)
+  if (cached?.signature === signature) {
+    if (cached.pending) return cached.pending
+    if (cached.expiresAt > Date.now() && cached.value !== undefined)
+      return Promise.resolve(cached.value)
+  }
+  const entry: StatsCacheEntry<T> = { signature, expiresAt: 0 }
+  entry.pending = fetcher()
+    .then((value) => {
+      entry.value = value
+      entry.expiresAt = Date.now() + statsCacheTtl
+      entry.pending = undefined
+      return value
+    })
+    .catch((error: unknown) => {
+      if (cache.get(id) === entry) cache.delete(id)
+      throw error
+    })
+  cache.set(id, entry)
+  return entry.pending
+}
+function drainStats() {
+  while (statsWorkers < statsConcurrency && statsQueue.length) {
+    const task = statsQueue.shift()!
+    if (task.version !== version) continue
+    statsWorkers++
+    void task
+      .run()
+      .catch(() => {
+        /* 请求层统一提示；单项统计失败保留占位符，不阻塞其他行。 */
+      })
+      .finally(() => {
+        statsWorkers--
+        drainStats()
+      })
+  }
+}
+function loadStats(rows: LogicalModel[], currentVersion: number) {
+  for (const row of rows) {
+    if (!row.mounts.length) activeCounts.value[row.id] = 0
+    else
+      statsQueue.push({
+        version: currentVersion,
+        run: async () => {
+          const signature = JSON.stringify([
+            row.ready,
+            row.mounts.map((m) => m.physical_model_id).sort(),
+          ])
+          const count = await cachedStats(activeCache, row.id, signature, async () => {
+            const result = await getModelsApi(
+              { page: 1, page_size: 1, logical_model_id: row.id, status: 'ACTIVE' },
+              statsController.signal,
+            )
+            return result.total
+          })
+          if (currentVersion === version) activeCounts.value[row.id] = count
+        },
+      })
+    if (canReadResource(user.permissions, 'model.permissions'))
+      statsQueue.push({
+        version: currentVersion,
+        run: async () => {
+          const counts = await cachedStats(grantCache, row.id, '', async () => {
+            const result: GrantCounts = { DEPARTMENT: 0, GROUP: 0, USER: 0 }
+            let page = 1,
+              total = 1
+            while (page <= total) {
+              const grants = await getLogicalModelPermissionsApi(
+                row.id,
+                { page, page_size: 100 },
+                statsController.signal,
+              )
+              grants.items.forEach((g) => result[g.subject_type]++)
+              total = grants.total_pages
+              page++
+            }
+            return result
+          })
+          if (currentVersion === version) grantCounts.value[row.id] = counts
+        },
+      })
+  }
+  drainStats()
+}
 const columns = computed<PrimaryTableCol<LogicalModel>[]>(() => [
   { colKey: 'row-select', type: 'multiple', width: 48 },
   { colKey: 'name', title: t('logicalModels.colName'), minWidth: 160 },
@@ -176,6 +283,7 @@ const columns = computed<PrimaryTableCol<LogicalModel>[]>(() => [
 let version = 0
 async function load() {
   const currentVersion = ++version
+  statsQueue = []
   loading.value = true
   try {
     const result = await getLogicalModelsApi({
@@ -193,33 +301,19 @@ async function load() {
     selected.value = selected.value.filter((id) => items.value.some((x) => x.id === id))
     grantCounts.value = {}
     activeCounts.value = {}
-    await Promise.all(
-      result.items.map(async (row) => {
-        const physical = await getModelsApi({
-          page: 1,
-          page_size: 100,
-          logical_model_id: row.id,
-          status: 'ACTIVE',
-        })
-        if (currentVersion === version) activeCounts.value[row.id] = physical.total
-        if (!canReadResource(user.permissions, 'model.permissions')) return
-        const counts: Record<SubjectType, number> = { DEPARTMENT: 0, GROUP: 0, USER: 0 }
-        let page = 1,
-          total = 1
-        while (page <= total) {
-          const grants = await getLogicalModelPermissionsApi(row.id, { page, page_size: 100 })
-          grants.items.forEach((g) => counts[g.subject_type]++)
-          total = grants.total_pages
-          page++
-        }
-        if (currentVersion === version) grantCounts.value[row.id] = counts
-      }),
-    )
+    loadStats(result.items, currentVersion)
   } catch {
     /* 拦截器统一提示。 */
   } finally {
     if (currentVersion === version) loading.value = false
   }
+}
+function handleSaved() {
+  if (editing.value) {
+    activeCache.delete(editing.value.id)
+    grantCache.delete(editing.value.id)
+  }
+  void load()
 }
 function query() {
   clearTimeout(timer)
@@ -254,6 +348,8 @@ async function remove() {
   saving.value = true
   try {
     await deleteLogicalModelApi(current.value.id, { reason: reason.value.trim() })
+    activeCache.delete(current.value.id)
+    grantCache.delete(current.value.id)
     deleteVisible.value = false
     await load()
   } catch {
@@ -279,6 +375,7 @@ async function grant() {
       })),
       reason: 'admin-console',
     })
+    selected.value.forEach((id) => grantCache.delete(String(id)))
     grantVisible.value = false
     selected.value = []
     await load()
@@ -292,6 +389,10 @@ onMounted(load)
 onBeforeUnmount(() => {
   clearTimeout(timer)
   version++
+  statsQueue = []
+  statsController.abort()
+  activeCache.clear()
+  grantCache.clear()
 })
 </script>
 <style scoped>

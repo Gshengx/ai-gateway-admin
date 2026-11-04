@@ -3,7 +3,10 @@
  * key 约定：route.* 为路由标题（与 meta.title 对应），其余按 页面/模块 分组。
  * 注意：key 的每一段必须与对象嵌套层级一致（勿用带点的叶子键，避免解析歧义）。
  */
+import { costZh } from './cost'
+
 export default {
+  cost: costZh,
   model: {
     modelsForm: {
       create: '创建物理模型',
@@ -100,6 +103,13 @@ export default {
   },
   models: {
     detailView: {
+      lifecycle: '生命周期时间线',
+      created: '模型创建',
+      mockActor: '演示操作员',
+      contextWindow: '上下文窗口',
+      maxOutput: '最大输出',
+      interface: '接口',
+      viewResult: '查看结果',
       priority: '优先级',
       price: '价格',
       admission: '准入检测',
@@ -461,7 +471,8 @@ export default {
     read: '读',
     write: '写',
     all: '全选',
-    hint: '按二级菜单授权；三级页面或页签继承所属二级菜单的权限。',
+    otherResources: '其他权限资源',
+    hint: '权限资源以后端数据为准；受保护、禁用或不可分配的资源仅供查看。',
     suffix: '副本',
     save: '保存',
     close: '关闭',
@@ -716,6 +727,9 @@ export default {
     save: '保存',
     confirm: '确定',
     close: '关闭',
+  },
+  requestErrors: {
+    VALIDATION_FAILED: '提交数据校验失败，请检查输入内容',
   },
   authErrors: {
     passwordRelogin: '密码修改后会话已失效，请使用新密码重新登录',

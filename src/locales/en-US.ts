@@ -2,7 +2,10 @@
  * English language pack. Keys must stay in sync with zh-CN.ts.
  * Note: each key segment must match the object nesting (no dot-in-leaf keys).
  */
+import { costEn } from './cost'
+
 export default {
+  cost: costEn,
   model: {
     modelsForm: {
       create: 'Create physical model',
@@ -101,6 +104,13 @@ export default {
   },
   models: {
     detailView: {
+      lifecycle: 'Lifecycle timeline',
+      created: 'Model created',
+      mockActor: 'Demo operator',
+      contextWindow: 'Context window',
+      maxOutput: 'Maximum output',
+      interface: 'API',
+      viewResult: 'View results',
       priority: 'Priority',
       price: 'Price',
       admission: 'Admission test',
@@ -477,7 +487,8 @@ export default {
     read: 'Read',
     write: 'Write',
     all: 'Select all',
-    hint: 'Grant permissions at the second menu level; nested pages and tabs inherit their parent menu permissions.',
+    otherResources: 'Other permission resources',
+    hint: 'Resources come from the server. Protected, disabled or unassignable resources are read-only.',
     suffix: ' copy',
     save: 'Save',
     close: 'Close',
@@ -740,6 +751,9 @@ export default {
     save: 'Save',
     confirm: 'Confirm',
     close: 'Close',
+  },
+  requestErrors: {
+    VALIDATION_FAILED: 'Validation failed. Please check your input.',
   },
   authErrors: {
     passwordRelogin: 'The session has expired. Sign in again with your new password',

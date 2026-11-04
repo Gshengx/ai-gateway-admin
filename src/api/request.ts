@@ -36,7 +36,9 @@ export interface NotifiedError extends Error {
   retryAfter?: number
 }
 
-function businessMessage(code?: string): string {
+function businessMessage(code?: string, config?: RequestConfig): string {
+  if (code === 'VALIDATION_FAILED' && config?.url !== '/auth/change-password')
+    return i18n.global.t('requestErrors.VALIDATION_FAILED')
   for (const group of ['authErrors', 'roleErrors']) {
     const key = `${group}.${code}`
     if (code && i18n.global.te(key)) return i18n.global.t(key)
@@ -51,7 +53,7 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
       : undefined
   const code = body?.code
   const status = response?.status
-  const error: NotifiedError = new Error(businessMessage(code))
+  const error: NotifiedError = new Error(businessMessage(code, config))
   Object.assign(error, { code, status, params: body?.params, request_id: body?.request_id })
   const retry = response?.headers['retry-after']
   if (status === 429 || status === 503) {

@@ -12,6 +12,7 @@ import {
 } from '@/api/modules/auth'
 import { usePermissionStore } from './permission'
 import { clearSession, clearCsrf, setCsrfToken } from '@/utils/auth'
+import { costMockCapabilities, setCostMockActor } from '@/api/mock/cost'
 
 export interface UserInfo {
   id: string
@@ -99,12 +100,17 @@ export const useUserStore = defineStore('user', {
         throw new Error('Session gate is not ready')
       }
       const permissions = await getPermissionsApi()
+      // Cost P0 menus and capabilities are explicitly mocked until its backend is available.
+      setCostMockActor(session.user_id)
       this.userInfo = {
         id: session.user_id,
         username: session.username,
         name: session.display_name || session.username,
         roles: [],
-        permissions: derivePermissions(permissions.capabilities),
+        permissions: derivePermissions([
+          ...permissions.capabilities.filter((item) => !item.resource_code.startsWith('cost.')),
+          ...costMockCapabilities,
+        ]),
       }
       this.loaded = true
     },

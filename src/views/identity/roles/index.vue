@@ -104,7 +104,13 @@
                 <t-checkbox
                   :checked="allChecked(group.entries)"
                   :indeterminate="someChecked(group.entries) && !allChecked(group.entries)"
-                  :disabled="readonly || mode === 'copy' || saving || formLoading"
+                  :disabled="
+                    readonly ||
+                    mode === 'copy' ||
+                    saving ||
+                    formLoading ||
+                    !editableEntries(group.entries).length
+                  "
                   @change="(value: boolean) => selectGroup(group.entries, Boolean(value))"
                   >{{ t('roles.all') }}</t-checkbox
                 >
@@ -120,7 +126,12 @@
                   class="permission-cell"
                   :checked="grants[entry.code]?.can_read || false"
                   :disabled="
-                    readonly || mode === 'copy' || saving || formLoading || !entry.assignable
+                    readonly ||
+                    mode === 'copy' ||
+                    saving ||
+                    formLoading ||
+                    !entry.assignable ||
+                    !entry.read
                   "
                   @change="(value: boolean) => setGrant(entry.code, 'can_read', Boolean(value))"
                 />
@@ -128,7 +139,12 @@
                   class="permission-cell"
                   :checked="grants[entry.code]?.can_write || false"
                   :disabled="
-                    readonly || mode === 'copy' || saving || formLoading || !entry.assignable
+                    readonly ||
+                    mode === 'copy' ||
+                    saving ||
+                    formLoading ||
+                    !entry.assignable ||
+                    !entry.write
                   "
                   @change="(value: boolean) => setGrant(entry.code, 'can_write', Boolean(value))"
                 />
@@ -176,6 +192,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
 import { businessRoutes } from '@/router/routes'
+import { mergeRoleGrants } from './permissions'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import type { NotifiedError } from '@/api/request'
@@ -262,51 +279,89 @@ const resources = ref<PermissionResource[]>([])
 const resourcesLoaded = ref(false)
 const details = ref<RolePermission[]>([])
 const grants = reactive<Record<string, RoleGrant>>({})
-type Entry = { code: string; name: string; description?: string; assignable: boolean }
-const menuGroups = computed(() =>
-  businessRoutes
-    .map((group) => ({
-      title: group.meta?.title || '',
-      entries: (group.children || []).flatMap((route): Entry[] => {
-        const code = route.meta?.permission
-        const resource = resources.value.find((item) => item.resource_code === code)
-        if (
-          !code ||
-          code === 'identity.roles' ||
-          !resource ||
-          resource.is_protected ||
-          resource.management_policy === 'SUPER_ADMIN_ONLY'
-        )
-          return []
-        const permission = details.value.find((item) => item.resource_code === code)
-        return [
-          {
-            code,
-            name: resource.localized_name || resource.display_name || t(route.meta?.title || ''),
-            description: resource.localized_description || resource.description,
-            assignable: resource.status === 'ACTIVE' && (permission?.is_assignable ?? true),
-          },
-        ]
-      }),
-    }))
-    .filter((group) => group.entries.length),
-)
+type Entry = {
+  code: string
+  name: string
+  description?: string
+  assignable: boolean
+  read: boolean
+  write: boolean
+}
+const menuGroups = computed(() => {
+  const groups = businessRoutes.map((group) => ({
+    title: group.meta?.title || '',
+    routes: group.children || [],
+    entries: [] as Entry[],
+  }))
+  const other = { title: 'roles.otherResources', routes: [], entries: [] as Entry[] }
+  const unique = new Map(resources.value.map((resource) => [resource.resource_code, resource]))
+  const sorted = [...unique.values()].sort(
+    (a, b) => a.sort_order - b.sort_order || a.resource_code.localeCompare(b.resource_code),
+  )
+  for (const resource of sorted) {
+    const code = resource.resource_code
+    const permission = details.value.find((item) => item.resource_code === code)
+    const group =
+      groups.find((item) => item.routes.some((route) => route.meta?.permission === code)) ||
+      groups.find((item) =>
+        item.routes.some((route) => route.meta?.permission?.split('.')[0] === code.split('.')[0]),
+      ) ||
+      other
+    const actions = resource.actions.filter(
+      (action) => !permission || permission.actions.includes(action),
+    )
+    group.entries.push({
+      code,
+      name: resource.localized_name || resource.display_name || code,
+      description: resource.localized_description ?? resource.description,
+      assignable:
+        resource.status === 'ACTIVE' &&
+        !resource.is_protected &&
+        resource.management_policy !== 'SUPER_ADMIN_ONLY' &&
+        (!permission ||
+          (permission.is_assignable &&
+            !permission.is_protected &&
+            permission.status === 'ACTIVE' &&
+            permission.management_policy !== 'SUPER_ADMIN_ONLY')),
+      read: actions.includes('READ'),
+      write: actions.includes('READ') && actions.includes('WRITE'),
+    })
+  }
+  return [...groups, other].filter((group) => group.entries.length)
+})
 function setGrant(code: string, action: 'can_read' | 'can_write', value: boolean) {
+  const entry = menuGroups.value
+    .flatMap((group) => group.entries)
+    .find((item) => item.code === code)
+  if (!entry?.assignable || !(action === 'can_read' ? entry.read : entry.write)) return
   const grant = (grants[code] ||= { resource_code: code, can_read: false, can_write: false })
   grant[action] = value
   if (action === 'can_write' && value) grant.can_read = true
   if (action === 'can_read' && !value) grant.can_write = false
 }
+const editableEntries = (entries: Entry[]) =>
+  entries.filter((entry) => entry.assignable && (entry.read || entry.write))
 const allChecked = (entries: Entry[]) => {
-  const assignable = entries.filter((entry) => entry.assignable)
-  return assignable.length > 0 && assignable.every((entry) => grants[entry.code]?.can_write)
+  const assignable = editableEntries(entries)
+  return (
+    assignable.length > 0 &&
+    assignable.every(
+      (entry) =>
+        (!entry.read || grants[entry.code]?.can_read) &&
+        (!entry.write || grants[entry.code]?.can_write),
+    )
+  )
 }
 const someChecked = (entries: Entry[]) =>
-  entries.some((entry) => grants[entry.code]?.can_read || grants[entry.code]?.can_write)
+  editableEntries(entries).some(
+    (entry) =>
+      (entry.read && grants[entry.code]?.can_read) ||
+      (entry.write && grants[entry.code]?.can_write),
+  )
 function selectGroup(entries: Entry[], value: boolean) {
-  for (const entry of entries.filter((item) => item.assignable)) {
-    setGrant(entry.code, 'can_read', value)
-    setGrant(entry.code, 'can_write', value)
+  for (const entry of editableEntries(entries)) {
+    if (entry.read) setGrant(entry.code, 'can_read', value)
+    if (entry.write) setGrant(entry.code, 'can_write', value)
   }
 }
 const visible = ref(false)
@@ -389,7 +444,7 @@ function save() {
   }
   const permissions = menuGroups.value.flatMap((group) =>
     group.entries
-      .filter((entry) => entry.assignable)
+      .filter((entry) => entry.assignable && (entry.read || entry.write))
       .map(
         (entry) =>
           grants[entry.code] || { resource_code: entry.code, can_read: false, can_write: false },
@@ -430,7 +485,7 @@ function save() {
       if (needsPermissions) {
         const roleId = id
         const permissionPayload = {
-          permissions: permissions.map((grant) => ({ ...grant })),
+          permissions: mergeRoleGrants(currentMode === 'edit' ? details.value : [], permissions),
         }
         await saveRolePermissionsApi(roleId, permissionPayload, idempotencyKey)
         permissionsSaved = true

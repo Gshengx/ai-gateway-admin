@@ -59,7 +59,7 @@
     </t-table>
   </section>
   <t-drawer v-model:visible="detailVisible" :header="false" :footer="false" size="large">
-    <t-loading :loading="detailLoading" show-overlay>
+    <t-loading :loading="detailLoading" show-overlay class="provider-detail-loading">
       <t-alert v-if="detailError" theme="error" :message="t('providers.detailError')" />
       <template v-if="detail">
         <div class="detail-header">
@@ -665,6 +665,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.provider-detail-loading {
+  min-height: 100%;
+}
+
 .detail-header,
 .detail-title {
   display: flex;

@@ -168,8 +168,8 @@ function normalizePayload<T extends { declared_capabilities: CapabilityInput }>(
     },
   }
 }
-export function getModelsApi(params: PhysicalModelListQuery) {
-  return request.get<OffsetPageResult<PhysicalModelItem>>('/models', { params })
+export function getModelsApi(params: PhysicalModelListQuery, signal?: AbortSignal) {
+  return request.get<OffsetPageResult<PhysicalModelItem>>('/models', { params, signal })
 }
 export function getModelApi(modelId: string) {
   return request.get<PhysicalModelDetail>(`/models/${encodeURIComponent(modelId)}`, {
