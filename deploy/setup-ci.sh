@@ -298,46 +298,10 @@ for attempt in $(seq 1 120); do
 done
 curl -fsS "$JENKINS_URL/login" >/dev/null || die 'Jenkins 未启动，请查看 journalctl -u jenkins'
 
-job_dir="$JENKINS_HOME/jobs/ais-gateway-admin"
-install -d -o jenkins -g jenkins -m 0750 "$job_dir"
-cat >"$job_dir/config.xml" <<'EOF'
-<?xml version='1.1' encoding='UTF-8'?>
-<org.jenkinsci.plugins.workflow.job.WorkflowJob plugin="workflow-job">
-  <actions/>
-  <description>Git main build and Kubernetes release using SCM polling.</description>
-  <keepDependencies>false</keepDependencies>
-  <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git">
-      <configVersion>2</configVersion>
-      <userRemoteConfigs>
-        <hudson.plugins.git.UserRemoteConfig>
-          <url>https://github.com/Gshengx/ai-gateway-admin.git</url>
-          <credentialsId></credentialsId>
-        </hudson.plugins.git.UserRemoteConfig>
-      </userRemoteConfigs>
-      <branches>
-        <hudson.plugins.git.BranchSpec><name>*/main</name></hudson.plugins.git.BranchSpec>
-      </branches>
-      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-      <submoduleCfg class="empty-list"/>
-      <extensions/>
-    </scm>
-    <scriptPath>Jenkinsfile</scriptPath>
-    <lightweight>true</lightweight>
-  </definition>
-  <triggers>
-    <hudson.triggers.SCMTrigger><spec>H/1 * * * *</spec></hudson.triggers.SCMTrigger>
-  </triggers>
-  <disabled>false</disabled>
-</org.jenkinsci.plugins.workflow.job.WorkflowJob>
-EOF
-chown jenkins:jenkins "$job_dir/config.xml"
-chmod 0640 "$job_dir/config.xml"
+bash "$SCRIPT_DIR/configure-jenkins-job.sh"
 rm -f "$JENKINS_HOME/init.groovy.d/00-bootstrap-security.groovy"
 rm -rf /var/tmp/ais-jenkins-plugins /var/tmp/ais-jenkins-plugins.tsv \
   /var/tmp/ais-jenkins-update-center.json
-systemctl restart jenkins
 
 log '安装本项目 Nginx 配置并校验服务'
 if [ ! -f /etc/nginx/nginx.conf.before-ci ]; then
