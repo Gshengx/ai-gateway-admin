@@ -14,7 +14,6 @@ pipeline {
     KUBECONFIG = '/var/lib/jenkins/.kube/config'
     K8S_NAMESPACE = 'ais-gateway'
     DEPLOY_ROOT = '/var/lib/ais-gateway-admin'
-    SOURCE_SHA = ''
     SKIP_BUILD = 'false'
   }
 
@@ -22,7 +21,7 @@ pipeline {
     stage('Check GitHub main') {
       steps {
         script {
-          env.SOURCE_SHA = sh(
+          def sourceSha = sh(
             script: '''
               set -eu
               curl -4 -fsSL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
@@ -31,9 +30,10 @@ pipeline {
             ''',
             returnStdout: true
           ).trim()
-          if (!(env.SOURCE_SHA ==~ /[0-9a-f]{40}/)) {
-            error("GitHub returned an invalid main commit: ${env.SOURCE_SHA}")
+          if (!(sourceSha ==~ /[0-9a-f]{40}/)) {
+            error("GitHub returned an invalid main commit: ${sourceSha}")
           }
+          env.SOURCE_SHA = sourceSha
 
           def deployedSha = sh(
             script: 'cat "$DEPLOY_ROOT/.last-deployed-sha" 2>/dev/null || true',
@@ -41,7 +41,7 @@ pipeline {
           ).trim()
           if (deployedSha == env.SOURCE_SHA) {
             env.SKIP_BUILD = 'true'
-            currentBuild.description = "No new commit (${env.SOURCE_SHA.take(7)})"
+            currentBuild.description = "No new commit (${sourceSha.take(7)})"
           }
         }
       }
