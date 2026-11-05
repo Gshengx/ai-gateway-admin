@@ -19,18 +19,13 @@ pipeline = open(sys.argv[1], 'r').read()
 template = '''<?xml version='1.1' encoding='UTF-8'?>
 <org.jenkinsci.plugins.workflow.job.WorkflowJob plugin="workflow-job">
   <actions/>
-  <description>Poll GitHub main every five minutes and build and release through Kubernetes.</description>
+  <description>Manually build and release the latest GitHub main commit through Kubernetes.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
     <script>__PIPELINE_SCRIPT__</script>
     <sandbox>true</sandbox>
   </definition>
-  <triggers>
-    <hudson.triggers.TimerTrigger>
-      <spec>H/5 * * * *</spec>
-    </hudson.triggers.TimerTrigger>
-  </triggers>
   <disabled>false</disabled>
 </org.jenkinsci.plugins.workflow.job.WorkflowJob>
 '''
@@ -46,4 +41,4 @@ for attempt in $(seq 1 60); do
   sleep 2
 done
 systemctl is-active jenkins
-echo 'Jenkins pipeline configured with five-minute GitHub commit polling.'
+echo 'Jenkins pipeline configured for manual builds.'

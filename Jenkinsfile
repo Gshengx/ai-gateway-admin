@@ -6,10 +6,6 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
-  triggers {
-    cron('H/5 * * * *')
-  }
-
   environment {
     KUBECONFIG = '/var/lib/jenkins/.kube/config'
     K8S_NAMESPACE = 'ais-gateway'

@@ -259,7 +259,7 @@ while IFS="$(printf '\t')" read -r plugin_name plugin_version plugin_url; do
 done </var/tmp/ais-jenkins-plugins.tsv
 chown -R jenkins:jenkins "$PLUGIN_DIR"
 
-log '配置 Jenkins 登录和项目 SCM 轮询任务'
+log '配置 Jenkins 登录和手动构建任务'
 admin_password=$(openssl rand -hex 24)
 install -d -o jenkins -g jenkins -m 0750 "$JENKINS_HOME/init.groovy.d"
 cat >"$JENKINS_HOME/init.groovy.d/00-bootstrap-security.groovy" <<EOF

@@ -3,9 +3,9 @@
 ## Jenkins + 单节点 K3s 自动构建发布
 
 `setup-ci.sh` 在 CentOS 7 x86_64 虚拟机安装 K3s 与 Jenkins LTS，并创建
-`ais-gateway-admin` Jenkins Pipeline。Jenkins 每 5 分钟通过 GitHub API 检查 `main` 最新提交，
-发现新提交后从 codeload 下载源码归档并启动构建；不需要 GitHub webhook 或开放 Jenkins 端口。
-该 VM 的 Git Smart HTTP 连接会被网络中断，因此流水线用 API 检查提交并使用归档 GET 下载源码。
+`ais-gateway-admin` Jenkins Pipeline。流水线不做定时轮询；在 Jenkins 页面点击“立即构建”时，
+才通过 GitHub API 读取 `main` 最新提交并从 codeload 下载源码归档，然后启动构建与发布。
+该 VM 的 Git Smart HTTP 连接会被网络中断，因此流水线使用 API 读取提交并通过归档 GET 下载源码。
 构建在 K3s Node.js Job 内执行
 `npm ci`、`npm run type-check`、`npm run build`，通过受限 ServiceAccount 发布到前端 Deployment。
 
@@ -19,8 +19,8 @@ bash deploy/setup-ci.sh
 `/root/ais-jenkins-admin.txt`（root-only）。Nginx 仍只对外开放 80/443，Jenkins 监听
 `127.0.0.1:8080`；K3s API 不开放公网，NodePort 30080 仅允许本机源地址。
 
-首次安装会将仓库根目录 `Jenkinsfile` 写入 Jenkins Pipeline。流水线记录已发布 commit SHA，
-无新提交时只检查版本，不重复构建。手动发布仍可使用本目录 `update.ps1`，会原子切换 K3s
+首次安装会将仓库根目录 `Jenkinsfile` 写入 Jenkins Pipeline。每次点击“立即构建”都会构建并发布
+当时 `main` 分支的最新提交。也可使用本目录 `update.ps1` 手动发布本地构建产物，它会原子切换 K3s
 共享发布目录并等待 Deployment 就绪。K3s 工作负载与权限定义在
 [k8s/ais-gateway.yaml](k8s/ais-gateway.yaml)，构建 Job 模板在 [k8s/build-job.yaml](k8s/build-job.yaml)。
 
