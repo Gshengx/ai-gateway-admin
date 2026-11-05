@@ -41,13 +41,26 @@
             :options="optionChoices(options?.physical_models)"
         /></t-form-item>
         <template v-if="type === 'ACCESS_CONTROL' || type === 'DATA_CONTROL'"
-          ><h3 class="security-heading">{{ label('environment') }}</h3>
+          ><h3 class="security-heading">{{ label('environmentConditions') }}</h3>
           <EnvironmentFields v-model="form.environment_condition" allowlist
         /></template>
-        <t-form-item
-          v-if="type === 'DATA_CONTROL' || type === 'SECURITY_DETECTION'"
-          :label="label('detectionRules')"
-          ><t-select v-model="form.rule_ids" multiple filterable clearable :options="ruleOptions"
+        <template v-if="type === 'DATA_CONTROL' || type === 'SECURITY_DETECTION'">
+          <h3 class="security-heading">{{ label('ruleConditions') }}</h3>
+          <t-form-item v-if="type === 'DATA_CONTROL'" :label="label('fileCheckItems')"
+            ><div class="security-stack">
+              <t-select v-model="fileChecks" multiple clearable :options="fileOptions" />
+              <p class="security-help">{{ label('fileHelp') }}</p>
+            </div></t-form-item
+          >
+          <t-form-item :label="label(type === 'DATA_CONTROL' ? 'rulesTitle' : 'detectionRules')"
+            ><t-select v-model="selectedRules" multiple filterable clearable :options="ruleOptions"
+          /></t-form-item>
+        </template>
+        <t-form-item v-if="value?.id" :label="label('status')"
+          ><t-switch
+            v-model="form.enabled"
+            :disabled="readOnly"
+            :label="[label('enabled'), label('disabled')]"
         /></t-form-item>
         <t-alert theme="warning" :message="label(`allow_${type}`)" />
         <p class="security-help">{{ label('allowHelp') }}</p>
@@ -90,8 +103,32 @@ const form = ref<Allowlist>(
   rules = ref<DetectionRule[]>([])
 const ruleOptions = computed(() => [
   ...rules.value.map((r) => ({ value: r.id, label: name(r), disabled: !r.enabled })),
-  ...(props.type === 'DATA_CONTROL' ? choices(['FILE_UPLOAD', 'FILE_FORMAT', 'FILE_SIZE']) : []),
 ])
+const fileOptions = computed(() =>
+  choices([
+    'FILE_UPLOAD',
+    'FILE_FORMAT',
+    'FILE_SIZE',
+    'FILE_NAME',
+    'FILE_SIGNATURE',
+    'FILE_HASH',
+  ]).map((o) => ({
+    ...o,
+    disabled: ['FILE_NAME', 'FILE_SIGNATURE', 'FILE_HASH'].includes(o.value),
+  })),
+)
+const fileChecks = computed({
+  get: () => form.value.rule_ids.filter((id) => id.startsWith('FILE_')),
+  set: (ids: string[]) => {
+    form.value.rule_ids = [...selectedRules.value, ...ids]
+  },
+})
+const selectedRules = computed({
+  get: () => form.value.rule_ids.filter((id) => !id.startsWith('FILE_')),
+  set: (ids: string[]) => {
+    form.value.rule_ids = [...fileChecks.value, ...ids]
+  },
+})
 async function save() {
   if (props.readOnly || saving.value) return
   saving.value = true

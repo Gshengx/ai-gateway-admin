@@ -21,6 +21,7 @@
       v-else-if="model.type !== 'ALL'"
       v-model="model.values"
       multiple
+      :disabled="disabled"
       filterable
       :options="selectOptions"
       :placeholder="label('choose')"

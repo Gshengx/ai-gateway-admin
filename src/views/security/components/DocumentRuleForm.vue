@@ -142,6 +142,21 @@
               >{{ label('confidence') }} {{ Math.round((result.confidence ?? 0) * 100) }}%</span
             >
             <p>{{ result.evidence?.join('、') }}</p>
+            <div v-if="result.exclusion_evidence?.length">
+              <strong>{{ label('exclusionEvidence') }}</strong>
+              <p>{{ result.exclusion_evidence.join('、') }}</p>
+            </div>
+            <div v-if="result.findings.length" class="security-stack">
+              <strong>{{ label('fieldExtraction') }}</strong>
+              <div v-for="finding in result.findings" :key="finding.start">
+                <p>{{ finding.text }}</p>
+                <span class="security-help"
+                  >{{ label('positionLabel') }} {{ finding.start }}–{{ finding.end }} ·
+                  {{ label(result.masked_text !== null ? 'maskVerified' : 'maskUnverified') }}</span
+                >
+              </div>
+            </div>
+
             <t-alert
               v-if="result.reason === 'maskFailed'"
               theme="error"
@@ -152,6 +167,12 @@
             }}</pre>
           </div>
         </div>
+        <t-form-item v-if="value?.id" :label="label('status')"
+          ><t-switch
+            v-model="form.enabled"
+            :disabled="readOnly || (!form.enabled && !passed)"
+            :label="[label('enabled'), label('disabled')]"
+        /></t-form-item>
         <t-form-item :label="label('ruleDescription')"
           ><t-textarea v-model="form.description"
         /></t-form-item>
@@ -265,7 +286,11 @@ async function save() {
   saving.value = true
   try {
     const rule = payload()
-    if (!passed.value) rule.enabled = false
+    if (!passed.value && !props.value?.id) rule.enabled = false
+    if (rule.enabled && !passed.value) {
+      errorMessage.value = label('basicTestRequired')
+      return
+    }
     const saved = await saveRule(rule)
     void MessagePlugin.success(label('saved'))
     emit('saved', saved)

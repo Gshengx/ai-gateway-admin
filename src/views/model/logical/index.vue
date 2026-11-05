@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section class="panel">
     <FilterBar>
       <template #content>
@@ -41,23 +41,20 @@
           row.logical_name
         }}</t-link></template
       >
-      <template #grants="{ row }"
-        ><t-space
-          ><t-tag v-for="type in types" :key="type"
-            >{{ t(`logicalModels.${type.toLowerCase()}`) }}
-            {{ grantCounts[row.id]?.[type] ?? '—' }}</t-tag
-          ></t-space
-        ></template
-      >
+      <template #grants="{ row }">
+        <AuthorizationSummary
+          :summary="row.authorization_summary"
+          :readable="canReadResource(user.permissions, 'model.permissions')"
+          @select="(type) => openPermissions(row.id, type)"
+        />
+      </template>
       <template #mounts="{ row }"
-        >{{ activeCounts[row.id] ?? '—' }} / {{ row.mounts.length }}
+        >{{ activeCounts[row.id] ?? '—' }} / {{ row.related_mounts?.total ?? row.mounts.length }}
         {{ t('logicalModels.available') }}</template
       >
       <template #status="{ row }"
-        ><t-tag :theme="activeCounts[row.id] ? 'success' : 'default'">{{
-          activeCounts[row.id] === undefined
-            ? '—'
-            : t(activeCounts[row.id] ? 'logicalModels.statusActive' : 'logicalModels.unavailable')
+        ><t-tag :theme="row.ready ? 'success' : 'default'">{{
+          t(row.ready ? 'logicalModels.statusActive' : 'logicalModels.unavailable')
         }}</t-tag></template
       >
       <template #created="{ row }">{{
@@ -85,11 +82,17 @@
         content: t('logicalModels.delete'),
         theme: 'danger',
         loading: saving,
-        disabled: !reason.trim(),
+        disabled: !reason.trim() || impactBlocked,
       }"
       :cancel-btn="t('logicalModels.cancel')"
       @confirm="remove"
     >
+      <ModelImpactNotice
+        v-if="deleteVisible && current"
+        resource="logical-models"
+        :id="current.id"
+        @blocked="impactBlocked = $event"
+      />
       <p>{{ t('logicalModels.deleteConfirm', { name: current?.logical_name }) }}</p>
       <t-textarea
         v-model="reason"
@@ -117,14 +120,15 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
+import ModelImpactNotice from '../ModelImpactNotice.vue'
+import AuthorizationSummary from '../AuthorizationSummary.vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import type { PageInfo, PrimaryTableCol } from 'tdesign-vue-next'
 import {
   getLogicalModelsApi,
   deleteLogicalModelApi,
-  getLogicalModelPermissionsApi,
   batchGrantLogicalModelsApi,
   type LogicalModel,
   type SubjectType,
@@ -136,7 +140,8 @@ import FilterBar from '@/components/FilterBar.vue'
 import LogicalModelForm from './LogicalModelForm.vue'
 import SubjectPicker from './SubjectPicker.vue'
 import '@/styles/logical-models.css'
-const { t } = useI18n()
+const impactBlocked = ref(true)
+const { t, locale } = useI18n()
 const router = useRouter()
 const user = useUserStore()
 const items = ref<LogicalModel[]>([])
@@ -163,9 +168,7 @@ const pagination = reactive({
   showJumper: true,
   pageSizeOptions: [20, 50, 100],
 })
-const grantCounts = ref<Record<string, Record<SubjectType, number>>>({})
 const activeCounts = ref<Record<string, number>>({})
-type GrantCounts = Record<SubjectType, number>
 interface StatsCacheEntry<T> {
   signature: string
   expiresAt: number
@@ -173,7 +176,6 @@ interface StatsCacheEntry<T> {
   pending?: Promise<T>
 }
 const activeCache = new Map<string, StatsCacheEntry<number>>()
-const grantCache = new Map<string, StatsCacheEntry<GrantCounts>>()
 const statsController = new AbortController()
 const statsCacheTtl = 30_000
 const statsConcurrency = 3
@@ -225,8 +227,9 @@ function drainStats() {
 }
 function loadStats(rows: LogicalModel[], currentVersion: number) {
   for (const row of rows) {
-    if (!row.mounts.length) activeCounts.value[row.id] = 0
-    else
+    if (row.active_model_count !== undefined) activeCounts.value[row.id] = row.active_model_count
+    else if (!row.mounts.length) activeCounts.value[row.id] = 0
+    else if (canReadResource(user.permissions, 'model.models'))
       statsQueue.push({
         version: currentVersion,
         run: async () => {
@@ -242,29 +245,6 @@ function loadStats(rows: LogicalModel[], currentVersion: number) {
             return result.total
           })
           if (currentVersion === version) activeCounts.value[row.id] = count
-        },
-      })
-    if (canReadResource(user.permissions, 'model.permissions'))
-      statsQueue.push({
-        version: currentVersion,
-        run: async () => {
-          const counts = await cachedStats(grantCache, row.id, '', async () => {
-            const result: GrantCounts = { DEPARTMENT: 0, GROUP: 0, USER: 0 }
-            let page = 1,
-              total = 1
-            while (page <= total) {
-              const grants = await getLogicalModelPermissionsApi(
-                row.id,
-                { page, page_size: 100 },
-                statsController.signal,
-              )
-              grants.items.forEach((g) => result[g.subject_type]++)
-              total = grants.total_pages
-              page++
-            }
-            return result
-          })
-          if (currentVersion === version) grantCounts.value[row.id] = counts
         },
       })
   }
@@ -299,7 +279,6 @@ async function load() {
     items.value = result.items
     pagination.total = result.total
     selected.value = selected.value.filter((id) => items.value.some((x) => x.id === id))
-    grantCounts.value = {}
     activeCounts.value = {}
     loadStats(result.items, currentVersion)
   } catch {
@@ -311,7 +290,6 @@ async function load() {
 function handleSaved() {
   if (editing.value) {
     activeCache.delete(editing.value.id)
-    grantCache.delete(editing.value.id)
   }
   void load()
 }
@@ -320,6 +298,10 @@ function query() {
   pagination.current = 1
   void load()
 }
+watch(locale, () => {
+  activeCache.clear()
+  query()
+})
 let timer: ReturnType<typeof setTimeout> | undefined
 function queueSearch() {
   clearTimeout(timer)
@@ -329,6 +311,13 @@ function changePage(page: PageInfo) {
   pagination.current = page.current
   pagination.pageSize = page.pageSize
   void load()
+}
+function openPermissions(id: string, type: SubjectType) {
+  if (!canReadResource(user.permissions, 'model.permissions')) return
+  void router.push({
+    path: `/model/logical/${id}`,
+    query: { tab: 'permissions', subject_type: type },
+  })
 }
 function openCreate() {
   editing.value = null
@@ -344,12 +333,11 @@ function openDelete(row: LogicalModel) {
   deleteVisible.value = true
 }
 async function remove() {
-  if (!current.value || !reason.value.trim() || saving.value) return
+  if (!current.value || !reason.value.trim() || saving.value || impactBlocked.value) return
   saving.value = true
   try {
     await deleteLogicalModelApi(current.value.id, { reason: reason.value.trim() })
     activeCache.delete(current.value.id)
-    grantCache.delete(current.value.id)
     deleteVisible.value = false
     await load()
   } catch {
@@ -375,7 +363,6 @@ async function grant() {
       })),
       reason: 'admin-console',
     })
-    selected.value.forEach((id) => grantCache.delete(String(id)))
     grantVisible.value = false
     selected.value = []
     await load()
@@ -392,7 +379,6 @@ onBeforeUnmount(() => {
   statsQueue = []
   statsController.abort()
   activeCache.clear()
-  grantCache.clear()
 })
 </script>
 <style scoped>

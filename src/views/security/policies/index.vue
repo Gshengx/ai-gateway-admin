@@ -53,7 +53,17 @@
         <t-button
           v-permission.write="permission"
           theme="default"
-          :disabled="!selected.length"
+          :disabled="
+            !selected.length ||
+            loading ||
+            selected.some(
+              (id) =>
+                !policyConfigured(
+                  items.find((p) => p.id === id)!,
+                  rules,
+                ),
+            )
+          "
           @click="askStatus(true)"
           >{{ label('enable') }}</t-button
         >
@@ -102,6 +112,8 @@
           ><t-switch
             v-if="canWrite"
             :value="row.enabled"
+            :disabled="loading || (!row.enabled && !policyConfigured(row, rules))"
+            :title="!policyConfigured(row, rules) ? label('capabilityHelp') : undefined"
             :aria-label="`${label(row.enabled ? 'disable' : 'enable')} ${name(row)}`"
             @change="askStatus(!row.enabled, [row.id])"
           /><t-tag v-else :theme="row.enabled ? 'success' : 'default'">{{

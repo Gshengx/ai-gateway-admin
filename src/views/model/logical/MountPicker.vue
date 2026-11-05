@@ -69,12 +69,14 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PageInfo, PrimaryTableCol } from 'tdesign-vue-next'
 import FilterBar from '@/components/FilterBar.vue'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
 import { getModelsApi, type PhysicalModelItem, type ModelStatus } from '@/api/modules/models'
 import { getProvidersApi, type ProviderItem } from '@/api/modules/providers'
 import { mountLogicalModelApi } from '@/api/modules/logicalModels'
 const props = defineProps<{ visible: boolean; id: string; mounted: string[] }>()
 const emit = defineEmits<{ 'update:visible': [boolean]; saved: [] }>()
 const { t } = useI18n()
+const user = useUserStore()
 const search = ref(''),
   status = ref<ModelStatus | ''>(''),
   provider = ref('')
@@ -110,6 +112,7 @@ const columns = computed<PrimaryTableCol[]>(() => [
 ])
 let version = 0
 async function load() {
+  if (!canReadResource(user.permissions, 'model.models')) return
   const v = ++version
   loading.value = true
   try {
@@ -187,7 +190,7 @@ watch(
     try {
       let page = 1,
         total = 1
-      while (page <= total) {
+      while (page <= total && canReadResource(user.permissions, 'model.providers')) {
         const r = await getProvidersApi({ page, page_size: 100 })
         providers.value.push(...r.items)
         total = r.total_pages

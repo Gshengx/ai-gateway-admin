@@ -23,7 +23,7 @@
             t(ready ? 'logicalModels.statusActive' : 'logicalModels.unavailable')
           }}</t-tag
           ><span class="logical-summary__text">{{
-            t('logicalModels.mountSummary', { ready, total: model.mounts.length })
+            t('logicalModels.mountSummary', { ready, total: mountPagination.total })
           }}</span>
           <t-button
             v-permission.write="'model.logical'"
@@ -50,19 +50,27 @@
             <dd>{{ model.description || '—' }}</dd>
             <dt>{{ t('logicalModels.basicCreated') }}</dt>
             <dd>{{ model.created_at ? formatDateTime(model.created_at) : '—' }}</dd>
+            <dt>{{ t('logicalModels.colGrants') }}</dt>
+            <dd>
+              <AuthorizationSummary
+                :summary="model.authorization_summary"
+                :readable="canReadGrants"
+                @select="openPermissions"
+              />
+            </dd>
             <dt>{{ t('logicalModels.basicMounts') }}</dt>
             <dd>
-              {{ t('logicalModels.basicMountsValue', { ready, total: model.mounts.length }) }}
+              {{ t('logicalModels.basicMountsValue', { ready, total: mountPagination.total }) }}
             </dd>
           </dl>
         </t-tab-panel>
         <t-tab-panel
           value="mounts"
-          :label="t('logicalModels.tabMounts', { n: model.mounts.length })"
+          :label="t('logicalModels.tabMounts', { n: mountPagination.total })"
         >
           <div class="tab-content">
             <div class="row block">
-              <h3>{{ t('logicalModels.mountedTitle', { n: model.mounts.length }) }}</h3>
+              <h3>{{ t('logicalModels.mountedTitle', { n: mountPagination.total }) }}</h3>
               <t-button v-permission.write="'model.logical'" @click="mountVisible = true">{{
                 t('logicalModels.mountModel')
               }}</t-button>
@@ -80,10 +88,15 @@
                   :value="priorities[row.physical_model_id] ?? row.priority"
                   @change="(value: number | undefined) => setPriority(row.physical_model_id, value)"
                   :min="1"
-                  :max="model.mounts.length"
+                  :max="Math.max(999, row.priority)"
                   :decimal-places="0"
                   :disabled="busy || unmountBusy || !canWriteModel"
-                  @blur="changePriority(row.physical_model_id, row.priority)"
+                  @blur="
+                    (value: number | string) => {
+                      setPriority(row.physical_model_id, Number(value))
+                      void changePriority(row.physical_model_id, row.priority)
+                    }
+                  "
               /></template>
               <template #status="{ row }">{{
                 row.model ? t(`logicalModels.physicalStatuses.${row.model.status}`) : '—'
@@ -188,7 +201,7 @@
                   :checked="selectedGrants.includes(grant.grant_id)"
                   :disabled="!canWriteGrants"
                   @change="toggleGrant(grant.grant_id)"
-                  >{{ names[grant.subject_id] || grant.subject_id }}</t-checkbox
+                  >{{ grant.subject_name || names[grant.subject_id] || '—' }}</t-checkbox
                 >
                 <t-link
                   v-permission.write="'model.permissions'"
@@ -218,11 +231,17 @@
           content: t('logicalModels.delete'),
           theme: 'danger',
           loading: busy,
-          disabled: !reason.trim(),
+          disabled: !reason.trim() || impactBlocked,
         }"
         :cancel-btn="t('logicalModels.cancel')"
         @confirm="deleteModel"
       >
+        <ModelImpactNotice
+          v-if="deleteVisible"
+          resource="logical-models"
+          :id="logicalModelId"
+          @blocked="impactBlocked = $event"
+        />
         <p>{{ t('logicalModels.deleteConfirm', { name: model.logical_name }) }}</p>
         <t-textarea
           v-model="reason"
@@ -260,6 +279,9 @@
   </t-loading>
 </template>
 <script setup lang="ts">
+import ModelImpactNotice from '../ModelImpactNotice.vue'
+import AuthorizationSummary from '../AuthorizationSummary.vue'
+import { getModelApi, type PhysicalModelItem } from '@/api/modules/models'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -275,16 +297,15 @@ import {
   type LogicalModel,
   type LogicalModelPermission,
   type SubjectType,
+  type LogicalMount,
 } from '@/api/modules/logicalModels'
-import { getModelsApi, type PhysicalModelItem } from '@/api/modules/models'
-import { getProvidersApi, type ProviderItem } from '@/api/modules/providers'
-import { getDepartmentDetailApi, getGroupApi, getUserDetailApi } from '@/api/modules/identity'
 import { canReadResource, canWriteResource, useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import LogicalModelForm from './LogicalModelForm.vue'
 import MountPicker from './MountPicker.vue'
 import SubjectPicker from './SubjectPicker.vue'
 import '@/styles/logical-models.css'
+const impactBlocked = ref(true)
 const { t, locale } = useI18n()
 const route = useRoute(),
   router = useRouter(),
@@ -294,8 +315,8 @@ const canReadGrants = computed(() => canReadResource(user.permissions, 'model.pe
 const canWriteGrants = computed(() => canWriteResource(user.permissions, 'model.permissions'))
 const canWriteModel = computed(() => canWriteResource(user.permissions, 'model.logical'))
 const model = ref<LogicalModel | null>(null)
-const physical = ref<PhysicalModelItem[]>([])
-const providers = ref<ProviderItem[]>([])
+const mountedRows = ref<LogicalMount[]>([])
+const mountedDetails = ref<Record<string, PhysicalModelItem>>({})
 const ready = ref(0)
 const loading = ref(false),
   busy = ref(false)
@@ -326,21 +347,18 @@ const mountPagination = reactive({
   pageSizeOptions: [20, 50, 100],
 })
 const mountRows = computed(() =>
-  physical.value
-    .map((m) => {
-      const provider = providers.value.find((p) => p.id === m.provider_id)
-      return {
-        physical_model_id: m.id,
-        priority: model.value?.mounts.find((x) => x.physical_model_id === m.id)?.priority || 1,
-        model: m,
-        identifier: m.model_id_at_provider,
-        modelType: m.model_type,
-        provider: provider?.name || '—',
-        api: provider?.base_url || m.invocation_api,
-        security: provider ? t(`logicalModels.securityLevels.${provider.security_level}`) : '—',
-      }
-    })
-    .sort((a, b) => a.priority - b.priority),
+  mountedRows.value.map((m) => ({
+    physical_model_id: m.physical_model_id,
+    priority: m.priority,
+    model: m.status ? { status: m.status } : null,
+    identifier: m.model_id_at_provider || '—',
+    modelType: mountedDetails.value[m.physical_model_id]?.model_type || '—',
+    provider: m.provider_name || '—',
+    api: m.provider_base_url || '—',
+    security: m.provider_security_level
+      ? t(`logicalModels.securityLevels.${m.provider_security_level}`)
+      : '—',
+  })),
 )
 const mountColumns = computed<PrimaryTableCol[]>(() =>
   ['priority', 'identifier', 'modelType', 'provider', 'api', 'security', 'status', 'action'].map(
@@ -355,32 +373,31 @@ const mountColumns = computed<PrimaryTableCol[]>(() =>
 let version = 0
 async function loadDetail() {
   const id = logicalModelId.value
-  const result = await getLogicalModelApi(id)
+  if (!id) return
+  const result = await getLogicalModelApi(id, mountPagination.current, mountPagination.pageSize)
   if (id !== logicalModelId.value) return
   model.value = result
-  priorities.value = Object.fromEntries(result.mounts.map((x) => [x.physical_model_id, x.priority]))
-  const active = await getModelsApi({
-    page: 1,
-    page_size: 100,
-    logical_model_id: id,
-    status: 'ACTIVE',
-  })
-  if (id === logicalModelId.value) ready.value = active.total
+  mountedRows.value = result.related_mounts?.items ?? result.mounts
+  mountPagination.total = result.related_mounts?.total ?? result.mounts.length
+  priorities.value = Object.fromEntries(
+    mountedRows.value.map((x) => [x.physical_model_id, x.priority]),
+  )
+  ready.value = result.active_model_count ?? (result.ready ? result.candidate_count : 0)
+  mountedDetails.value = {}
+  if (canReadResource(user.permissions, 'model.models')) {
+    const details = await Promise.allSettled(
+      mountedRows.value.map((mount) => getModelApi(mount.physical_model_id)),
+    )
+    if (id !== logicalModelId.value) return
+    mountedDetails.value = Object.fromEntries(
+      details.flatMap((entry) =>
+        entry.status === 'fulfilled' ? [[entry.value.id, entry.value]] : [],
+      ),
+    )
+  }
 }
 async function loadMounts() {
-  const id = logicalModelId.value
-  const result = await getModelsApi({
-    page: mountPagination.current,
-    page_size: mountPagination.pageSize,
-    logical_model_id: id,
-  })
-  if (id !== logicalModelId.value) return
-  physical.value = result.items
-  mountPagination.total = result.total
-  if (!result.items.length && mountPagination.current > 1) {
-    mountPagination.current--
-    await loadMounts()
-  }
+  await loadDetail()
 }
 async function refreshMounts() {
   try {
@@ -394,6 +411,13 @@ function changeMountPage(p: PageInfo) {
   mountPagination.current = p.current
   mountPagination.pageSize = p.pageSize
   void loadMounts().catch(() => {})
+}
+function openPermissions(type: SubjectType) {
+  if (!canReadGrants.value) return
+  subjectType.value = type
+  selectedSubjects.value = []
+  pickerVisible.value = false
+  activeTab.value = 'permissions'
 }
 function mergeNames(value: Record<string, string>) {
   Object.assign(subjectLabels.value, value)
@@ -410,6 +434,7 @@ const changeSubjectTags: NonNullable<SelectInputProps['onTagChange']> = (_value,
 async function loadGrants() {
   if (!canReadGrants.value) return
   const id = logicalModelId.value
+  if (!id) return
   const all: LogicalModelPermission[] = []
   let page = 1,
     total = 1
@@ -424,65 +449,22 @@ async function loadGrants() {
   selectedGrants.value = []
   if (activeTab.value === 'permissions') await loadGrantNames()
 }
-let namesRequest: Promise<void> | undefined
 async function loadGrantNames() {
-  if (namesRequest) await namesRequest
-  const id = logicalModelId.value
-  const currentVersion = version
-  const request = (async () => {
-    for (const g of grants.value) {
-      if (
-        id !== logicalModelId.value ||
-        currentVersion !== version ||
-        activeTab.value !== 'permissions'
-      )
-        return
-      if (names.value[g.subject_id]) continue
-      try {
-        let name: string
-        if (g.subject_type === 'DEPARTMENT') {
-          const r = await getDepartmentDetailApi(g.subject_id)
-          name = r.name
-        } else if (g.subject_type === 'GROUP') {
-          const r = await getGroupApi(g.subject_id)
-          name = r.group.display_name || r.group.name
-        } else {
-          const r = await getUserDetailApi(g.subject_id)
-          name = r.user.display_name || r.user.username
-        }
-        if (id !== logicalModelId.value || currentVersion !== version) return
-        names.value[g.subject_id] = name
-      } catch {
-        /* 保留 ID，不猜测不可见对象名称。 */
-      }
-    }
-  })()
-  namesRequest = request
-  void request.finally(() => {
-    if (namesRequest === request) namesRequest = undefined
-  })
-  return request
+  for (const grant of grants.value)
+    if (grant.subject_name) names.value[grant.subject_id] = grant.subject_name
 }
 watch(activeTab, (tab) => {
   pickerVisible.value = false
-  if (tab === 'permissions') void loadGrantNames()
+  if (tab === 'permissions' && !loading.value) void loadGrants()
 })
 async function initialize() {
+  if (!logicalModelId.value) return
   const v = ++version
   model.value = null
   loading.value = true
   try {
-    providers.value = []
-    let page = 1,
-      total = 1
-    while (page <= total) {
-      const r = await getProvidersApi({ page, page_size: 100 })
-      if (v !== version) return
-      providers.value.push(...r.items)
-      total = r.total_pages
-      page++
-    }
-    await Promise.all([loadDetail(), loadMounts(), loadGrants()])
+    await loadDetail()
+    if (activeTab.value === 'permissions') await loadGrants()
   } catch {
     /* 已提示 */
   } finally {
@@ -497,14 +479,10 @@ async function changePriority(id: string, old: number) {
   if (busy.value || !value || value === old) return
   busy.value = true
   try {
-    const order = (model.value?.mounts || [])
-      .filter((x) => x.physical_model_id !== id)
-      .sort((a, b) => a.priority - b.priority)
-    const anchor = order[value - 2]
     await updateLogicalModelMountOrderApi(logicalModelId.value, {
       physical_model_id: id,
-      placement: value === 1 ? 'FIRST' : anchor ? 'AFTER' : 'LAST',
-      ...(anchor && value !== 1 ? { anchor_id: anchor.physical_model_id } : {}),
+      placement: 'PRIORITY',
+      priority: value,
       reason: 'admin-console',
     })
     await refreshMounts()
@@ -530,7 +508,7 @@ async function run(action: () => Promise<void>) {
   }
 }
 function deleteModel() {
-  if (!reason.value.trim()) return
+  if (!reason.value.trim() || impactBlocked.value) return
   void run(async () => {
     await deleteLogicalModelApi(logicalModelId.value, { reason: reason.value.trim() })
     await router.push('/model/logical')
@@ -585,7 +563,7 @@ function addGrants() {
       })),
     })
     selectedSubjects.value = []
-    await loadGrants()
+    await Promise.all([loadGrants(), loadDetail()])
   })
 }
 function removeGrants() {
@@ -595,7 +573,7 @@ function removeGrants() {
       relations: removeTargets.value,
     })
     removeTargets.value = []
-    await loadGrants()
+    await Promise.all([loadGrants(), loadDetail()])
   })
 }
 watch(
@@ -604,10 +582,23 @@ watch(
     mountPagination.current = 1
     activeTab.value = 'basic'
     names.value = {}
-    namesRequest = undefined
     subjectLabels.value = {}
     grants.value = []
     void initialize()
+  },
+  { immediate: true },
+)
+watch(
+  [() => route.query.tab, () => route.query.subject_type, canReadGrants],
+  ([tab, type]) => {
+    if (tab === 'permissions' && canReadGrants.value)
+      openPermissions(
+        type === 'USER'
+          ? 'USER'
+          : type === 'GROUP' || type === 'USER_GROUP'
+            ? 'GROUP'
+            : 'DEPARTMENT',
+      )
   },
   { immediate: true },
 )

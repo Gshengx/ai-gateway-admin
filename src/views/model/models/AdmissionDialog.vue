@@ -5,6 +5,9 @@ import { MessagePlugin, type PrimaryTableCol } from 'tdesign-vue-next'
 import {
   getLatestAdmissionApi,
   getModelAdmissionJobApi,
+  getModelApi,
+  getModelAdmissionRunApi,
+  cancelModelAdmissionJobApi,
   startModelAdmissionApi,
   type AdmissionCheck,
   type AdmissionRun,
@@ -21,20 +24,29 @@ const { t, te } = useI18n()
 const tr = (key: string, args = {}) => t(`models.admission.${key}`, args)
 const resultVisible = ref(false)
 const busy = ref(false)
-const streaming = ref(true)
-const reliability = ref(true)
-const budget = ref('')
+const currentModel = ref(props.model)
+const selectedChecks = ref<string[]>([])
+const finalConfirmed = ref(false)
+const checksLoading = ref(false)
+const canStart = computed(
+  () =>
+    finalConfirmed.value && !checksLoading.value && selectedChecks.value.includes('BASE_REQUEST'),
+)
 const run = ref<AdmissionRun | null>(null)
 const jobError = ref('')
 let jobId = ''
 let timer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
+let pollDeadline = 0
+const remote = ref<{ cleanup_required: boolean; pending_count: number; unknown_count: number }>()
 const running = ref(false)
 const metrics = computed(
   () => run.value?.checks.find((x) => x.reliability_metrics)?.reliability_metrics,
 )
 const passed = computed(() => run.value?.checks.filter((x) => x.status === 'PASSED').length ?? 0)
-const invocation = computed(() => t(`model.modelsForm.INVOCATION_${props.model.invocation_api}`))
+const invocation = computed(() =>
+  t(`model.modelsForm.INVOCATION_${currentModel.value.invocation_api}`),
+)
 const columns = computed<PrimaryTableCol<AdmissionCheck>[]>(() => [
   { colKey: 'check_key', title: tr('check'), width: 150 },
   { colKey: 'status', title: tr('status'), width: 100 },
@@ -59,19 +71,22 @@ function notify(error: unknown) {
 }
 async function poll(token: number) {
   try {
-    const [latest, job] = await Promise.all([
-      getLatestAdmissionApi(props.model.id),
-      jobId ? getModelAdmissionJobApi(jobId) : Promise.resolve(null),
-    ])
+    const job = jobId ? await getModelAdmissionJobApi(jobId) : null
+    const latest = !job ? await getLatestAdmissionApi(props.model.id) : null
+    const currentRun = job?.run_id
+      ? await getModelAdmissionRunApi(props.model.id, job.run_id)
+      : (latest?.latest_run ?? null)
     if (token !== generation) return
     // 新任务尚未生成结果时，不能将上一轮检测当作本轮结果。
-    run.value =
-      !job || (job.run_id && latest.latest_run?.run_id === job.run_id) ? latest.latest_run : null
+    run.value = currentRun
     jobError.value = job?.safe_error_code || ''
+    remote.value = job?.remote
+    if (job?.cancel_requested) jobError.value = tr('cancelRequested')
     running.value = job
       ? ['PENDING', 'RUNNING'].includes(job.status)
       : !!run.value && ['PENDING', 'RUNNING'].includes(run.value.status)
-    if (running.value) timer = setTimeout(() => void poll(token), 1500)
+    if (running.value && Date.now() < pollDeadline) timer = setTimeout(() => void poll(token), 1500)
+    else if (running.value) jobError.value = tr('observationStopped')
     else emit('changed')
   } catch (error) {
     if (token !== generation) return
@@ -81,25 +96,31 @@ async function poll(token: number) {
   }
 }
 async function start() {
-  if (!budget.value.trim()) {
-    MessagePlugin.warning(tr('budgetRequired'))
-    return
-  }
+  if (!canStart.value || busy.value) return
   busy.value = true
   try {
+    const fresh = await getModelApi(props.model.id)
+    if (
+      fresh.admission_generation !== currentModel.value.admission_generation ||
+      fresh.invocation_api !== currentModel.value.invocation_api ||
+      fresh.operation_profile !== currentModel.value.operation_profile
+    ) {
+      currentModel.value = fresh
+      selectedChecks.value = (fresh.admission_checks ?? [])
+        .filter((check) => check.state === 'AVAILABLE')
+        .map((check) => check.key)
+      finalConfirmed.value = false
+      MessagePlugin.warning(tr('configurationChanged'))
+      return
+    }
     const result = await startModelAdmissionApi(props.model.id, {
-      budget_authorization_ref: budget.value.trim(),
-      test_profile_version: 'm2-admission-v2',
-      selected_checks: [
-        'BASE_REQUEST',
-        ...(streaming.value ? ['STREAMING'] : []),
-        ...(reliability.value ? ['RELIABILITY'] : []),
-      ],
+      selected_checks: [...selectedChecks.value],
       reason: tr('startReason'),
     })
     jobId = result.job_id
     resultVisible.value = true
     running.value = true
+    pollDeadline = Date.now() + 120000
     emit('changed')
     await poll(++generation)
   } catch (error) {
@@ -112,16 +133,46 @@ watch(
   () => props.model.id,
   () => {
     generation++
+    pollDeadline = Date.now() + 120000
     clearTimeout(timer)
     jobId = ''
     run.value = null
     jobError.value = ''
     resultVisible.value = !!props.resultOnly
+    finalConfirmed.value = false
+    selectedChecks.value = []
     if (props.historyRun) run.value = props.historyRun
     else if (props.resultOnly) void poll(generation)
+    else void loadChecks()
   },
   { immediate: true },
 )
+async function loadChecks() {
+  checksLoading.value = true
+  try {
+    currentModel.value = await getModelApi(props.model.id)
+    selectedChecks.value = (currentModel.value.admission_checks ?? [])
+      .filter((check) => check.state === 'AVAILABLE')
+      .map((check) => check.key)
+    finalConfirmed.value = false
+  } catch (error) {
+    notify(error)
+  } finally {
+    checksLoading.value = false
+  }
+}
+async function cancel() {
+  if (!jobId || busy.value) return
+  busy.value = true
+  try {
+    await cancelModelAdmissionJobApi(jobId)
+    jobError.value = tr('cancelRequested')
+  } catch (error) {
+    notify(error)
+  } finally {
+    busy.value = false
+  }
+}
 onBeforeUnmount(() => {
   generation++
   clearTimeout(timer)
@@ -142,19 +193,26 @@ onBeforeUnmount(() => {
     <template v-if="!resultVisible">
       <p class="intro">{{ tr('intro', { api: invocation }) }}</p>
       <div class="checks">
-        <t-checkbox :checked="true" disabled>{{ tr('checks.BASE_REQUEST') }}</t-checkbox>
-        <t-checkbox :checked="true" disabled>{{ tr('compatibility') }}</t-checkbox>
-        <t-checkbox v-model="streaming">{{ tr('checks.STREAMING') }}</t-checkbox>
-        <t-checkbox v-model="reliability">{{ tr('checks.RELIABILITY') }}</t-checkbox>
+        <t-checkbox-group v-model="selectedChecks" @change="finalConfirmed = false">
+          <t-checkbox
+            v-for="check in currentModel.admission_checks || []"
+            :key="check.key"
+            :value="check.key"
+            :disabled="check.key === 'BASE_REQUEST' || check.state !== 'AVAILABLE'"
+          >
+            {{ checkName(check.key)
+            }}<span v-if="check.state !== 'AVAILABLE'">
+              · {{ tr(check.state) }} · {{ check.reason_code }}</span
+            >
+          </t-checkbox>
+        </t-checkbox-group>
       </div>
-      <t-form label-align="top" class="budget-form" :colon="false" required-mark-position="right">
-        <t-form-item :label="tr('budget')" :required-mark="true"
-          ><t-input v-model="budget" :maxlength="128" :placeholder="tr('budgetRequired')"
-        /></t-form-item>
-      </t-form>
+      <t-checkbox v-model="finalConfirmed" :disabled="checksLoading">{{
+        tr('confirmInterface', { api: invocation, profile: currentModel.operation_profile })
+      }}</t-checkbox>
       <div class="footer">
         <t-button theme="default" @click="emit('close')">{{ t('common.cancel') }}</t-button
-        ><t-button :loading="busy" @click="start">{{ tr('start') }}</t-button>
+        ><t-button :loading="busy" :disabled="!canStart" @click="start">{{ tr('start') }}</t-button>
       </div>
     </template>
     <template v-else>
@@ -198,6 +256,9 @@ onBeforeUnmount(() => {
         }}</template>
         <template #details="{ row }">{{ checkDetails(row) }}</template>
       </t-table>
+      <p v-if="remote && (remote.cleanup_required || remote.pending_count || remote.unknown_count)">
+        {{ tr('remotePending', { pending: remote.pending_count, unknown: remote.unknown_count }) }}
+      </p>
       <div v-if="metrics" class="metrics">
         <strong>{{ tr('checks.RELIABILITY') }}</strong
         ><span>{{ tr('successRate') }} {{ metrics.success_rate_percent }}%</span
@@ -214,16 +275,19 @@ onBeforeUnmount(() => {
         >
       </div>
       <div class="footer">
+        <t-button v-if="running && jobId" :loading="busy" theme="default" @click="cancel">{{
+          t('common.cancel')
+        }}</t-button>
         <t-button theme="default" @click="emit('close')">{{ tr('close') }}</t-button>
         <template v-if="!historyRun && !running && run?.status === 'PASSED' && run.admission_valid">
           <t-button
-            v-permission.write="'model.models'"
+            v-permission.write="'model.review'"
             theme="danger"
             variant="outline"
             @click="emit('review', 'REJECT')"
             >{{ tr('reject') }}</t-button
           >
-          <t-button v-permission.write="'model.models'" @click="emit('review', 'PUBLISH')">{{
+          <t-button v-permission.write="'model.review'" @click="emit('review', 'PUBLISH')">{{
             tr('approve')
           }}</t-button>
         </template>

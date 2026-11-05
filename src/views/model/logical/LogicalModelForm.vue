@@ -17,7 +17,9 @@
         <t-input
           v-model="name"
           :disabled="(!!model && !supportsLogicalRename) || !!createdId"
-          :maxlength="128"
+          :maxlength="
+            model && name === model.logical_name ? Math.max(80, Array.from(name).length) : 80
+          "
           :placeholder="t('logicalModels.namePlaceholder')"
         />
       </t-form-item>
@@ -71,9 +73,11 @@ import {
 } from '@/api/modules/logicalModels'
 import { getModelsApi, type PhysicalModelItem } from '@/api/modules/models'
 import { getProvidersApi } from '@/api/modules/providers'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
 const props = defineProps<{ visible: boolean; model: LogicalModel | null }>()
 const emit = defineEmits<{ 'update:visible': [value: boolean]; saved: [] }>()
 const { t } = useI18n()
+const user = useUserStore()
 const name = ref('')
 const description = ref('')
 const selection = ref<string[]>([])
@@ -97,7 +101,7 @@ watch(
     try {
       let page = 1
       let total = 1
-      while (page <= total) {
+      while (page <= total && canReadResource(user.permissions, 'model.models')) {
         const result = await getModelsApi({ page, page_size: 100 })
         physical.value.push(...result.items)
         total = result.total_pages
@@ -105,7 +109,7 @@ watch(
       }
       page = 1
       total = 1
-      while (page <= total) {
+      while (page <= total && canReadResource(user.permissions, 'model.providers')) {
         const result = await getProvidersApi({ page, page_size: 100 })
         Object.assign(
           providerNames.value,
@@ -134,7 +138,12 @@ async function save() {
   try {
     if (props.model) {
       if (name.value.trim() !== props.model.logical_name)
-        await renameLogicalModelApi(props.model.id, name.value.trim(), description.value)
+        await renameLogicalModelApi(
+          props.model.id,
+          name.value.trim(),
+          description.value,
+          props.model.logical_name,
+        )
       else
         await updateLogicalModelApi(props.model.id, {
           description: description.value,

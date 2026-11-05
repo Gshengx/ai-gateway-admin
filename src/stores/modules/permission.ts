@@ -1,78 +1,107 @@
 import { defineStore } from 'pinia'
 import type { RouteRecordRaw } from 'vue-router'
-
-import { businessRoutes } from '@/router/routes'
-import { hasPermission, useUserStore } from '@/stores/modules/user'
+import type { PermissionsResult } from '@/api/modules/auth'
+import { routeRegistry, canEnterRoute, menuRouteGroups } from '@/router/routes'
 
 export interface MenuItem {
   path: string
   title: string
+  titleKey?: string
   icon?: string
+  routeId?: string
+  sidebarHidden?: boolean
+  sortOrder: number
   children?: MenuItem[]
 }
 
-/** 递归按资源权限码过滤 */
-function filterRoutes(routes: RouteRecordRaw[], permissions: string[]): RouteRecordRaw[] {
-  const result: RouteRecordRaw[] = []
-  for (const route of routes) {
-    if (!hasPermission(permissions, route.meta?.permission)) continue
-
-    const children = route.children ? filterRoutes(route.children, permissions) : undefined
-    // 父级菜单的所有子项都被过滤掉时，父级一并隐藏
-    if (route.children?.length && !children?.length) continue
-
-    result.push({ ...route, ...(children ? { children } : {}) } as RouteRecordRaw)
+export function menuTrail(menus: MenuItem[], routeId?: string): MenuItem[] {
+  for (const menu of menus) {
+    if (menu.routeId === routeId && routeId) return [menu]
+    const child = menuTrail(menu.children ?? [], routeId)
+    if (child.length) return [menu, ...child]
   }
-  return result
-}
-
-/** 由路由树生成菜单树（过滤隐藏项） */
-function buildMenus(routes: RouteRecordRaw[], basePath = '/'): MenuItem[] {
-  return routes
-    .filter((route) => !route.meta?.hideInMenu)
-    .map((route) => {
-      const path = route.path.startsWith('/')
-        ? route.path
-        : `${basePath.replace(/\/$/, '')}/${route.path}`
-      const item: MenuItem = {
-        path,
-        title: route.meta?.title ?? '',
-        icon: route.meta?.icon,
-      }
-      if (route.children?.length) {
-        item.children = buildMenus(route.children, path)
-      }
-      return item
-    })
-}
-
-interface PermissionState {
-  /** 按当前用户权限过滤后的业务路由 */
-  routes: RouteRecordRaw[]
-  /** 侧边菜单树 */
-  menus: MenuItem[]
-  /** 是否已生成并注册路由 */
-  loaded: boolean
+  return []
 }
 
 export const usePermissionStore = defineStore('permission', {
-  state: (): PermissionState => ({
-    routes: [],
-    menus: [],
+  state: () => ({
+    routes: [] as RouteRecordRaw[],
+    menus: [] as MenuItem[],
+    /** 全部获准入口，含侧栏隐藏项，供面包屑与非侧栏导航使用。 */
+    navigationMenus: [] as MenuItem[],
     loaded: false,
+    generation: 0,
   }),
   actions: {
-    /** 登录后/刷新时调用：按权限生成路由与菜单 */
-    generateRoutes() {
-      const userStore = useUserStore()
-      this.routes = filterRoutes(businessRoutes, userStore.permissions)
-      this.menus = buildMenus(this.routes)
+    generateRoutes(result: PermissionsResult, permissions: string[]) {
+      const navigation = result.navigation
+      const groups = new Map<string, MenuItem>()
+      const menus: MenuItem[] = []
+      const routes: RouteRecordRaw[] = []
+      for (const group of navigation.groups)
+        groups.set(group.group_code, {
+          path: `group:${group.group_code}`,
+          title: group.title,
+          icon: menuRouteGroups.find((local) => local.code === group.group_code)?.icon,
+          sortOrder: group.sort_order,
+          children: [],
+        })
+      for (const group of navigation.groups) {
+        const node = groups.get(group.group_code)!
+        if (group.parent_group_code) groups.get(group.parent_group_code)!.children!.push(node)
+        else menus.push(node)
+      }
+      for (const item of navigation.items) {
+        if (!canEnterRoute(item.route_id, permissions)) continue
+        const local = routeRegistry[item.route_id]!
+        const meta = {
+          ...local.meta,
+          routeId: item.route_id,
+          title: item.title,
+          serverTitle: true,
+          hideInMenu: item.sidebar_hidden,
+        }
+        routes.push({ ...local, meta } as RouteRecordRaw)
+        const menu: MenuItem = {
+          path: local.path,
+          title: item.title,
+          icon: meta.icon,
+          routeId: item.route_id,
+          sidebarHidden: item.sidebar_hidden,
+          sortOrder: item.sort_order,
+        }
+        if (item.parent_group_code) groups.get(item.parent_group_code)!.children!.push(menu)
+        else menus.push(menu)
+        if (item.route_id === 'logical_models')
+          routes.push({
+            path: '/model/logical-models/:logical_model_id',
+            alias: '/model/logical/:logical_model_id',
+            name: 'ModelLogicalDetail',
+            component: () => import('@/views/model/logical/detail.vue'),
+            meta: { ...meta, hideInMenu: true },
+          })
+      }
+      const sort = (items: MenuItem[]): MenuItem[] =>
+        items
+          .map((item) => (item.children ? { ...item, children: sort(item.children) } : item))
+          .filter((item) => !item.children || item.children.length > 0)
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.path.localeCompare(b.path))
+      this.routes = routes
+      this.navigationMenus = sort(menus)
+      const sidebar = (items: MenuItem[]): MenuItem[] =>
+        items
+          .filter((item) => !item.sidebarHidden)
+          .map((item) => (item.children ? { ...item, children: sidebar(item.children) } : item))
+          .filter((item) => !item.children || item.children.length > 0)
+      this.menus = sidebar(this.navigationMenus)
       this.loaded = true
     },
     reset() {
       this.routes = []
       this.menus = []
+      this.navigationMenus = []
       this.loaded = false
+      this.generation++
     },
   },
 })

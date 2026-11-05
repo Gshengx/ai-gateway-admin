@@ -45,6 +45,29 @@ export interface Capability {
   resource_code: string
   can_read: boolean
   can_write: boolean
+  data_scope?: 'GLOBAL' | 'DEPARTMENT_SUBTREE'
+}
+
+export interface NavigationGroup {
+  group_code: string
+  parent_group_code?: string
+  title: string
+  title_locale: string
+  sort_order: number
+}
+
+export interface NavigationItem extends Omit<NavigationGroup, 'group_code'> {
+  menu_code: string
+  route_id: string
+  sidebar_hidden: boolean
+}
+
+export interface Navigation {
+  schema_version: 3
+  catalog_version: string
+  locale: string
+  groups: NavigationGroup[]
+  items: NavigationItem[]
 }
 
 /** GET /me/permissions */
@@ -53,6 +76,7 @@ export interface PermissionsResult {
   configuration_version: string
   department_scope_root_id: string
   capabilities: Capability[]
+  navigation: Navigation
 }
 
 export function loginApi(data: LoginParams) {
@@ -88,7 +112,11 @@ export function getSessionApi() {
 }
 
 export function getPermissionsApi() {
-  return request.get<PermissionsResult>('/me/permissions', { skipLocale: true })
+  return request.get<PermissionsResult>('/me/permissions', {
+    adapter: 'fetch',
+    fetchOptions: { cache: 'no-store', credentials: 'same-origin' },
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }
 
 export function logoutApi(sessionInvalidated = false) {

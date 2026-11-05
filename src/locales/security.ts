@@ -4,6 +4,23 @@ import { seedMessages } from '@/api/mock/securitySeeds'
 // Both languages are defined together so every governance message has an English counterpart.
 const messages: Record<string, [string, string]> = {
   FORBIDDEN: ['无权执行此操作', 'You do not have permission to perform this action'],
+  documentNotMaskable: [
+    '组内文档规则未配置敏感字段，命中后无法脱敏时将阻断，请补充字段或调整动作。',
+    'A document rule has no sensitive fields. A match that cannot be masked will be blocked; configure fields or adjust the action.',
+  ],
+  exclusionEvidence: ['排除依据', 'Exclusion evidence'],
+  fieldExtraction: ['敏感字段提取与遮蔽结果', 'Sensitive field extraction and masking results'],
+  positionLabel: ['原文位置', 'Source position'],
+  maskVerified: ['已验证遮蔽', 'Masking verified'],
+  maskUnverified: ['尚未完成安全遮蔽', 'Safe masking incomplete'],
+  retentionScope: ['留存范围', 'Retention scope'],
+  applicableUsers: ['适用用户', 'Applicable users'],
+  ruleActions: ['检测规则与动作', 'Detection rules and actions'],
+  environmentConditions: ['环境条件', 'Environment conditions'],
+  fileCheckItems: ['文件检查项', 'File checks'],
+  ruleDomain: ['规则域', 'Rule domain'],
+  DATA_LEAKAGE: ['数据泄露控制', 'Data leakage control'],
+  ruleConditions: ['规则条件', 'Rule conditions'],
   ...seedMessages,
   ...documentMessages,
   ...discoveryMessages,

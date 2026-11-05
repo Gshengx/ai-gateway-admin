@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="layout">
     <CollapsibleSidebar class="panel sidebar">
       <t-radio-group v-model="view" class="view-tabs" variant="default-filled" @change="switchView">
@@ -72,12 +72,12 @@
             <t-avatar shape="round" size="small">{{
               providerName(row.provider_id).charAt(0)
             }}</t-avatar>
-            <span>{{ providerName(row.provider_id) }}</span>
+            <span>{{ row.provider_name || providerName(row.provider_id) }}</span>
           </div></template
         >
         <template #model_type="{ row }">{{ t(`models.types.${row.model_type}`) }}</template>
         <template #base_url="{ row }">{{
-          providers.find((p) => p.id === row.provider_id)?.base_url || '—'
+          row.provider_base_url || providers.find((p) => p.id === row.provider_id)?.base_url || '—'
         }}</template>
         <template #mounts="{ row }">{{
           row.mounts?.map((m: ModelMount) => m.display_name).join('、') || '—'
@@ -95,19 +95,19 @@
               <t-dropdown-menu>
                 <t-dropdown-item
                   v-if="row.status === 'DRAFT'"
-                  v-permission.write="'model.models'"
+                  v-permission.write="'model.admission'"
                   @click="openAdmission(row)"
                   >{{ t('models.admission.startTitle') }}</t-dropdown-item
                 >
                 <t-dropdown-item
                   v-if="row.status === 'PENDING_REVIEW'"
-                  v-permission.write="'model.models'"
+                  v-permission.write="'model.review'"
                   @click="openReview(row.id, 'PUBLISH')"
                   >{{ t('models.publish') }}</t-dropdown-item
                 >
                 <t-dropdown-item
                   v-if="row.status === 'PENDING_REVIEW'"
-                  v-permission.write="'model.models'"
+                  v-permission.write="'model.review'"
                   @click="openReview(row.id, 'REJECT')"
                   >{{ t('models.admission.reject') }}</t-dropdown-item
                 >
@@ -172,10 +172,20 @@
     <t-dialog
       v-model:visible="actionVisible"
       :header="t(`models.commandTitles.${pendingAction}`)"
-      :confirm-btn="{ content: t('models.confirmOperation'), loading: actionLoading }"
+      :confirm-btn="{
+        content: t('models.confirmOperation'),
+        loading: actionLoading,
+        disabled: pendingAction === 'DELETE' && impactBlocked,
+      }"
       :close-on-overlay-click="false"
       @confirm="confirmAction"
     >
+      <ModelImpactNotice
+        v-if="actionVisible && pendingAction === 'DELETE'"
+        resource="models"
+        :id="actionId"
+        @blocked="impactBlocked = $event"
+      />
       <p>{{ t(`models.commandMessages.${pendingAction}`, { name: actionModelName }) }}</p>
       <t-form v-if="reasonRequired" label-align="top" :colon="false" required-mark-position="right"
         ><t-form-item :label="t('models.operationReason')" :required-mark="true"
@@ -188,8 +198,10 @@
   </div>
 </template>
 <script setup lang="ts">
+import ModelImpactNotice from '../ModelImpactNotice.vue'
 import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   MessagePlugin,
@@ -218,7 +230,9 @@ import ModelDetailDrawer from './ModelDetailDrawer.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const impactBlocked = ref(true)
+const { t, locale } = useI18n()
+const user = useUserStore()
 const detail = ref<PhysicalModelItem>()
 function providerName(id: string) {
   return providers.value.find((p) => p.id === id)?.name || '—'
@@ -328,6 +342,7 @@ function openAction(id: string, action: ModelCommand | 'DELETE') {
   actionVisible.value = true
 }
 async function confirmAction() {
+  if (actionLoading.value || (pendingAction.value === 'DELETE' && impactBlocked.value)) return
   if (reasonRequired.value && !actionReason.value.trim()) {
     MessagePlugin.warning(t('providers.reasonRequired'))
     return
@@ -343,9 +358,8 @@ async function confirmAction() {
       })
     actionVisible.value = false
     await handleSaved()
-  } catch (error) {
-    if ((error as { code?: string }).code === 'REAUTH_REQUIRED')
-      MessagePlugin.error(t('model.modelsForm.reauthRequired'))
+  } catch {
+    /* 请求层统一提示；模型操作不要求密码二次验证。 */
   } finally {
     actionLoading.value = false
   }
@@ -485,8 +499,11 @@ function statusTheme(s: ModelStatus) {
         : 'default'
 }
 async function fetchProviders() {
+  if (!canReadResource(user.permissions, 'model.providers')) return
   const p = await getProvidersApi({ page: 1, page_size: 100 })
   providers.value = p.items
+  for (let page = 2; page <= p.total_pages; page++)
+    providers.value.push(...(await getProvidersApi({ page, page_size: 100 })).items)
   // 当前列表有筛选时，不能用筛选后的 total 覆盖侧栏的全部模型数量。
   if (selected.value || search.value || status.value || mount.value !== 'all') {
     const all = await getModelsApi({ page: 1, page_size: 1 })
@@ -494,6 +511,7 @@ async function fetchProviders() {
   }
 }
 function fetchLogicalSidebar(): Promise<void> {
+  if (!canReadResource(user.permissions, 'model.logical')) return Promise.resolve()
   if (view.value !== 'logical' || logicalStatsExpiresAt > Date.now()) return Promise.resolve()
   if (logicalSidebarTask) return logicalSidebarTask
   const currentVersion = sidebarVersion
@@ -503,11 +521,16 @@ function fetchLogicalSidebar(): Promise<void> {
     const l = await getLogicalModelsApi({ page: 1, page_size: 100 })
     if (!current()) return
     logicalModels.value = l.items
+    for (let page = 2; page <= l.total_pages; page++) {
+      const result = await getLogicalModelsApi({ page, page_size: 100 })
+      if (!current()) return
+      logicalModels.value.push(...result.items)
+    }
     const complete =
       completeModelPage && completeModelPage.expiresAt > Date.now() ? completeModelPage : undefined
     if (complete) {
       logicalCounts.value = Object.fromEntries(
-        l.items.map((model) => {
+        logicalModels.value.map((model) => {
           const mounted = complete.items.filter((m) =>
             m.mounts.some((binding) => binding.logical_model_id === model.id),
           )
@@ -527,7 +550,7 @@ function fetchLogicalSidebar(): Promise<void> {
         if (current()) unmountedTotal.value = result.total
       },
     ]
-    for (const model of l.items) {
+    for (const model of logicalModels.value) {
       if (!model.mounts.length) {
         logicalCounts.value[model.id] = '0/0'
         continue
@@ -563,6 +586,10 @@ function fetchLogicalSidebar(): Promise<void> {
   logicalSidebarTask = task
   return task
 }
+watch(locale, () => {
+  pagination.current = 1
+  void handleSaved()
+})
 onMounted(() => {
   void handleSaved()
 })

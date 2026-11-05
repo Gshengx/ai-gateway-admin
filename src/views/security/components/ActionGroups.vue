@@ -97,6 +97,19 @@
           <t-checkbox v-model="item.restore_response">{{ label('restore') }}</t-checkbox>
           <p class="security-help">{{ label('restoreHelp') }}</p>
           <t-alert theme="info" :message="label('maskHelp')" />
+          <t-alert
+            v-if="
+              rules.some(
+                (r) =>
+                  r.enabled &&
+                  r.rule_type === 'DOCUMENT_PATTERN' &&
+                  ruleSelected(r, item) &&
+                  !r.config.sensitive_fields?.length,
+              )
+            "
+            theme="warning"
+            :message="label('documentNotMaskable')"
+          />
         </div>
       </template>
     </div>
@@ -108,6 +121,7 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ruleSelected } from '@/api/mock/security'
 import { emptyAction, type DetectionAction, type DetectionRule } from '@/api/modules/security'
 import { engines, risks, sensitivities, useSecurity } from '../useSecurity'
 import AttributeConditions from './AttributeConditions.vue'

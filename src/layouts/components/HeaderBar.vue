@@ -6,7 +6,7 @@
       </t-button>
       <t-breadcrumb>
         <t-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
-          {{ translateRouteTitle(item.title) }}
+          {{ item.titleKey ? t(item.titleKey) : item.title }}
         </t-breadcrumb-item>
       </t-breadcrumb>
     </div>
@@ -45,11 +45,10 @@ import {
   setApiLocale,
   setDocumentTitle,
   setLocale,
-  translateRouteTitle,
   SUPPORTED_LOCALES,
   type AppLocale,
 } from '@/locales'
-import { usePermissionStore } from '@/stores/modules/permission'
+import { menuTrail, usePermissionStore } from '@/stores/modules/permission'
 import { useUserStore } from '@/stores/modules/user'
 
 const props = defineProps<{ collapsed: boolean }>()
@@ -66,19 +65,8 @@ const currentLocale = ref<AppLocale>(getCurrentLocale())
 /** 语言选项：value 为前端语言包代码，code 为后端注册的原始语言代码 */
 const remoteLocales = ref<Array<{ label: string; value: AppLocale; code: string }>>([])
 
-/** 面包屑：由菜单树解析当前路由路径 */
-const breadcrumbs = computed(() => {
-  for (const menu of permissionStore.menus) {
-    if (menu.path === route.path) return [menu]
-    const child = menu.children?.find((c) => c.path === route.path)
-    if (child) return [menu, child]
-    const parent = menu.children?.find((c) => route.path.startsWith(`${c.path}/`))
-    if (parent && route.meta.title) {
-      return [menu, parent, { path: route.path, title: String(route.meta.title) }]
-    }
-  }
-  return []
-})
+/** 面包屑覆盖全部获准入口，包括 sidebar_hidden 的页面。 */
+const breadcrumbs = computed(() => menuTrail(permissionStore.navigationMenus, route.meta.routeId))
 
 /** 语言下拉：优先使用后端启用的语言，失败时回退本地内置语言 */
 const languageOptions = computed<SelectProps['options']>(() =>
@@ -88,7 +76,9 @@ const languageOptions = computed<SelectProps['options']>(() =>
 )
 
 const userOptions = computed<DropdownProps['options']>(() => [
-  { content: t('header.profile'), value: 'profile' },
+  ...menuTrail(permissionStore.navigationMenus, 'profile')
+    .filter((item) => item.routeId === 'profile')
+    .map((item) => ({ content: item.title, value: 'profile' })),
   { content: t('header.logout'), value: 'logout' },
 ])
 
@@ -120,30 +110,32 @@ async function onLanguageChange(value: unknown) {
   currentLocale.value = locale
   setLocale(locale)
   setApiLocale(apiCode)
-  // 标签页标题缓存于 document.title，切换语言后需同步刷新
-  setDocumentTitle(translateRouteTitle(route.meta.title))
+  const refresh = userStore.fetchUserInfo().catch(() => undefined)
+  setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
   try {
     await updateMyPreferencesApi({ preferred_locale: apiCode, time_zone: getTimeZone() })
   } catch {
     // 偏好同步失败不影响本次切换
   }
-  // 后端返回的部门/角色等名称随 locale 变化，重新加载以当前语言重新拉取
-  window.location.reload()
+  try {
+    await refresh
+    setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
+  } catch {
+    // 权限错误由全局状态展示，保留草稿且禁止写入。
+  }
 }
 
 async function onUserAction({ value }: { value: string | number }) {
   if (value === 'profile') {
-    await router.push('/personal/keys')
+    await router.push('/account')
     return
   }
   if (value === 'logout') {
     try {
-      await userStore.logout()
+      await Promise.all([userStore.logout(), import('@/views/login/index.vue')])
+      await router.replace('/login')
     } catch {
-      // Local cleanup is completed by logout.
-    } finally {
-      window.location.hash = '#/login'
-      window.location.reload()
+      // 请求错误由拦截器提示；退出失败时保留当前页面和会话。
     }
   }
 }

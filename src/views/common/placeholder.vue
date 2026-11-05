@@ -15,10 +15,15 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
-import { translateRouteTitle } from '@/locales'
+import { usePermissionStore } from '@/stores/modules/permission'
 
 const route = useRoute()
 const { t } = useI18n()
 
-const pageTitle = computed(() => translateRouteTitle(route.meta.title) || t('placeholder.fallback'))
+const permissionStore = usePermissionStore()
+const pageTitle = computed(
+  () =>
+    permissionStore.routes.find((item) => item.meta?.routeId === route.meta.routeId)?.meta?.title ||
+    t('placeholder.fallback'),
+)
 </script>

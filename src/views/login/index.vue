@@ -76,9 +76,8 @@ const router = useRouter()
 const { t } = useI18n()
 const userStore = useUserStore()
 const termsStore = useTermsStore()
-function completeLogin() {
+async function completeLogin() {
   if (router.currentRoute.value.path !== '/login') return
-  MessagePlugin.success(t('login.success'))
   const target = route.query.redirect
   const redirect =
     typeof target === 'string' &&
@@ -87,7 +86,8 @@ function completeLogin() {
     !['/login', '/change-password', '/onboarding/'].some((path) => target.startsWith(path))
       ? target
       : '/'
-  router.replace(redirect)
+  const failure = await router.replace(redirect)
+  if (!failure) MessagePlugin.success(t('login.success'))
 }
 watch(
   () => termsStore.visible,
@@ -101,7 +101,7 @@ watch(
       session?.gate === 'READY' &&
       session.scope === 'FULL'
     )
-      completeLogin()
+      void completeLogin()
   },
 )
 
@@ -145,7 +145,7 @@ async function onSubmit(ctx: { validateResult: boolean | Record<string, unknown>
       userStore.context.session.scope === 'FULL' &&
       !termsStore.visible
     )
-      completeLogin()
+      await completeLogin()
   } catch (error) {
     // 网络/业务错误已由 Axios 拦截器统一提示（带 notified 标记）；此处提示登录门禁类错误
     const err = error as Error & { notified?: boolean }

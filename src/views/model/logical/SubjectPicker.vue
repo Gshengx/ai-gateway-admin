@@ -1,5 +1,10 @@
 <template>
   <div class="picker">
+    <t-alert
+      v-if="!canReadSubjects"
+      theme="warning"
+      :message="t('logicalModels.subjectReadRequired')"
+    />
     <t-tree-select
       v-if="type === 'DEPARTMENT'"
       :value="modelValue"
@@ -53,6 +58,7 @@ import { computed, ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PageInfo, PrimaryTableCol, TreeProps, TreeSelectProps } from 'tdesign-vue-next'
 import DepartmentTreeSelect from '@/components/DepartmentTreeSelect.vue'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
 import { getDepartmentListApi, getUserGroupListApi, getUserListApi } from '@/api/modules/identity'
 import type { SubjectType } from '@/api/modules/logicalModels'
 
@@ -62,6 +68,10 @@ const emit = defineEmits<{
   names: [value: Record<string, string>]
 }>()
 const { t, locale } = useI18n()
+const user = useUserStore()
+const canReadSubjects = computed(() =>
+  canReadResource(user.permissions, props.type === 'GROUP' ? 'identity.groups' : 'identity.users'),
+)
 interface Node {
   value: string
   label: string
@@ -101,6 +111,11 @@ function selectRows(keys: (string | number)[]) {
   ])
 }
 async function load() {
+  if (!canReadSubjects.value) {
+    departments.value = []
+    items.value = []
+    return
+  }
   const current = ++version
   loading.value = true
   try {

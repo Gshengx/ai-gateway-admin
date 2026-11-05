@@ -100,7 +100,11 @@
         ><t-button
           v-permission.write="permission"
           theme="default"
-          :disabled="!selected.length"
+          :disabled="
+            !selected.length ||
+            loading ||
+            selected.some((id) => !ruleCanEnable(items.find((r) => r.id === id)!))
+          "
           @click="askStatus(true)"
           >{{ label('enable') }}</t-button
         ><t-button
@@ -170,6 +174,8 @@
           ><t-switch
             v-if="canWrite"
             :value="row.enabled"
+            :disabled="loading || (!row.enabled && !ruleCanEnable(row))"
+            :title="!ruleCanEnable(row) ? label('basicTestRequired') : undefined"
             :aria-label="`${label(row.enabled ? 'disable' : 'enable')} ${name(row)}`"
             @change="askStatus(!row.enabled, [row.id])"
           /><span v-else>{{ label(row.enabled ? 'enabled' : 'disabled') }}</span></template
@@ -243,6 +249,7 @@
 import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ruleCanEnable } from '@/api/mock/security'
 import { documentKinds, documentRule } from '@/api/mock/securityDocument'
 import DocumentRuleForm from '../components/DocumentRuleForm.vue'
 import RuleSaved from '../components/RuleSaved.vue'

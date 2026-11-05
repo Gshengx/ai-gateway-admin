@@ -92,7 +92,7 @@ export function useSecurity() {
       a.rule_ids.length
         ? `${label('detectionRules')}: ${a.rule_ids
             .map((id) => rules.find((r) => r.id === id))
-            .map((r, i) => (r ? name(r) : a.rule_ids[i]))
+            .map((r, i) => (r ? name(r) : label(a.rule_ids[i]!)))
             .join(', ')}`
         : '',
       ['ACCESS_CONTROL', 'DATA_CONTROL'].includes(a.type) &&

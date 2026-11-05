@@ -410,6 +410,9 @@ export function ruleSelected(r: DetectionRule, a: DetectionAction): boolean {
         })))
   )
 }
+export function ruleCanEnable(rule: DetectionRule): boolean {
+  return rule.rule_type !== 'DOCUMENT_PATTERN' || !!rule.config.basic_test_passed
+}
 export function policyConfigured(p: SecurityPolicy, rules: DetectionRule[]): boolean {
   if (p.built_in && p.id === 'data-3' && !p.environment_condition.source_ips.length) return false
   if (p.built_in && p.id === 'data-4' && !p.environment_condition.clients.length) return false
@@ -472,17 +475,6 @@ function validatePolicy(p: SecurityPolicy, s: State) {
       a.selector === 'ATTRIBUTES'
         ? !a.attributes.length || a.attributes.some((v) => !v.field || !v.value.trim())
         : a.selector !== 'ALL' && !a.values.length
-    )
-      fail('INVALID_ACTION', 'detection_actions')
-    if (
-      a.action === 'MASK' &&
-      s.rules.some(
-        (r) =>
-          r.enabled &&
-          r.rule_type === 'DOCUMENT_PATTERN' &&
-          ruleSelected(r, a) &&
-          !r.config.sensitive_fields?.length,
-      )
     )
       fail('INVALID_ACTION', 'detection_actions')
     if (
@@ -1005,8 +997,7 @@ async function handle(
         (id) => s.rules.find((r) => r.id === id) ?? fail('NOT_FOUND'),
       )
       selected.forEach((r) => {
-        if (body.enabled && r.rule_type === 'DOCUMENT_PATTERN' && !r.config.basic_test_passed)
-          fail('INVALID_RULE')
+        if (body.enabled && !ruleCanEnable(r)) fail('INVALID_RULE')
         r.enabled = Boolean(body.enabled)
         r.updated_at = now()
       })
@@ -1015,6 +1006,7 @@ async function handle(
     if (method === 'get') return page(filterRules(s, q), q)
     const existing = s.rules.find((r) => r.id === parts[2])
     if (method === 'delete') {
+      if (!String(body.reason ?? '').trim()) fail('VALIDATION_FAILED')
       if (!existing) fail('NOT_FOUND')
       if (existing.built_in) fail('BUILT_IN_PROTECTED')
       if (
@@ -1081,6 +1073,7 @@ async function handle(
     }
     const existing = s.allowlists.find((a) => a.id === parts[2])
     if (method === 'delete') {
+      if (!String(body.reason ?? '').trim()) fail('VALIDATION_FAILED')
       if (!existing) fail('NOT_FOUND')
       s.allowlists = s.allowlists.filter((a) => a.id !== existing.id)
       return null

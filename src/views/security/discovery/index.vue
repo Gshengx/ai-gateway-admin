@@ -49,14 +49,19 @@
       <template v-if="active.status === 'READING' || active.status === 'RECOGNIZING'"
         ><t-loading :loading="true" />
         <p>{{ label(active.status) }}</p>
-        <t-button theme="default" @click="cancelTask(active.id)">{{
-          label('cancel')
-        }}</t-button></template
+        <t-button
+          v-permission.write="'security.dataControl'"
+          theme="default"
+          @click="cancelTask(active.id)"
+          >{{ label('cancel') }}</t-button
+        ></template
       >
       <template v-else-if="active.status === 'FAILED'"
-        ><t-alert theme="error" :message="label('analysisFailed')" /><t-button @click="retry">{{
-          label('reanalyze')
-        }}</t-button></template
+        ><t-alert theme="error" :message="label('analysisFailed')" /><t-button
+          v-permission.write="'security.dataControl'"
+          @click="retry"
+          >{{ label('reanalyze') }}</t-button
+        ></template
       >
       <template v-else-if="active.status === 'COMPLETED'">
         <h3 class="security-heading">{{ label('ruleSuggestions') }}</h3>
@@ -278,6 +283,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { sha256 as hashFile } from './sha256'
 import { useRouter } from 'vue-router'
 import { MessagePlugin, type TableProps } from 'tdesign-vue-next'
 import {
@@ -329,7 +335,8 @@ const range = ref(90),
   loadingRecords = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined,
   disposed = false,
-  generation = 0
+  generation = 0,
+  fileGeneration = 0
 const recordColumns = computed<TableProps['columns']>(() => [
   { colKey: 'row-select', type: 'multiple', width: 48 },
   ...['requested_at', 'user', 'model', 'retained', 'event'].map((colKey) => ({
@@ -357,9 +364,11 @@ async function changeSource(value: 'UPLOAD' | 'AUDIT') {
 }
 async function readFiles(event: Event) {
   clearErrors()
+  const token = ++fileGeneration
   const input = event.target as HTMLInputElement,
     picked = Array.from(input.files ?? [])
   files.value = []
+  reading.value = false
   input.value = ''
   if (!picked.length) return
   if (picked.length > 5 || picked.some((f) => f.size > 20 * 1024 * 1024)) {
@@ -372,9 +381,8 @@ async function readFiles(event: Event) {
     for (const file of picked) {
       const data = await file.arrayBuffer(),
         bytes = new Uint8Array(data)
-      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', data)))
-        .map((v) => v.toString(16).padStart(2, '0'))
-        .join('')
+      const sha256 = await hashFile(data)
+      if (token !== fileGeneration || disposed) return
       const header = new TextDecoder().decode(bytes.slice(0, 8))
       const plain = !bytes.slice(0, 4096).some((v) => v === 0)
       const actual_format = header.startsWith('%PDF-')
@@ -392,11 +400,11 @@ async function readFiles(event: Event) {
           : undefined
       loaded.push({ name: file.name, size: file.size, sha256, actual_format, text })
     }
-    files.value = loaded
+    if (token === fileGeneration && !disposed) files.value = loaded
   } catch (e) {
     error(e)
   } finally {
-    reading.value = false
+    if (token === fileGeneration) reading.value = false
   }
 }
 async function loadRecords() {
@@ -524,6 +532,7 @@ onMounted(async () => {
 onUnmounted(() => {
   disposed = true
   generation++
+  fileGeneration++
   clearTimeout(timer)
   files.value = []
 })

@@ -1,4 +1,4 @@
-import request from '@/api/request'
+import request from './modelRequest'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 
 const DEFAULT_DISCOVERY_REASON = '由管理端发起供应商模型发现'
@@ -57,6 +57,7 @@ export interface ProviderTemplate {
   combinations: TemplateCombination[]
 }
 export interface ProviderItem {
+  created_at?: string
   id: string
   name: string
   template_key: string
@@ -70,6 +71,7 @@ export interface ProviderItem {
   invocation_generation: string
   configured_secret_fields: string[]
   public_config: Partial<Record<PublicConfigKey, string>>
+  related_models?: OffsetPageResult<ProviderModel>
 }
 export interface ProviderPayload {
   template_key: string
@@ -98,8 +100,11 @@ export function getProviderTemplatesApi() {
 export function getProvidersApi(params: OffsetPageQuery & { search?: string }) {
   return request.get<OffsetPageResult<ProviderItem>>('/providers', { params })
 }
-export function getProviderApi(id: string) {
-  return request.get<ProviderItem>(`/providers/${encodeURIComponent(id)}`, { skipLocale: true })
+export function getProviderApi(id: string, models_page = 1, models_page_size = 20) {
+  return request.get<ProviderItem>(`/providers/${encodeURIComponent(id)}`, {
+    params: { models_page, models_page_size },
+    skipLocale: true,
+  })
 }
 export function createProviderApi(data: ProviderPayload) {
   return request.post<ProviderMutationResult>('/providers', data)
@@ -118,17 +123,12 @@ export interface ProviderModel {
   model_id_at_provider: string
   model_type: ProviderModelType
   status: 'DRAFT' | 'TESTING' | 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED'
-  mounts: {
-    display_name: string
-    logical_name: string
-    logical_model_id: string
-    priority: number
-  }[]
+  invocation_api: string
 }
-export function getProviderModelsApi(provider_id: string, page: number, page_size: number) {
-  return request.get<OffsetPageResult<ProviderModel>>('/models', {
-    params: { provider_id, page, page_size },
-  })
+export async function getProviderModelsApi(provider_id: string, page: number, page_size: number) {
+  const detail = await getProviderApi(provider_id, page, page_size)
+  if (!detail.related_models) throw new Error('Missing related_models')
+  return detail.related_models
 }
 
 export type ProviderModelType = 'LLM' | 'EMBEDDING' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'MULTIMODAL'
@@ -157,6 +157,9 @@ export interface DiscoveryItem {
   }[]
 }
 export interface ModelDiscovery {
+  expires_at: string
+  manual_entry_allowed: boolean
+  truncated: boolean
   discovery_id: string
   status: 'SUCCEEDED' | 'FAILED'
   item_count: number
@@ -169,7 +172,7 @@ export interface ModelImportItem {
   model_type?: ProviderModelType
   invocation_api: string
   operation_profile: string
-  invocation_config: Record<string, never>
+  invocation_config: { deployment?: string }
   logical_binding: { mode: 'NONE' }
 }
 export interface ModelImportBatch {
@@ -221,7 +224,7 @@ export function importProviderModelsApi(
   )
 }
 export function getModelImportBatchApi(id: string, signal: AbortSignal, timeout: number) {
-  return request.get<ModelImportBatch>(`/model-admission-batches/${encodeURIComponent(id)}`, {
+  return request.get<ModelImportBatch>(`/model-import-batches/${encodeURIComponent(id)}`, {
     signal,
     timeout,
     skipLocale: true,

@@ -9,11 +9,14 @@ import {
   type AuthContext,
   type Capability,
   type LoginParams,
+  type PermissionsResult,
 } from '@/api/modules/auth'
+import { validatePermissions } from '@/router/navigation'
+import { getCurrentLocale, i18n } from '@/locales'
 import { usePermissionStore } from './permission'
 import { clearSession, clearCsrf, setCsrfToken } from '@/utils/auth'
-import { costMockCapabilities, setCostMockActor } from '@/api/mock/cost'
-import { securityMockCapabilities, setSecurityMockActor } from '@/api/mock/security'
+import { setCostMockActor } from '@/api/mock/cost'
+import { setSecurityMockActor } from '@/api/mock/security'
 
 export interface UserInfo {
   id: string
@@ -31,6 +34,12 @@ interface UserState {
   userInfo: UserInfo | null
   /** 用户信息是否已拉取（路由守卫据此决定是否重新拉取） */
   loaded: boolean
+  permissionSnapshot: PermissionsResult | null
+  permissionsReady: boolean
+  permissionsLoading: boolean
+  permissionEpoch: number
+  permissionError: string
+  loggedOut: boolean
 }
 
 /**
@@ -53,16 +62,23 @@ export const useUserStore = defineStore('user', {
     contextLoaded: false,
     userInfo: null,
     loaded: false,
+    permissionSnapshot: null,
+    permissionsReady: false,
+    permissionsLoading: false,
+    permissionEpoch: 0,
+    permissionError: '',
+    loggedOut: false,
   }),
   getters: {
     mustChangePassword: (state) => state.context.session?.gate === 'NEEDS_PASSWORD',
     termsConfirmationRequired: (state): boolean | undefined =>
       state.context.terms_confirmation_required,
-    permissions: (state) => state.userInfo?.permissions ?? [],
+    permissions: (state) => (state.permissionsReady ? (state.userInfo?.permissions ?? []) : []),
   },
   actions: {
     async login(params: LoginParams) {
       this.reset()
+      this.loggedOut = false
       try {
         await loginApi(params)
       } catch (error) {
@@ -73,6 +89,7 @@ export const useUserStore = defineStore('user', {
       await this.loadContext()
     },
     async loadContext() {
+      this.invalidatePermissions()
       this.contextLoaded = false
       clearCsrf()
       try {
@@ -81,6 +98,11 @@ export const useUserStore = defineStore('user', {
           context = await getAuthContextApi()
         }
         const { csrf_token, ...configuration } = context
+        if (
+          this.context.session?.user_id &&
+          this.context.session.user_id !== context.session.user_id
+        )
+          this.reset()
         setCsrfToken(csrf_token, context.csrf_header)
         this.context = configuration
         this.contextLoaded = true
@@ -100,33 +122,91 @@ export const useUserStore = defineStore('user', {
       if (!session || session.scope !== 'FULL' || session.gate !== 'READY') {
         throw new Error('Session gate is not ready')
       }
-      const permissions = await getPermissionsApi()
-      // Cost P0 menus and capabilities are explicitly mocked until its backend is available.
-      setCostMockActor(session.user_id)
-      setSecurityMockActor(session.user_id)
-      this.userInfo = {
-        id: session.user_id,
-        username: session.username,
-        name: session.display_name || session.username,
-        roles: [],
-        permissions: derivePermissions([
-          ...permissions.capabilities.filter(
-            (item) =>
-              !item.resource_code.startsWith('cost.') &&
-              !item.resource_code.startsWith('security.'),
-          ),
-          ...costMockCapabilities,
-          ...securityMockCapabilities,
-        ]),
+      const epoch = ++this.permissionEpoch
+      const locale = getCurrentLocale()
+      this.permissionsReady = false
+      this.permissionsLoading = true
+      this.permissionError = ''
+      try {
+        let permissions: PermissionsResult
+        try {
+          permissions = await getPermissionsApi()
+        } catch (error) {
+          const busy = error as { code?: string; retryAfter?: number }
+          if (busy.code !== 'AUTHENTICATION_BUSY' || (busy.retryAfter ?? 1) > 5) throw error
+          await new Promise((resolve) => setTimeout(resolve, (busy.retryAfter ?? 1) * 1000))
+          if (epoch !== this.permissionEpoch) return
+          permissions = await getPermissionsApi()
+        }
+        if (
+          epoch !== this.permissionEpoch ||
+          locale !== getCurrentLocale() ||
+          session !== this.context.session
+        )
+          return
+        validatePermissions(permissions)
+        setCostMockActor(session.user_id)
+        setSecurityMockActor(session.user_id)
+        this.userInfo = {
+          id: session.user_id,
+          username: session.username,
+          name: session.display_name || session.username,
+          roles: [],
+          permissions: derivePermissions(permissions.capabilities),
+        }
+        const previous = this.permissionSnapshot
+        if (
+          previous &&
+          (previous.department_scope_root_id !== permissions.department_scope_root_id ||
+            previous.permissions_version !== permissions.permissions_version ||
+            previous.configuration_version !== permissions.configuration_version ||
+            JSON.stringify(previous.capabilities) !== JSON.stringify(permissions.capabilities) ||
+            JSON.stringify(previous.navigation.items.map((item) => item.route_id).sort()) !==
+              JSON.stringify(permissions.navigation.items.map((item) => item.route_id).sort()))
+        ) {
+          usePermissionStore().generation++
+        }
+        this.permissionSnapshot = permissions
+        this.permissionsReady = true
+        usePermissionStore().generateRoutes(permissions, this.permissions)
+        this.loaded = true
+      } catch (error) {
+        if (epoch !== this.permissionEpoch) return
+        const err = error as { code?: string; status?: number; request_id?: string }
+        if (err.code === 'NAVIGATION_CONTRACT_INCOMPATIBLE' || err.status === 403) {
+          this.permissionSnapshot = null
+          this.userInfo = null
+          usePermissionStore().reset()
+        }
+        this.permissionError =
+          i18n.global.t(
+            err.code === 'NAVIGATION_CONTRACT_INCOMPATIBLE'
+              ? 'navigationErrors.incompatible'
+              : 'navigationErrors.unavailable',
+          ) + (err.request_id ? ` (${err.request_id})` : '')
+        throw error
+      } finally {
+        if (epoch === this.permissionEpoch) this.permissionsLoading = false
       }
-      this.loaded = true
+    },
+    invalidatePermissions() {
+      this.permissionEpoch++
+      this.permissionsReady = false
+      this.permissionsLoading = false
+      this.loaded = false
+      this.permissionSnapshot = null
+      usePermissionStore().reset()
     },
     async logout(sessionInvalidated = false) {
       await logoutApi(sessionInvalidated)
       this.reset()
+      this.loggedOut = true
     },
     /** 本地登出（401 等场景，不调接口） */
     reset() {
+      this.invalidatePermissions()
+      this.permissionError = ''
+      setCostMockActor('')
       setSecurityMockActor('')
       useTermsStore().reset()
       usePermissionStore().reset()

@@ -24,6 +24,13 @@
           ><t-input v-model="form.name" :maxlength="200" @change="form.seed_key = undefined"
         /></t-form-item>
         <div class="security-grid">
+          <t-form-item :label="label('ruleDomain')"
+            ><t-input :value="label(form.rule_domain)" readonly /></t-form-item
+          ><t-form-item v-if="!security" :label="label('ruleType')"
+            ><t-input :value="label('fieldRules')" readonly
+          /></t-form-item>
+        </div>
+        <div class="security-grid">
           <t-form-item :label="label('category')" required
             ><t-select
               v-if="security"
@@ -221,6 +228,12 @@
         </div>
         <t-form-item :label="label('ruleDescription')"
           ><t-textarea v-model="form.description" :maxlength="200"
+        /></t-form-item>
+        <t-form-item v-if="value?.id" :label="label('status')"
+          ><t-switch
+            v-model="form.enabled"
+            :disabled="readOnly"
+            :label="[label('enabled'), label('disabled')]"
         /></t-form-item>
         <t-alert v-if="references.length" theme="warning" :message="label('referenceHelp')"
           ><div class="security-stack">

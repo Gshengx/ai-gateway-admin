@@ -1,80 +1,94 @@
+import { watch } from 'vue'
 import type { Router } from 'vue-router'
-
 import { LAYOUT_ROUTE_NAME } from './index'
+import { canEnterRoute, routeRegistry } from './routes'
 import { pinia } from '@/stores'
-import { useUserStore, hasPermission } from '@/stores/modules/user'
+import { useUserStore } from '@/stores/modules/user'
 import { usePermissionStore } from '@/stores/modules/permission'
 import type { NotifiedError } from '@/api/request'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { i18n } from '@/locales'
-import { setDocumentTitle, translateRouteTitle } from '@/locales'
+import { i18n, setDocumentTitle, translateRouteTitle } from '@/locales'
 
-const LOGIN_PATH = '/login'
-const HOME_PATH = '/dashboard'
-
-/**
- * 全局前置守卫：
- * 1. 未登录访问业务页 → 跳登录（带 redirect）
- * 2. 已登录无用户信息 → 拉取用户信息（含权限码）
- * 3. 业务路由未注册 → 按权限生成并注册到布局路由下，随后重放本次导航
- * 4. 已注册 → 校验页面级权限，无权限跳 403
- */
 export function setupRouterGuard(router: Router): void {
+  const user = useUserStore(pinia)
+  const permission = usePermissionStore(pinia)
+  let removeRoutes: Array<() => void> = []
+  watch(
+    () => permission.routes,
+    (routes) => {
+      removeRoutes.forEach((remove) => remove())
+      removeRoutes = routes.map((route) => router.addRoute(LAYOUT_ROUTE_NAME, route))
+    },
+    { flush: 'sync' },
+  )
+
   router.afterEach((to, _from, failure) => {
-    // 导航成功后按最终解析的路由更新标签页标题，不处理动态路由注册前的临时 NotFound
-    if (!failure) setDocumentTitle(translateRouteTitle(to.meta.title))
+    if (!failure)
+      setDocumentTitle(
+        to.meta.serverTitle
+          ? permission.routes.find((route) => route.meta?.routeId === to.meta.routeId)?.meta?.title
+          : translateRouteTitle(to.meta.title),
+      )
   })
+  watch(
+    () => permission.menus,
+    () => {
+      const current = router.currentRoute.value
+      if (current.meta.routeId) {
+        const active = permission.routes.find(
+          (route) => route.meta?.routeId === current.meta.routeId,
+        )
+        setDocumentTitle(active?.meta?.title)
+        if (user.permissionsReady && !active) void router.replace('/403')
+      }
+    },
+    { flush: 'post' },
+  )
 
   router.beforeEach(async (to) => {
-    const userStore = useUserStore(pinia)
-    const permissionStore = usePermissionStore(pinia)
-    if (!userStore.contextLoaded) {
+    if (to.path === '/login' && user.loggedOut) return true
+    if (!user.contextLoaded) {
       try {
-        await userStore.loadContext()
+        await user.loadContext()
       } catch (error) {
         if ((error as NotifiedError).code === 'UNAUTHENTICATED') {
-          userStore.reset()
-          return to.path === LOGIN_PATH
-            ? true
-            : { path: LOGIN_PATH, query: { redirect: to.fullPath } }
+          user.reset()
+          return to.path === '/login' ? true : { path: '/login', query: { redirect: to.fullPath } }
         }
         MessagePlugin.error(i18n.global.t('authErrors.contextUnavailable'))
         return false
       }
     }
-    const session = userStore.context.session
-    if (session?.gate === 'NEEDS_PASSWORD' || session?.gate === 'NEEDS_TERMS') {
-      return to.path === LOGIN_PATH
-        ? true
-        : { path: LOGIN_PATH, query: { redirect: to.query.redirect ?? to.fullPath } }
+    const session = user.context.session
+    if (session?.scope !== 'FULL' || session.gate !== 'READY') {
+      return to.path === '/login' ? true : { path: '/login', query: { redirect: to.fullPath } }
     }
-    if (session?.scope !== 'FULL' || session.gate !== 'READY') return false
-    if (to.path === LOGIN_PATH) return HOME_PATH
-    try {
-      if (!userStore.loaded) {
-        await userStore.fetchUserInfo()
-        permissionStore.reset()
+    if (to.path === '/login') return '/'
+    if (!user.loaded || !permission.loaded) {
+      try {
+        await user.fetchUserInfo()
+      } catch {
+        return false
       }
-    } catch {
-      return false
-    }
-
-    if (!permissionStore.loaded) {
-      permissionStore.generateRoutes()
-
-      // 业务路由以静态布局路由为父级嵌套注册（父路由已存在，无需重复注册 403/404）
-      permissionStore.routes.forEach((route) => router.addRoute(LAYOUT_ROUTE_NAME, route))
-
-      // 重放导航，让新注册的路由生效。
-      // 不能用 { ...to } 展开：深链直达未注册的动态路由时，to 已被解析为通配 NotFound，
-      // 按 name 重放会再次落回 404；必须仅按 path/query/hash 重放
+      if (!permission.loaded) return false
       return { path: to.path, query: to.query, hash: to.hash, replace: true }
     }
-
-    if (to.meta.permission && !hasPermission(userStore.permissions, to.meta.permission)) {
+    if (
+      to.meta.routeId &&
+      (!permission.routes.some((route) => route.meta?.routeId === to.meta.routeId) ||
+        !canEnterRoute(to.meta.routeId, user.permissions))
+    )
       return '/403'
-    }
-
+    // 已知页面未出现在本次导航中时，深链也不能绕过菜单授权。
+    if (
+      to.name === 'NotFound' &&
+      Object.values(routeRegistry).some(
+        (route) =>
+          route.path === to.path ||
+          (Array.isArray(route.alias) ? route.alias : [route.alias]).includes(to.path),
+      )
+    )
+      return '/403'
     return true
   })
 }

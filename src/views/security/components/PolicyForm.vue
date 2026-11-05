@@ -11,6 +11,7 @@
               value?.id ? 'save' : domain === 'AUDIT' ? 'createAudit' : 'createPolicy',
             ),
             loading: saving,
+            disabled: !ready,
           }
     "
     :cancel-btn="label(readOnly ? 'confirm' : 'cancel')"
@@ -42,9 +43,9 @@
             @change="form.seed_key = undefined"
         /></t-form-item>
         <template v-if="domain !== 'SECURITY_DETECTION'">
-          <h3 class="security-heading">{{ label('user') }}</h3>
+          <h3 class="security-heading">{{ label(domain === 'AUDIT' ? 'userScope' : 'user') }}</h3>
           <t-form-item
-            :label="label('userScope')"
+            :label="label(domain === 'AUDIT' ? 'applicableUsers' : 'userScope')"
             required
             :status="fieldErrors.includes('user_condition') ? 'error' : undefined"
             ><ScopeFields
@@ -87,7 +88,7 @@
           >
         </template>
         <template v-if="domain === 'SECURITY_DETECTION'"
-          ><h3 class="security-heading">{{ label('actions') }}</h3>
+          ><h3 class="security-heading">{{ label('ruleActions') }}</h3>
           <ActionGroups
             v-model="form.detection_actions"
             security
@@ -116,7 +117,7 @@
         >
         <template v-else>
           <h3 class="security-heading">{{ label('auditLevel') }}</h3>
-          <t-form-item :label="label('auditLevel')" required
+          <t-form-item :label="label('retentionScope')" required
             ><t-radio-group
               v-model="form.audit_level"
               :options="choices(['FULL', 'METADATA_ONLY', 'CUSTOM'])"
@@ -150,10 +151,10 @@
             ><t-link @click="showCapability = true">{{ label('configure') }}</t-link></template
           ></t-alert
         >
-        <t-form-item v-if="!configured || !form.enabled" :label="label('status')"
+        <t-form-item v-if="value?.id || !configured || !form.enabled" :label="label('status')"
           ><t-switch
             v-model="form.enabled"
-            :disabled="readOnly || !configured"
+            :disabled="readOnly || !ready || (!form.enabled && !configured)"
             :label="[label('enabled'), label('disabled')]"
         /></t-form-item>
         <t-alert theme="info" :message="summary" />
@@ -163,7 +164,7 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   emptyPolicy,
@@ -208,10 +209,8 @@ const title = computed(
   () =>
     `${label(props.readOnly ? 'detail' : props.value?.id ? 'edit' : props.domain === 'AUDIT' ? 'createAudit' : 'createPolicy')} · ${label({ ACCESS_CONTROL: 'accessTitle', DATA_CONTROL: 'dataTitle', SECURITY_DETECTION: 'detectionTitle', AUDIT: 'auditTitle' }[props.domain])}`,
 )
-const configured = computed(() => policyConfigured(form.value, rules.value))
-watch(configured, (ready) => {
-  if (!ready && !props.readOnly) form.value.enabled = false
-})
+const ready = ref(false)
+const configured = computed(() => ready.value && policyConfigured(form.value, rules.value))
 const summary = computed(() =>
   [
     form.value.name,
@@ -224,7 +223,7 @@ const summary = computed(() =>
     .join(' · '),
 )
 async function save() {
-  if (props.readOnly || saving.value) return
+  if (props.readOnly || saving.value || !ready.value) return
   clearErrors()
   saving.value = true
   try {
@@ -247,7 +246,8 @@ onMounted(async () => {
     await loadOptions()
     const domain = props.domain === 'SECURITY_DETECTION' ? 'SECURITY_DETECTION' : 'DATA_LEAKAGE'
     rules.value = await getAllRules({ rule_domain: domain })
-    if (!configured.value && !props.readOnly) form.value.enabled = false
+    ready.value = true
+    if (!props.value?.id && !configured.value) form.value.enabled = false
   } catch (e) {
     error(e)
   }

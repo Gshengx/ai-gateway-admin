@@ -59,6 +59,8 @@ export default {
     },
   },
   providerModels: {
+    confirmInvocation: '确认所选调用接口，导入为草稿且暂不绑定逻辑模型',
+    incompleteDiscovery: '发现结果已截断或过期，不能视为完整目录，请重新发现或按允许范围手工录入。',
     title: '获取并选择模型 · {name}',
     step1: '获取并选择模型',
     step2: '模型测试',
@@ -104,7 +106,11 @@ export default {
     },
   },
   models: {
+    commandUnknown: '上一笔提交尚未确认，请先核对对象或任务状态；恢复时须保持原提交内容。',
+    impactSummary: '挂载 {mounts}，授权 {grants}，在途任务 {jobs}，未结远端责任 {remote}',
+    impactBlocked: '当前操作被阻止：{codes}',
     detailView: {
+      lifecycleUnavailable: '当前接口未提供完整生命周期记录。',
       lifecycle: '生命周期时间线',
       created: '模型创建',
       mockActor: '演示操作员',
@@ -146,6 +152,13 @@ export default {
       DELETE: '确认删除模型“{name}”？',
     },
     admission: {
+      configurationChanged: '模型配置已变化，请重新确认最终调用接口和检测项。',
+      observationStopped: '已停止本轮等待，任务结果尚未确认，请按任务状态继续核对。',
+      remotePending: '远端未结责任：待处理 {pending}，结果未知 {unknown}；终态不代表远端已清理。',
+      confirmInterface: '确认最终调用接口 {api} / {profile} 及本次检测项',
+      NOT_APPLICABLE: '不适用',
+      UNAVAILABLE: '当前不可执行',
+      cancelRequested: '已请求取消；不代表远端已停止或清理',
       passedDetails: {
         BASE_REQUEST: '模型 {name} 通过 {api} 接口完成请求并通过兼容性验证。',
         STREAMING: '流式响应已正常返回。',
@@ -174,6 +187,7 @@ export default {
       noResult: '暂无准入检测结果',
       loadFailed: '检测结果读取失败，请关闭后重新查看。',
       checks: {
+        LONG_CONTEXT: '长上下文',
         BASE_REQUEST: '指定模型请求',
         STREAMING: '流式响应',
         RELIABILITY: '基础可靠性',
@@ -490,6 +504,9 @@ export default {
     refreshFailed: '角色权限已保存，但当前用户权限刷新失败，请刷新页面。',
   },
   logicalModels: {
+    summaryForbidden: '无权查看',
+    summaryUnavailable: '暂无统计',
+    subjectReadRequired: '当前账号缺少该授权主体的身份读取权限，无法读取候选。',
     editTitle: '编辑逻辑模型',
     physicalStatus: '状态',
     unavailable: '不可用',
@@ -571,7 +588,7 @@ export default {
     unmount: '卸载',
     unmountConfirm: '确认卸载该物理模型？',
     permissionHint:
-      '只对逻辑模型配置部门、用户组和用户权限；物理模型不单独授权。获得授权的用户可以通过逻辑模型名称调用模型。',
+      '只对逻辑模型配置部门、用户组和用户权限；物理模型不单独授权。各授权来源按并集合并，当前可用性另行判断，获得授权不代表可以立即调用。',
     addGrant: '添加授权',
     batchRemove: '批量移除（{n}）',
     departmentGrants: '部门授权 {n}',
@@ -738,6 +755,13 @@ export default {
   },
   requestErrors: {
     VALIDATION_FAILED: '提交数据校验失败，请检查输入内容',
+  },
+  navigationErrors: {
+    incompatible: '导航接口契约不兼容，请联系管理员',
+    unavailable: '权限读取失败，请重试；业务写入已暂停',
+    refreshRequired: '权限正在刷新或已失效，请刷新权限后重试',
+    retry: '重新读取权限',
+    loading: '正在加载权限',
   },
   authErrors: {
     passwordRelogin: '密码修改后会话已失效，请使用新密码重新登录',

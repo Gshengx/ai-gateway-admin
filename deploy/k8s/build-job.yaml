@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: frontend-build-__BUILD_NUMBER__
+  namespace: ais-gateway
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: frontend-build
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      dnsPolicy: Default
+      automountServiceAccountToken: false
+      containers:
+        - name: build
+          image: public.ecr.aws/docker/library/node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NPM_CONFIG_CACHE
+              value: /tmp/.npm
+          command: ['/bin/sh', '-ec']
+          args:
+            - |
+              cd /workspace
+              npm ci
+              npm run type-check
+              npm run build
+              install -d -m 0755 /deploy/releases/__BUILD_NUMBER__/site
+              cp -R dist/. /deploy/releases/__BUILD_NUMBER__/site/
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            runAsNonRoot: true
+            runAsUser: __JENKINS_UID__
+            runAsGroup: __JENKINS_GID__
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: deploy
+              mountPath: /deploy
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          hostPath:
+            path: __WORKSPACE__
+            type: Directory
+        - name: deploy
+          hostPath:
+            path: /var/lib/ais-gateway-admin
+            type: Directory
+        - name: tmp
+          emptyDir: {}

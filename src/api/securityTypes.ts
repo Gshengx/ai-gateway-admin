@@ -157,6 +157,7 @@ export interface RuleTestResult {
   reason: string
   confidence?: number
   evidence?: string[]
+  exclusion_evidence?: string[]
 }
 export interface DiscoveryFile {
   name: string

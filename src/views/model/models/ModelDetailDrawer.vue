@@ -14,6 +14,7 @@ import {
 import type { ProviderItem } from '@/api/modules/providers'
 import { formatDateTime } from '@/utils/datetime'
 import { mockModelLifecycle } from './mockLifecycle'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
 const props = defineProps<{ model: PhysicalModelItem; provider?: ProviderItem }>()
 const emit = defineEmits<{
   close: []
@@ -33,7 +34,20 @@ const priceTotal = ref(0)
 const runTotal = ref(0)
 const busy = ref(false)
 const error = ref(false)
-const lifecycle = computed(() => mockModelLifecycle(detail.value.status))
+const lifecycle = computed(() =>
+  import.meta.env.VITE_USE_MOCK === 'true' ? mockModelLifecycle(detail.value.status) : [],
+)
+const user = useUserStore()
+const canReadPricing = computed(() => canReadResource(user.permissions, 'model.pricing'))
+const canReadAdmission = computed(() => canReadResource(user.permissions, 'model.admission'))
+const runSnapshot = ref<string>()
+const mountPage = ref(1)
+const mountTotal = ref(0)
+async function loadMounts() {
+  const result = await getModelApi(props.model.id, mountPage.value, 20)
+  detail.value = { ...result, mounts: result.related_mounts?.items ?? result.mounts }
+  mountTotal.value = result.related_mounts?.total ?? result.mounts.length
+}
 function priceText(p: ModelPricing) {
   return (
     tr('input') +
@@ -98,9 +112,11 @@ async function loadRuns() {
   const result = await getModelAdmissionHistoryApi(props.model.id, {
     page: runPage.value,
     page_size: 20,
+    ...(runPage.value > 1 && runSnapshot.value ? { page_snapshot: runSnapshot.value } : {}),
   })
   runs.value = result.items
   runTotal.value = result.total
+  runSnapshot.value = result.page_snapshot
 }
 watch(
   () => props.model.id,
@@ -108,14 +124,19 @@ watch(
     busy.value = true
     error.value = false
     pricePage.value = runPage.value = 1
+    mountPage.value = 1
+    runSnapshot.value = undefined
     try {
       const [m, p] = await Promise.all([
-        getModelApi(props.model.id),
-        getModelPricingApi(props.model.id),
-        loadPrices(),
-        loadRuns(),
+        getModelApi(props.model.id, 1, 20),
+        canReadPricing.value
+          ? getModelPricingApi(props.model.id)
+          : Promise.resolve({ price: null }),
+        canReadPricing.value ? loadPrices() : Promise.resolve(),
+        canReadAdmission.value ? loadRuns() : Promise.resolve(),
       ])
-      detail.value = m
+      detail.value = { ...m, mounts: m.related_mounts?.items ?? m.mounts }
+      mountTotal.value = m.related_mounts?.total ?? m.mounts.length
       price.value = p.price
     } catch {
       error.value = true
@@ -153,7 +174,7 @@ watch(
         >
         <t-button
           v-if="detail.status === 'PENDING_REVIEW'"
-          v-permission.write="'model.models'"
+          v-permission.write="'model.review'"
           theme="primary"
           @click="emit('review', detail.id)"
           >{{ t('models.admission.approve') }}</t-button
@@ -168,10 +189,10 @@ watch(
       </div>
       <dl class="fields">
         <dt>{{ t('models.provider') }}</dt>
-        <dd>{{ provider?.name || '—' }}</dd>
+        <dd>{{ detail.provider_name || provider?.name || '—' }}</dd>
         <dt>{{ t('models.api') }}</dt>
         <dd>
-          <code>{{ provider?.base_url || '—' }}</code>
+          <code>{{ detail.provider_base_url || provider?.base_url || '—' }}</code>
         </dd>
         <dt>{{ t('providers.securityLevel') }}</dt>
         <dd>{{ provider ? t(`providers.security.${provider.security_level}`) : '—' }}</dd>
@@ -182,6 +203,14 @@ watch(
               .map((m) => `${m.display_name}（${tr('priority')} ${m.priority}）`)
               .join('、') || '—'
           }}
+          <t-pagination
+            v-if="mountTotal > 20"
+            v-model="mountPage"
+            :total="mountTotal"
+            :page-size="20"
+            :show-page-size="false"
+            @current-change="loadMounts"
+          />
         </dd>
         <dt>{{ t('model.modelsForm.modelType') }}</dt>
         <dd>{{ t(`models.types.${detail.model_type}`) }}</dd>
@@ -202,13 +231,13 @@ watch(
         <dt>{{ t('models.created') }}</dt>
         <dd>{{ formatDateTime(detail.created_at) || '—' }}</dd>
       </dl>
-      <section>
+      <section v-if="canReadPricing">
         <h3>{{ tr('priceHistory') }}</h3>
         <p v-if="!prices.length">{{ tr('noPriceHistory') }}</p>
         <div v-for="(p, index) in prices" :key="p.revision" class="history price-history">
           <div class="history-heading">
             <strong>{{ index === 0 && pricePage === 1 ? tr('currentPrice') : tr('price') }}</strong
-            ><span>{{ formatDateTime(p.created_at) }} · {{ p.created_by }}</span>
+            ><span>{{ formatDateTime(p.created_at) }} · {{ p.created_by_name || '—' }}</span>
           </div>
           <span class="history-price">{{ priceText(p) }}</span>
         </div>
@@ -221,7 +250,7 @@ watch(
           @current-change="loadPrices"
         />
       </section>
-      <section>
+      <section v-if="canReadAdmission">
         <h3>{{ tr('admissionHistory') }}</h3>
         <p v-if="!runs.length">{{ tr('noAdmissionHistory') }}</p>
         <div v-for="run in runs" :key="run.run_id" class="history admission-history">
@@ -257,7 +286,8 @@ watch(
       </section>
       <section>
         <h3>{{ tr('lifecycle') }}</h3>
-        <t-timeline mode="same" theme="dot">
+        <p v-if="!lifecycle.length">{{ tr('lifecycleUnavailable') }}</p>
+        <t-timeline v-else mode="same" theme="dot">
           <t-timeline-item
             v-for="(event, index) in lifecycle"
             :key="event.occurredAt"

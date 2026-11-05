@@ -64,8 +64,18 @@
           <template #logical_suggestions="{ row }">
             {{ row.logical_suggestions.map(suggestionName).join('、') || '—' }}
           </template>
+          <template #invocation="{ row }"
+            ><t-select
+              v-model="selections[row.candidate_id]"
+              :options="invocationOptions"
+              :disabled="busy"
+              @change="confirmations[row.candidate_id] = false"
+            /><t-checkbox v-model="confirmations[row.candidate_id]" :disabled="busy">{{
+              t('providerModels.confirmInvocation')
+            }}</t-checkbox></template
+          >
         </t-table>
-        <t-collapse>
+        <t-collapse v-if="manualAllowed">
           <t-collapse-panel :header="t('providerModels.manualTitle')" value="manual">
             <div class="manual-content">
               <div v-if="!candidates.length">{{ t('providerModels.manualHint') }}</div>
@@ -76,13 +86,24 @@
                   :maxlength="512"
                   :placeholder="t('providerModels.modelId') + '*'"
                   :aria-label="t('providerModels.modelId') + '*'"
+                  @change="confirmations['manual-' + row.key] = false"
                 />
                 <t-select
                   v-model="row.model_type"
                   :disabled="busy"
                   :options="typeOptions"
+                  @change="confirmations['manual-' + row.key] = false"
                   :aria-label="t('providerModels.type')"
                 />
+                <t-select
+                  v-model="selections['manual-' + row.key]"
+                  :options="invocationOptions"
+                  :disabled="busy"
+                  @change="confirmations['manual-' + row.key] = false"
+                />
+                <t-checkbox v-model="confirmations['manual-' + row.key]" :disabled="busy">{{
+                  t('providerModels.confirmInvocation')
+                }}</t-checkbox>
                 <t-button
                   theme="default"
                   variant="text"
@@ -128,7 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PrimaryTableCol } from 'tdesign-vue-next'
 import {
@@ -161,6 +182,16 @@ const busy = computed(() => discovering.value || submitting.value)
 const discoveryId = ref<string>()
 const safeError = ref('')
 const notice = ref('')
+const manualAllowed = ref(false)
+const discoveryExpired = ref(false)
+const selections = reactive<Record<string, number | undefined>>({})
+const confirmations = reactive<Record<string, boolean>>({})
+const invocationOptions = computed(() =>
+  available.value.map((item, value) => ({
+    value,
+    label: `${item.invocation_api} / ${item.operation_profile}`,
+  })),
+)
 const result = ref<ModelImportBatch>()
 const resultOnly = ref(false)
 let lastBatch: ModelImportBatch | undefined
@@ -179,7 +210,7 @@ const available = computed(() => {
       item.auth_mode === props.provider.auth_mode &&
       item.endpoint_profile === props.provider.endpoint_profile,
   )
-  return matching.length ? matching : all
+  return matching
 })
 const templateError = computed(() => !available.value.length)
 function combination(type: ProviderModelType | null) {
@@ -202,7 +233,7 @@ function suggestionName(item: { display_name: string }) {
   return item.display_name
 }
 function canSelect(row: DiscoveryItem) {
-  return row.auto_create_allowed && !!combination(row.model_type)
+  return !discoveryExpired.value && row.auto_create_allowed && !!combination(row.model_type)
 }
 const eligible = computed(() => candidates.value.filter(canSelect))
 const filledManual = computed(() => manual.value.filter((row) => row.model_id_at_provider.trim()))
@@ -216,6 +247,7 @@ const columns = computed<PrimaryTableCol<DiscoveryItem>[]>(() => [
   { colKey: 'display_name', title: t('providerModels.displayName') },
   { colKey: 'model_type', title: t('providerModels.type') },
   { colKey: 'logical_suggestions', title: t('providerModels.suggestions') },
+  { colKey: 'invocation', title: t('model.modelsForm.invocationApi') },
 ])
 const resultColumns = computed<PrimaryTableCol<ModelImportBatch['items'][number]>[]>(() => [
   { colKey: 'model_id_at_provider', title: t('providerModels.modelId') },
@@ -271,6 +303,10 @@ async function discover() {
       )
       if (stopped) return
       if (data.status === 'SUCCEEDED' || data.status === 'FAILED') {
+        manualAllowed.value = data.manual_entry_allowed
+        discoveryExpired.value = Date.parse(data.expires_at) <= Date.now()
+        if (data.truncated || Date.parse(data.expires_at) <= Date.now())
+          notice.value = t('providerModels.incompleteDiscovery')
         discoveryId.value = data.discovery_id
         safeError.value = data.safe_error_code ?? ''
         if (data.status === 'FAILED' || !data.item_count) return
@@ -301,13 +337,15 @@ async function submit() {
   const rows = [
     ...chosen.map((row) => ({
       source: 'DISCOVERY' as const,
+      selectionKey: row.candidate_id,
       candidate_id: row.candidate_id,
       model_type: row.model_type ?? undefined,
       id: row.model_id_at_provider,
     })),
     ...filledManual.value.map((row) => ({
       source: 'MANUAL' as const,
-      model_id_at_provider: row.model_id_at_provider.trim(),
+      selectionKey: 'manual-' + row.key,
+      model_id_at_provider: row.model_id_at_provider,
       model_type: row.model_type,
       id: row.model_id_at_provider.trim(),
     })),
@@ -318,9 +356,10 @@ async function submit() {
   }
   const items: ModelImportItem[] = []
   for (const row of rows) {
-    const match = combination(row.model_type ?? null)
-    if (!match) {
-      notice.value = t('providerModels.unsupportedType')
+    const selection = selections[row.selectionKey]
+    const match = selection === undefined ? undefined : available.value[selection]
+    if (!match || !confirmations[row.selectionKey]) {
+      notice.value = t('providerModels.confirmInvocation')
       return
     }
     const payload =
@@ -346,7 +385,7 @@ async function submit() {
     const accepted = await importProviderModelsApi(
       props.provider.id,
       {
-        ...(discoveryId.value ? { discovery_id: discoveryId.value } : {}),
+        ...(discoveryId.value && chosen.length ? { discovery_id: discoveryId.value } : {}),
         items,
         reason: t('providerModels.importReason'),
       },
@@ -363,16 +402,14 @@ async function submit() {
       )
       if (stopped) return
       lastBatch = batch
-      if (
-        batch.status === 'SUCCEEDED' ||
-        (batch.items.length > 0 && batch.items.every((item) => item.status === 'SUCCEEDED'))
-      ) {
+      if (batch.status === 'SUCCEEDED') {
         MessagePlugin.success(t('providerModels.imported'))
         emit('imported')
         close()
         return
       }
       if (['PARTIAL', 'FAILED', 'CANCELLED'].includes(batch.status)) {
+        if (batch.items.some((item) => item.status === 'SUCCEEDED')) emit('imported')
         result.value = batch
         resultOnly.value = true
         return

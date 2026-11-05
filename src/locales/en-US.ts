@@ -58,6 +58,9 @@ export default {
     },
   },
   providerModels: {
+    confirmInvocation: 'Confirm the selected interface; import as draft without a logical binding',
+    incompleteDiscovery:
+      'Discovery is truncated or expired. Rediscover or use permitted manual entry; this is not a complete catalog.',
     title: 'Fetch and select models · {name}',
     step1: 'Fetch and select models',
     step2: 'Test models',
@@ -105,7 +108,13 @@ export default {
     },
   },
   models: {
+    commandUnknown:
+      'The previous submission is unresolved. Check the object or task before resuming with the original request.',
+    impactSummary:
+      'Mounts {mounts}, grants {grants}, active jobs {jobs}, remote obligations {remote}',
+    impactBlocked: 'Operation blocked: {codes}',
     detailView: {
+      lifecycleUnavailable: 'The current API does not provide a complete lifecycle history.',
       lifecycle: 'Lifecycle timeline',
       created: 'Model created',
       mockActor: 'Demo operator',
@@ -147,6 +156,16 @@ export default {
       DELETE: 'Delete model "{name}"?',
     },
     admission: {
+      configurationChanged:
+        'Model configuration changed. Confirm the final interface and checks again.',
+      observationStopped:
+        'Observation stopped with an unresolved result. Check the task status before continuing.',
+      remotePending:
+        'Remote obligations: pending {pending}, unknown {unknown}. A terminal status does not confirm remote cleanup.',
+      confirmInterface: 'Confirm final interface {api} / {profile} and selected checks',
+      NOT_APPLICABLE: 'Not applicable',
+      UNAVAILABLE: 'Currently unavailable',
+      cancelRequested: 'Cancellation requested; remote execution or cleanup may still be pending',
       passedDetails: {
         BASE_REQUEST:
           'Model {name} completed a request through {api} and passed compatibility validation.',
@@ -176,6 +195,7 @@ export default {
       noResult: 'No admission results available',
       loadFailed: 'Failed to load results. Close and reopen to retry.',
       checks: {
+        LONG_CONTEXT: 'Long context',
         BASE_REQUEST: 'Model request',
         STREAMING: 'Streaming response',
         RELIABILITY: 'Basic reliability',
@@ -507,6 +527,9 @@ export default {
       'Role permissions saved, but refreshing current permissions failed. Please reload.',
   },
   logicalModels: {
+    summaryForbidden: 'Not permitted',
+    summaryUnavailable: 'Statistics unavailable',
+    subjectReadRequired: 'Identity read permission is required to load these subject candidates.',
     editTitle: 'Edit logical model',
     physicalStatus: 'Status',
     unavailable: 'Unavailable',
@@ -590,7 +613,7 @@ export default {
     unmount: 'Unmount',
     unmountConfirm: 'Unmount this physical model?',
     permissionHint:
-      'Authorize departments, user groups and users only on logical models; physical models are not authorized separately. Authorized users can call models by logical model name.',
+      'Authorize departments, groups and users on logical models. Grant sources form a union; current availability is evaluated separately, so authorization does not guarantee an immediate call.',
     addGrant: 'Add authorization',
     batchRemove: 'Batch remove ({n})',
     departmentGrants: 'Department authorizations {n}',
@@ -762,6 +785,13 @@ export default {
   },
   requestErrors: {
     VALIDATION_FAILED: 'Validation failed. Please check your input.',
+  },
+  navigationErrors: {
+    incompatible: 'Navigation contract is incompatible. Contact your administrator.',
+    unavailable: 'Unable to load permissions. Business writes are paused.',
+    refreshRequired: 'Permissions need to be refreshed before saving.',
+    retry: 'Reload permissions',
+    loading: 'Loading permissions',
   },
   authErrors: {
     passwordRelogin: 'The session has expired. Sign in again with your new password',

@@ -102,7 +102,9 @@
           <t-descriptions-item :label="t('providers.notes')">{{
             detail.notes || '—'
           }}</t-descriptions-item>
-          <t-descriptions-item :label="t('providers.createdAt')">—</t-descriptions-item>
+          <t-descriptions-item :label="t('providers.createdAt')">{{
+            formatDateTime(detail.created_at) || '—'
+          }}</t-descriptions-item>
           <t-descriptions-item :label="t('providers.auth')">{{
             detail.configured_secret_fields.length
               ? detail.configured_secret_fields.join(', ') + ' — ' + t('providers.secretConfigured')
@@ -122,15 +124,10 @@
           >
             <template #mounts="{ row }">{{
               row.mounts
-                .map(
-                  (mount: ProviderModel['mounts'][number]) =>
-                    mount.display_name || mount.logical_name,
-                )
+                ?.map((mount: ModelMount) => mount.display_name || mount.logical_name)
                 .join(', ') || '—'
             }}</template>
-            <template #status="{ row }">{{
-              t(`providers.modelStatus.${row.mounts.length ? row.status : 'UNMOUNTED'}`)
-            }}</template>
+            <template #status="{ row }">{{ t(`providers.modelStatus.${row.status}`) }}</template>
           </t-table>
         </div>
       </template>
@@ -139,11 +136,22 @@
   <t-dialog
     v-model:visible="deleteVisible"
     :header="t('providers.deleteTitle')"
-    :confirm-btn="{ content: t('providers.delete'), theme: 'danger', loading: deleting }"
+    :confirm-btn="{
+      content: t('providers.delete'),
+      theme: 'danger',
+      loading: deleting,
+      disabled: impactBlocked,
+    }"
     :cancel-btn="{ content: t('common.cancel'), disabled: deleting }"
     :close-on-overlay-click="false"
     @confirm="deleteProvider"
   >
+    <ModelImpactNotice
+      v-if="deleteVisible && deletingProvider"
+      resource="providers"
+      :id="deletingProvider.id"
+      @blocked="impactBlocked = $event"
+    />
     <p>
       {{
         t('providers.deleteConfirm', {
@@ -188,7 +196,11 @@
         <t-form-item name="name" :label="t('providers.name')">
           <t-input
             v-model="form.name"
-            :maxlength="128"
+            :maxlength="
+              editing && form.name === editing.name
+                ? Math.max(80, Array.from(form.name).length)
+                : 80
+            "
             :placeholder="t('providers.namePlaceholder')"
           />
         </t-form-item>
@@ -251,6 +263,10 @@
 </template>
 
 <script setup lang="ts">
+import ModelImpactNotice from '../ModelImpactNotice.vue'
+import { formatDateTime } from '@/utils/datetime'
+import { getModelWithAllMountsApi, type ModelMount } from '@/api/modules/models'
+import { canReadResource, useUserStore } from '@/stores/modules/user'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -283,11 +299,22 @@ import {
   type TemplateField,
 } from '@/api/modules/providers'
 
+const impactBlocked = ref(true)
 const { t, locale } = useI18n()
 const detailVisible = ref(false)
 const detail = ref<ProviderItem | null>(null)
 const detailError = ref(false)
-const models = ref<ProviderModel[]>([])
+type ProviderModelRow = ProviderModel & { mounts?: ModelMount[] }
+const models = ref<ProviderModelRow[]>([])
+const user = useUserStore()
+async function enrichModels(items: ProviderModel[]): Promise<ProviderModelRow[]> {
+  if (!canReadResource(user.permissions, 'model.models')) return items
+  const details = await Promise.allSettled(items.map((item) => getModelWithAllMountsApi(item.id)))
+  return items.map((item, index) => {
+    const result = details[index]
+    return result?.status === 'fulfilled' ? { ...item, mounts: result.value.mounts } : item
+  })
+}
 const modelsLoading = ref(false)
 const deleteVisible = ref(false)
 const deletingProvider = ref<ProviderItem | null>(null)
@@ -316,7 +343,10 @@ async function openDetail(id: string) {
     const result = await getProviderApi(id)
     if (requestId !== detailRequest) return
     detail.value = result
-    void fetchModels(id)
+    const relatedModels = await enrichModels(result.related_models?.items ?? [])
+    if (requestId !== detailRequest) return
+    models.value = relatedModels
+    modelPagination.total = result.related_models?.total ?? 0
   } catch {
     if (requestId === detailRequest) detailError.value = true
   } finally {
@@ -333,7 +363,9 @@ async function fetchModels(id: string) {
       modelPagination.pageSize ?? 20,
     )
     if (requestId !== modelRequest) return
-    models.value = result.items
+    const relatedModels = await enrichModels(result.items)
+    if (requestId !== modelRequest) return
+    models.value = relatedModels
     modelPagination.total = result.total
   } catch {
     if (requestId === modelRequest) models.value = []
@@ -347,7 +379,7 @@ function changeModelPage(info: PageInfo) {
   if (detail.value) void fetchModels(detail.value.id)
 }
 async function deleteProvider() {
-  if (!deletingProvider.value || deleting.value) return
+  if (!deletingProvider.value || deleting.value || impactBlocked.value) return
   if (!deleteReason.value.trim()) {
     MessagePlugin.warning(t('providers.reasonRequired'))
     return
@@ -528,7 +560,7 @@ async function fetchList() {
     if (requestId === listRequest) loading.value = false
   }
 }
-watch(search, () => {
+watch([search, locale], () => {
   pagination.current = 1
   void fetchList()
 })
@@ -637,15 +669,13 @@ async function submit() {
   }
   saving.value = true
   try {
-    const isCreating = !editing.value
-    const result = editing.value
-      ? await updateProviderApi(editing.value.id, payload)
-      : await createProviderApi(payload)
+    await (editing.value
+      ? updateProviderApi(editing.value.id, payload)
+      : createProviderApi(payload))
     MessagePlugin.success(t('providers.saved'))
     saving.value = false
     close()
     await fetchList()
-    if (isCreating) modelProvider.value = await getProviderApi(result.resource_id)
   } catch {
     /* 请求层统一提示 */
   } finally {

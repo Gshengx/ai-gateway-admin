@@ -84,8 +84,10 @@ export function testDocument(rule: DetectionRule, text: string, direction: strin
     guide?.key_indicators.filter((v) => text.toLowerCase().includes(v.toLowerCase())) ?? []
   result.evidence = matches
   result.confidence = matches.length >= 2 && text.length >= 40 ? 0.93 : 0.2
-  if (matches.length < 2 || text.length < 40 || result.confidence < rule.config.threshold)
+  if (matches.length < 2 || text.length < 40 || result.confidence < rule.config.threshold) {
+    result.exclusion_evidence = [rule.config.negative_guide || guide?.decision_guidance || '']
     return result
+  }
   result.status = 'MATCHED'
   const fields = rule.config.sensitive_fields ?? []
   if (!fields.length) return result

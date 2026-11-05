@@ -1,4 +1,5 @@
 import { getPasswordRules } from './settings'
+import { mockNavigation } from './navigation'
 import type { RespThisType } from 'vite-plugin-mock'
 import type { SessionInfo } from '../src/api/modules/auth'
 import { currentTerms, isTermsConfirmed } from './terms'
@@ -26,9 +27,6 @@ const CAPABILITIES = [
   { resource_code: 'audit.annotations', can_read: true, can_write: true },
   { resource_code: 'audit.management', can_read: true, can_write: true },
   { resource_code: 'audit.terms_acceptances', can_read: true, can_write: true },
-  { resource_code: 'audit.records', can_read: true, can_write: false },
-  { resource_code: 'audit.events', can_read: true, can_write: false },
-  { resource_code: 'audit.reports', can_read: true, can_write: false },
   { resource_code: 'system.settings', can_read: true, can_write: true },
   { resource_code: 'personal.profile', can_read: true, can_write: true },
   { resource_code: 'personal.keys', can_read: true, can_write: true },
@@ -157,6 +155,9 @@ export default authMock([
         )
       return success({
         capabilities: CAPABILITIES,
+        navigation: mockNavigation(
+          String(req.query?.locale ?? req.headers?.['accept-language'] ?? 'zh-CN'),
+        ),
         permissions_version: '1',
         configuration_version: '1',
         department_scope_root_id: 'd-root',

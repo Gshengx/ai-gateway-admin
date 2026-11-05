@@ -5,8 +5,6 @@ import { setupRouterGuard } from './guard'
 /** 布局路由：业务页面动态注册为其 children */
 export const LAYOUT_ROUTE_NAME = 'Layout'
 
-const HOME_PATH = '/dashboard'
-
 /**
  * 静态路由：启动即注册（含布局壳与错误页）。
  * 布局路由静态存在可消除首次导航的 "No match" 警告；业务子路由登录后按权限动态挂载，
@@ -36,7 +34,6 @@ const staticRoutes: RouteRecordRaw[] = [
     path: '/',
     name: LAYOUT_ROUTE_NAME,
     component: () => import('@/layouts/BasicLayout.vue'),
-    redirect: HOME_PATH,
     children: [],
   },
   {

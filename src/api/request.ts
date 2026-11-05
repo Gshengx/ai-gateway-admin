@@ -66,7 +66,7 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
     if (seconds > 0) retryUntil.set(config?.url ?? '', Date.now() + seconds * 1000)
   }
   if (config?.skipErrorHandler || (code && config?.handledErrorCodes?.includes(code))) throw error
-  if (status === 401 && UNAUTHORIZED_CODES.includes(code ?? '')) {
+  if (status === 401 || UNAUTHORIZED_CODES.includes(code ?? '')) {
     await handleUnauthorized()
     error.notified = true
     throw error
@@ -84,14 +84,16 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
       if ((refreshError as NotifiedError).code === 'UNAUTHENTICATED') await handleUnauthorized()
     }
   }
-  if (status === 403 && code === 'FORBIDDEN') {
+  if (
+    status === 403 &&
+    ['FORBIDDEN', 'OUT_OF_SCOPE'].includes(code ?? '') &&
+    config?.url !== '/me/permissions'
+  ) {
     const { useUserStore } = await import('@/stores/modules/user')
     const user = useUserStore()
-    user.loaded = false
+    user.invalidatePermissions()
     try {
       await user.fetchUserInfo()
-      const { usePermissionStore } = await import('@/stores/modules/permission')
-      usePermissionStore().reset()
     } catch {
       /* Preserve the original forbidden response. */
     }
@@ -166,6 +168,20 @@ instance.interceptors.request.use(async (config) => {
   }
 
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const sessionRequest =
+      config.url?.startsWith('/auth/') ||
+      config.url?.startsWith('/terms/') ||
+      config.url === '/me/preferences'
+    if (!sessionRequest) {
+      const { useUserStore } = await import('@/stores/modules/user')
+      if (!useUserStore().permissionsReady) {
+        const error: NotifiedError = new Error(i18n.global.t('navigationErrors.refreshRequired'))
+        error.code = 'PERMISSIONS_REFRESH_REQUIRED'
+        MessagePlugin.warning(error.message)
+        error.notified = true
+        throw error
+      }
+    }
     const login = config.url === '/auth/login'
     if (!login && !getCsrfToken()) {
       const { getAuthContextApi } = await import('./modules/auth')

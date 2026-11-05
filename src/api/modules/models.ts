@@ -1,6 +1,7 @@
-﻿import request from '@/api/request'
+import request from './modelRequest'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 import type { ProviderModelType } from './providers'
+import type { AuthorizationSummary } from './logicalModels'
 
 export type ModelStatus =
   'DRAFT' | 'TESTING' | 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED'
@@ -25,7 +26,7 @@ export interface CapabilitySource {
   source: string
 }
 export interface InvocationConfig {
-  deployment?: string | null
+  deployment?: string
 }
 export interface LogicalBinding {
   mode: 'NONE' | 'EXISTING' | 'CREATE'
@@ -33,11 +34,20 @@ export interface LogicalBinding {
   logical_name?: string
   display_name?: string
   description?: string
-  translations?: Record<string, unknown>
+  translations?: { locale_code: string; name: string; description: string }[]
   priority?: number
   confirm_existing_grant_impact?: boolean
 }
 export interface PhysicalModelItem {
+  admission_checks?: {
+    key: string
+    state: 'AVAILABLE' | 'NOT_APPLICABLE' | 'UNAVAILABLE'
+    reason_code: string
+  }[]
+  related_mounts?: OffsetPageResult<ModelMount>
+  provider_name?: string
+  provider_base_url?: string
+  provider_security_level?: string
   admission_generation: string
   admission_valid: boolean
   allowed_commands: string[]
@@ -56,7 +66,7 @@ export interface PhysicalModelItem {
   state_reason: string | null
   status: ModelStatus
   verified_capabilities: unknown
-  /** 后端 OpenAPI 未声明该字段；页面有则展示，无则使用占位符。 */
+  /** 历史响应可能省略创建时间。 */
   created_at?: string
 }
 export type PhysicalModelDetail = PhysicalModelItem
@@ -73,6 +83,7 @@ type CapabilityInput = Omit<DeclaredCapabilities, 'context_window' | 'max_output
   max_output_tokens: string | number | null
 }
 export interface CreatePhysicalModelPayload {
+  price?: ModelPricingBody
   declared_capabilities: CapabilityInput
   description: string
   invocation_api: string
@@ -84,16 +95,20 @@ export interface CreatePhysicalModelPayload {
   provider_id: string
   reason: string
 }
-export type UpdatePhysicalModelPayload = Pick<
-  CreatePhysicalModelPayload,
-  | 'declared_capabilities'
-  | 'description'
-  | 'invocation_api'
-  | 'invocation_config'
-  | 'model_type'
-  | 'operation_profile'
-  | 'reason'
->
+export type UpdatePhysicalModelPayload = Partial<
+  Pick<
+    CreatePhysicalModelPayload,
+    | 'declared_capabilities'
+    | 'description'
+    | 'invocation_api'
+    | 'invocation_config'
+    | 'model_type'
+    | 'operation_profile'
+    | 'reason'
+    | 'provider_id'
+    | 'model_id_at_provider'
+  >
+> & { price?: ModelPricingBody; logical_bindings?: LogicalBinding[] }
 export interface DeletePhysicalModelPayload {
   reason: string
 }
@@ -111,7 +126,7 @@ export interface ModelPricing {
 }
 export interface ModelPricingBody {
   cached_input_price: string | null
-  currency: 'CNY' | 'USD' | 'EUR'
+  currency: 'CNY' | 'USD'
   input_price: string
   output_price: string
   reason: string
@@ -123,6 +138,7 @@ export interface ModelPricingStatus {
   price: ModelPricing | null
 }
 export interface LogicalModelItem {
+  authorization_summary?: AuthorizationSummary
   candidate_count: number
   description: string
   display_name: string
@@ -171,21 +187,42 @@ function normalizePayload<T extends { declared_capabilities: CapabilityInput }>(
 export function getModelsApi(params: PhysicalModelListQuery, signal?: AbortSignal) {
   return request.get<OffsetPageResult<PhysicalModelItem>>('/models', { params, signal })
 }
-export function getModelApi(modelId: string) {
+export function getModelApi(modelId: string, mounts_page = 1, mounts_page_size = 100) {
   return request.get<PhysicalModelDetail>(`/models/${encodeURIComponent(modelId)}`, {
+    params: { mounts_page, mounts_page_size },
     skipLocale: true,
   })
 }
+export async function getModelWithAllMountsApi(modelId: string) {
+  const detail = await getModelApi(modelId)
+  const mounts = [...(detail.related_mounts?.items ?? detail.mounts)]
+  for (let page = 2; page <= (detail.related_mounts?.total_pages ?? 1); page++) {
+    const next = await getModelApi(modelId, page)
+    mounts.push(...(next.related_mounts?.items ?? []))
+  }
+  return { ...detail, mounts }
+}
 export function createModelApi(data: CreatePhysicalModelPayload) {
-  return request.post<unknown>('/models', normalizePayload(data))
+  return request.post<{ applied: boolean; replayed: boolean; resource_id: string }>(
+    '/models',
+    normalizePayload(data),
+  )
 }
 export function updateModelApi(modelId: string, data: UpdatePhysicalModelPayload) {
-  return request.put<unknown>(`/models/${encodeURIComponent(modelId)}`, normalizePayload(data))
+  return request.put<unknown>(`/models/${encodeURIComponent(modelId)}`, {
+    ...data,
+    ...(data.declared_capabilities
+      ? {
+          declared_capabilities: normalizePayload({
+            declared_capabilities: data.declared_capabilities,
+          }).declared_capabilities,
+        }
+      : {}),
+  })
 }
 export function deleteModelApi(modelId: string, data: DeletePhysicalModelPayload) {
   return request.delete<unknown>(`/models/${encodeURIComponent(modelId)}`, {
     data,
-    handledErrorCodes: ['REAUTH_REQUIRED'],
   })
 }
 export function sendModelCommandApi(
@@ -204,6 +241,12 @@ export function getModelPricingApi(modelId: string) {
 }
 export function getLogicalModelsApi(params: OffsetPageQuery & { search?: string }) {
   return request.get<OffsetPageResult<LogicalModelItem>>('/logical-models', { params })
+}
+export function getLogicalModelOptionsApi(params: OffsetPageQuery & { search?: string }) {
+  return request.get<OffsetPageResult<{ id: string; display_name: string; logical_name: string }>>(
+    '/logical-models/options',
+    { params },
+  )
 }
 export function mountLogicalModelApi(logicalModelId: string, data: MountPhysicalModelPayload) {
   return request.post<unknown>(`/logical-models/${encodeURIComponent(logicalModelId)}/mount`, data)
@@ -252,21 +295,20 @@ export function reviewModelApi(
 export function startModelAdmissionApi(
   modelId: string,
   data: {
-    budget_authorization_ref: string
     reason: string
     selected_checks: string[]
-    test_profile_version: string
   },
 ) {
   return request.post<{
     accepted: boolean
     job_id: string
-    budget_batch_id: string
     replayed: boolean
   }>(`/models/${encodeURIComponent(modelId)}/admission-tests`, data)
 }
 export function getModelAdmissionJobApi(jobId: string) {
   return request.get<{
+    cancel_requested: boolean
+    remote: { cleanup_required: boolean; pending_count: number; unknown_count: number }
     job_id: string
     run_id: string | null
     safe_error_code: string | null
@@ -277,6 +319,7 @@ export function getModelAdmissionJobApi(jobId: string) {
 export interface ModelPriceHistory extends ModelPricing {
   created_at: string
   created_by: string
+  created_by_name?: string | null
 }
 export function getModelPriceHistoryApi(id: string, params: OffsetPageQuery) {
   return request.get<OffsetPageResult<ModelPriceHistory>>(
@@ -284,9 +327,26 @@ export function getModelPriceHistoryApi(id: string, params: OffsetPageQuery) {
     { params },
   )
 }
-export function getModelAdmissionHistoryApi(id: string, params: OffsetPageQuery) {
-  return request.get<OffsetPageResult<AdmissionRun>>(
+export function getModelAdmissionHistoryApi(
+  id: string,
+  params: OffsetPageQuery & { page_snapshot?: string },
+) {
+  return request.get<OffsetPageResult<AdmissionRun> & { page_snapshot: string }>(
     `/models/${encodeURIComponent(id)}/admission-tests`,
     { params },
+  )
+}
+
+export function getModelAdmissionRunApi(modelId: string, runId: string) {
+  return request.get<AdmissionRun>(
+    `/models/${encodeURIComponent(modelId)}/admission-tests/${encodeURIComponent(runId)}`,
+    { skipLocale: true },
+  )
+}
+
+export function cancelModelAdmissionJobApi(jobId: string) {
+  return request.post<{ cancel_requested: boolean }>(
+    `/model-admission-jobs/${encodeURIComponent(jobId)}/cancel`,
+    {},
   )
 }

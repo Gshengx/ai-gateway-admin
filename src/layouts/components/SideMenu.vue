@@ -16,27 +16,7 @@
       @change="onMenuChange"
       @expand="onExpand"
     >
-      <template v-for="menu in menus" :key="menu.path">
-        <t-submenu
-          v-if="menu.children?.length"
-          :value="menu.path"
-          :title="translateRouteTitle(menu.title)"
-        >
-          <template #icon>
-            <t-icon :name="menu.icon" />
-          </template>
-          <t-menu-item v-for="child in menu.children" :key="child.path" :value="child.path">
-            {{ translateRouteTitle(child.title) }}
-          </t-menu-item>
-        </t-submenu>
-
-        <t-menu-item v-else :value="menu.path">
-          <template #icon>
-            <t-icon :name="menu.icon" />
-          </template>
-          {{ translateRouteTitle(menu.title) }}
-        </t-menu-item>
-      </template>
+      <menu-node v-for="menu in menus" :key="menu.path" :item="menu" />
     </t-menu>
   </div>
 </template>
@@ -46,7 +26,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
-import { translateRouteTitle } from '@/locales'
+import MenuNode from './MenuNode.vue'
+import { menuTrail } from '@/stores/modules/permission'
 import { usePermissionStore } from '@/stores/modules/permission'
 
 defineProps<{ collapsed: boolean }>()
@@ -57,17 +38,20 @@ const { t } = useI18n()
 const permissionStore = usePermissionStore()
 
 const menus = computed(() => permissionStore.menus)
-const activePath = computed(() => route.path)
+const trail = computed(() => menuTrail(menus.value, route.meta.routeId))
+const activePath = computed(() => trail.value[trail.value.length - 1]?.path ?? route.path)
 
 /** 展开的父级菜单：默认展开当前路由所属分组 */
 const expandedKeys = ref<string[]>([])
 watch(
-  () => route.path,
-  (path) => {
-    const parent = menus.value.find((m) => m.children?.some((c) => c.path === path))
-    if (parent && !expandedKeys.value.includes(parent.path)) {
-      expandedKeys.value = [...expandedKeys.value, parent.path]
-    }
+  () => trail.value,
+  (items) => {
+    expandedKeys.value = [
+      ...new Set([
+        ...expandedKeys.value,
+        ...items.filter((item) => item.children).map((item) => item.path),
+      ]),
+    ]
   },
   { immediate: true },
 )

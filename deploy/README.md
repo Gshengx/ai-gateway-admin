@@ -1,28 +1,47 @@
-# Linux 部署（Nginx 静态托管 + /api 反代）
+# Linux 部署（Nginx HTTPS + Jenkins + K3s）
 
-目标机：`10.22.116.88`（root），后端：`http://10.22.116.82:18088`。
+## Jenkins + 单节点 K3s 自动构建发布
 
-1. 本机执行 `npm run build` 生成 `dist`。
-2. 组织上传目录结构，把整个 `deploy` 目录传到目标机任意路径，例如 `/tmp/ais-deploy`：
+`setup-ci.sh` 在 CentOS 7 x86_64 虚拟机安装 K3s 与 Jenkins LTS，并创建
+`ais-gateway-admin` Jenkins Pipeline。提交会由 Jenkins 每分钟轮询 GitHub `main` 分支发现，
+不需要 GitHub webhook 或开放 Jenkins 端口。构建在 K3s Node.js Job 内执行
+`npm ci`、`npm run type-check`、`npm run build`，通过受限 ServiceAccount 发布到前端 Deployment。
 
-   ```
-   deploy.sh
-   nginx.conf
-   payload/dist/index.html
-   payload/dist/assets/...
-   ```
+首次安装：将整个 `deploy` 目录上传到 VM，确保同级 `Jenkinsfile` 也上传，然后以 root 执行：
 
-   上传命令（Windows 本机）：`pscp -pw <密码> -r deploy root@10.22.116.88:/tmp/ais-deploy`
+```bash
+bash deploy/setup-ci.sh
+```
 
-3. 目标机以 root 执行：`cd /tmp/ais-deploy && bash deploy.sh`。脚本会安装 nginx（如缺失）、清空并同步 `/var/www/ais-gateway-admin`、备份并覆盖 `/etc/nginx/nginx.conf`、`nginx -t` 校验、启动或 reload、放行 80 端口。
-4. 自检：
+初始化后使用 `https://10.22.116.88/jenkins/` 登录；一次性管理员密码保存在 VM 的
+`/root/ais-jenkins-admin.txt`（root-only）。Nginx 仍只对外开放 80/443，Jenkins 监听
+`127.0.0.1:8080`；K3s API 不开放公网，NodePort 30080 仅允许本机源地址。
 
-   ```
-   curl -I http://127.0.0.1/
-   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/api/v1/
-   ```
+手动发布仍可使用本目录 `update.ps1`，会原子切换 K3s 共享发布目录并等待 Deployment 就绪。
+K3s 工作负载与权限定义在 [k8s/ais-gateway.yaml](k8s/ais-gateway.yaml)，构建 Job 模板在
+[k8s/build-job.yaml](k8s/build-job.yaml)，自动发布流程在仓库根目录 `Jenkinsfile`。
 
-   浏览器访问 `http://10.22.116.88/`，登录后确认 `/api/v1/...` 请求返回正常、刷新子路由不 404。
+> CentOS 7 已停止维护，单节点集群用于当前虚拟机环境；系统资源为 4 vCPU、7.6 GiB RAM、
+> 约 16 GiB 可用磁盘。升级到受支持的 Linux 版本后，应重新评估此安装方案。
 
-5. 日常更新：在本机执行 `$env:AIS_DEPLOY_PASS='<密码>'; powershell -ExecutionPolicy Bypass -File deploy/update.ps1`，自动打包 `dist`、上传、原子替换、`restorecon`、reload 并自检；失败时旧版本保留在 `/var/www/ais-gateway-admin.bak`。
-6. 常见问题：80 被占 → `ss -lntp | grep :80` 处理占用进程；改配置后 → `nginx -t && systemctl reload nginx`；反代 502 → 检查目标机到 `10.22.116.82:18088` 是否通，SELinux 需 `setsebool -P httpd_can_network_connect 1`；静态资源 403 → SELinux 目录上下文需为 `httpd_sys_content_t`（脚本已处理）；CentOS 7 已 EOL，`yum install` 前需把仓库指向 `mirrors.aliyun.com/centos-vault/7.9.2009` + `epel-archive/7`；回滚 → 用 `/etc/nginx/nginx.conf.bak-ais-gateway-admin` 覆盖回来，或用 `ais-gateway-admin.bak` 换回旧产物。
+当前使用私有 ACME HTTPS，入口为 `https://10.22.116.88/`。首次部署须先按
+[HTTPS 配置说明](HTTPS.md) 初始化 CA 和证书；客户端须信任根证书。
+下方历史 HTTP 自检命令中的站点地址请改用 HTTPS，并加
+`--cacert /etc/nginx/ssl/ais-root-ca.crt`；80 端口只保留跳转和 ACME 验证。
+
+后端地址：`http://10.22.116.82:18088`。日常手动更新：在 Windows 执行
+`$env:AIS_DEPLOY_PASS='<密码>'; powershell -ExecutionPolicy Bypass -File deploy/update.ps1`，
+会上传当前 `dist`、原子切换版本、滚动重启 Deployment，并通过私有根证书验证首页与 API。
+
+常用 VM 自检：
+
+```bash
+systemctl status k3s jenkins nginx --no-pager
+kubectl get nodes -o wide
+kubectl get pods,services -n ais-gateway
+curl --cacert /etc/nginx/ssl/ais-root-ca.crt -I https://10.22.116.88/
+curl --cacert /etc/nginx/ssl/ais-root-ca.crt -I https://10.22.116.88/jenkins/login
+```
+
+Jenkins 管理员密码仅保存在 `/root/ais-jenkins-admin.txt`。若 Nginx 返回 502，先检查
+`kubectl rollout status deployment/frontend -n ais-gateway` 和 `setsebool -P httpd_can_network_connect 1`。

@@ -9,19 +9,26 @@
         <header-bar :collapsed="collapsed" @toggle="collapsed = !collapsed" />
       </t-header>
       <t-content class="basic-layout__content">
-        <router-view />
+        <router-view v-if="pageAllowed" :key="permissionStore.generation" />
       </t-content>
     </t-layout>
   </t-layout>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { usePermissionStore } from '@/stores/modules/permission'
 
 import SideMenu from './components/SideMenu.vue'
 import HeaderBar from './components/HeaderBar.vue'
 
 const collapsed = ref(false)
+const route = useRoute()
+const permissionStore = usePermissionStore()
+const pageAllowed = computed(() =>
+  permissionStore.routes.some((item) => item.meta?.routeId === route.meta.routeId),
+)
 </script>
 
 <style scoped>

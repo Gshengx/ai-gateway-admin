@@ -6,7 +6,7 @@ param(
     [string]$Server = '10.22.116.88',
     [string]$User = 'root',
     [string]$DistPath = (Join-Path $PSScriptRoot '..\dist'),
-    [string]$RemoteDir = '/var/www/ais-gateway-admin',
+    [string]$RemoteDir = '/var/lib/ais-gateway-admin/releases',
     [string]$Password = $env:AIS_DEPLOY_PASS
 )
 
@@ -32,6 +32,7 @@ if (-not $Password) {
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $tgz = Join-Path $env:TEMP "ais-dist-$stamp.tgz"
 $remoteTgz = "/tmp/ais-dist-$stamp.tgz"
+$localRootCa = Join-Path $env:TEMP "ais-root-ca-$stamp.crt"
 
 try {
     Write-Host "[1/4] 打包 $DistPath"
@@ -45,36 +46,45 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '上传失败' }
 
     Write-Host "[3/4] 远端替换并 reload nginx"
+    $remoteRelease = "manual-$stamp"
     $remoteCmd = @"
 set -e
-NEW='$RemoteDir.new'
-OLD='$RemoteDir.bak'
-rm -rf "`$NEW"
-mkdir -p "`$NEW"
-tar -xzf '$remoteTgz' -C "`$NEW"
-test -f "`$NEW/index.html"
-rm -rf "`$OLD"
-mv '$RemoteDir' "`$OLD"
-mv "`$NEW" '$RemoteDir'
-restorecon -R '$RemoteDir' >/dev/null 2>&1 || true
+RELEASE_ROOT='$RemoteDir'
+RELEASE="`$RELEASE_ROOT/$remoteRelease/site"
+mkdir -p "`$RELEASE"
+tar -xzf '$remoteTgz' -C "`$RELEASE"
+test -f "`$RELEASE/index.html"
+rm -f /var/lib/ais-gateway-admin/current.next
+ln -s "releases/$remoteRelease/site" /var/lib/ais-gateway-admin/current.next
+mv -Tf /var/lib/ais-gateway-admin/current.next /var/lib/ais-gateway-admin/current
+restorecon -R /var/lib/ais-gateway-admin >/dev/null 2>&1 || true
+kubectl rollout restart deployment/frontend --namespace ais-gateway
+kubectl rollout status deployment/frontend --namespace ais-gateway --timeout=120s
 nginx -t
 systemctl reload nginx || systemctl restart nginx
 rm -f '$remoteTgz'
-echo "files=`$(find '$RemoteDir' -type f | wc -l)"
+echo "files=`$(find "`$RELEASE" -type f | wc -l)"
 "@
     $cmdFile = Join-Path $env:TEMP "ais-update-$stamp.sh"
     [IO.File]::WriteAllText($cmdFile, ($remoteCmd -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding($false)))
     & $plink -ssh -batch -P 22 -l $User -pw $Password -m $cmdFile $Server
-    if ($LASTEXITCODE -ne 0) { throw '远端替换失败，旧版本保留在 ' + $RemoteDir + '.bak' }
+    if ($LASTEXITCODE -ne 0) { throw '远端发布失败；旧版本目录仍保留在 ' + $RemoteDir }
 
     Write-Host "[4/4] 自检"
-    $root = & curl.exe -s -o NUL -w '%{http_code}' --max-time 15 "http://$Server/"
-    $api = & curl.exe -s -o NUL -w '%{http_code}' --max-time 15 "http://$Server/api/v1/api-keys"
+    # 从已验证的 SSH 通道获取根证书，不关闭 TLS 验证、不写入客户端信任库。
+    & $pscp -batch -pw $Password "${User}@${Server}:/etc/nginx/ssl/ais-root-ca.crt" $localRootCa
+    if ($LASTEXITCODE -ne 0) { throw '获取 HTTPS 根证书失败' }
+    $root = & curl.exe --noproxy '*' --cacert $localRootCa -sS -o NUL -w '%{http_code}' --max-time 15 "https://$Server/"
+    if ($LASTEXITCODE -ne 0) { throw 'HTTPS 首页 TLS 验证失败' }
+    $api = & curl.exe --noproxy '*' --cacert $localRootCa -sS -o NUL -w '%{http_code}' --max-time 15 "https://$Server/api/v1/api-keys"
+    if ($LASTEXITCODE -ne 0) { throw 'HTTPS 接口 TLS 验证失败' }
     Write-Host "      首页 $root / 接口 $api (401 表示反代正常)"
     if ($root -ne '200') { throw "首页返回 $root，部署异常" }
+    if ($api -ne '401') { throw "未登录接口返回 $api，预期 401" }
 
-    Write-Host "`n更新完成：http://$Server/"
+    Write-Host "`n更新完成：https://$Server/"
 }
 finally {
     Remove-Item $tgz -Force -ErrorAction SilentlyContinue
+    Remove-Item $localRootCa -Force -ErrorAction SilentlyContinue
 }

@@ -107,8 +107,20 @@ function logicalRecord(id: string) {
   const mounted = models.filter((m) => m.mounts.some((x) => x.logical_model_id === id))
   return {
     ...l,
-    ready: mounted.some((m) => m.status === 'ACTIVE'),
-    candidate_count: mounted.length,
+    ready: l.status === 'ACTIVE' && mounted.some((m) => m.status === 'ACTIVE' && m.admission_valid),
+    candidate_count: mounted.filter((m) => m.status === 'ACTIVE' && m.admission_valid).length,
+    active_model_count: mounted.filter((model) => model.status === 'ACTIVE').length,
+    authorization_summary: {
+      department_count: grants.filter(
+        (grant) => grant.logical_model_id === id && grant.subject_type === 'DEPARTMENT',
+      ).length,
+      user_group_count: grants.filter(
+        (grant) => grant.logical_model_id === id && grant.subject_type === 'GROUP',
+      ).length,
+      user_count: grants.filter(
+        (grant) => grant.logical_model_id === id && grant.subject_type === 'USER',
+      ).length,
+    },
     mounts: mounted
       .map((m) => ({
         physical_model_id: m.id,
@@ -119,16 +131,19 @@ function logicalRecord(id: string) {
 }
 function addRelations(id: string, relations: { subject_id: string; subject_type: SubjectType }[]) {
   for (const r of relations) {
+    const subjectType: SubjectType =
+      String(r.subject_type) === 'USER_GROUP' ? 'GROUP' : r.subject_type
     if (
       !grants.some(
         (g) =>
           g.logical_model_id === id &&
-          g.subject_type === r.subject_type &&
+          g.subject_type === subjectType &&
           g.subject_id === r.subject_id,
       )
     )
       grants.push({
         ...r,
+        subject_type: subjectType,
         logical_model_id: id,
         grant_id: mockId(`grant-${id}-${r.subject_type}-${r.subject_id}`),
       })
@@ -150,6 +165,7 @@ const jobs = new Map<
     fail: boolean
     checks: string[]
     budgetBatchId: string
+    cancelRequested?: boolean
   }
 >()
 const template: ProviderTemplate = {
@@ -192,6 +208,31 @@ function page<T>(items: T[], req: MockRequest) {
     total_pages: Math.ceil(items.length / size),
   }
 }
+function savePrice(id: string, body: ModelPricingBody) {
+  prices.set(id, body)
+  const history = priceHistory.get(id) || []
+  const m = models.find((item) => item.id === id)!
+  history.unshift({
+    input_price: body.input_price,
+    output_price: body.output_price,
+    cached_input_price: body.cached_input_price,
+    currency: body.currency,
+    unit: body.unit,
+    created_at: new Date().toISOString(),
+    created_by: mockId('mock-model-admin'),
+    revision: String(history.length + 1),
+    coverage_status: 'COMPLETE_FOR_OPERATION',
+    pricing_profile_version: 'v1',
+    uncovered_components: [],
+    identity: {
+      model_id_at_provider: m.model_id_at_provider,
+      physical_model_id: m.id,
+      provider_id: m.provider_id,
+      provider_name: 'OpenAI-主站',
+    },
+  })
+  priceHistory.set(m.id, history)
+}
 function modelId(req: MockRequest) {
   return (req.url || '').split('?')[0].split('/')[4]
 }
@@ -202,6 +243,15 @@ function receipt(id: string) {
   return success({ applied: true, replayed: false, resource_id: id })
 }
 function commands(model: PhysicalModelItem) {
+  model.admission_checks = [
+    'BASE_REQUEST',
+    'STREAMING',
+    'TOOL_CALLING',
+    'JSON_MODE',
+    'VISION',
+    'RELIABILITY',
+    'LONG_CONTEXT',
+  ].map((key) => ({ key, state: 'AVAILABLE', reason_code: '' }))
   model.allowed_commands =
     model.status === 'ACTIVE'
       ? ['PAUSE', 'RETIRE']
@@ -255,6 +305,16 @@ function runData(run: AdmissionRun, id: string) {
 }
 function advance(job: typeof jobs extends Map<string, infer T> ? T : never) {
   if (job.run.sealed_at) return true
+  if (job.cancelRequested && Date.now() - job.started >= 1500) {
+    job.run.status = 'ERROR'
+    job.run.admission_valid = false
+    job.run.invalid_reason = 'CANCELLED'
+    job.run.sealed_at = new Date().toISOString()
+    const model = models.find((item) => item.id === job.modelId)!
+    model.status = 'DRAFT'
+    commands(model)
+    return true
+  }
   const elapsed = Date.now() - job.started
   let failed = false
   job.run.checks = job.checks.map((key, index) => {
@@ -314,7 +374,47 @@ function advance(job: typeof jobs extends Map<string, infer T> ? T : never) {
   runs.set(model.id, job.run)
   return complete
 }
+const providerSeed: ProviderItem = {
+  id: providerId,
+  name: 'OpenAI-主站',
+  template_key: 'openai',
+  template_version: 'v1.0',
+  base_url: 'https://api.openai.com/v1',
+  endpoint_profile: 'openai_v1',
+  auth_mode: 'API_KEY',
+  security_level: 'INTERNET',
+  notes: '',
+  model_count: String(models.length),
+  invocation_generation: '1',
+  public_config: {},
+  configured_secret_fields: [],
+}
+const mockProviders: ProviderItem[] = [providerSeed]
+const discoveries = new Map<string, { providerId: string; candidateId: string }>()
+const importBatches = new Map<string, { providerId: string; ids: string[] }>()
 const routes: MockMethod[] = [
+  {
+    url: '/api/v1/logical-models/options',
+    method: 'get',
+    response: (req: MockRequest) =>
+      success(
+        page(
+          logical
+            .filter(
+              (item) => !req.query?.search || item.logical_name.includes(String(req.query.search)),
+            )
+            .map(({ id, display_name, logical_name, localized_name, status, workload_kind }) => ({
+              id,
+              display_name,
+              logical_name,
+              localized_name,
+              status,
+              workload_kind,
+            })),
+          req,
+        ),
+      ),
+  },
   {
     url: '/api/v1/logical-model-permission-batches',
     method: 'post',
@@ -366,7 +466,28 @@ const routes: MockMethod[] = [
       const id = logicalId(req)
       const l = logical.find((x) => x.id === id)
       if (!l) return fail('NOT_FOUND', '')
-      if (method === 'get') return success(logicalRecord(id))
+      if (method === 'get') {
+        const detail = logicalRecord(id)!
+        const items = detail.mounts.map((mount) => {
+          const m = models.find((item) => item.id === mount.physical_model_id)!
+          return {
+            ...mount,
+            model_id_at_provider: m.model_id_at_provider,
+            provider_id: m.provider_id,
+            provider_name: 'OpenAI-主站',
+            provider_base_url: 'https://api.openai.com/v1',
+            provider_security_level: 'INTERNET',
+            status: m.status,
+          }
+        })
+        return success({
+          ...detail,
+          related_mounts: page(items, {
+            ...req,
+            query: { page: req.query?.mounts_page, page_size: req.query?.mounts_page_size },
+          }),
+        })
+      }
       if (method === 'delete') {
         logical.splice(logical.indexOf(l), 1)
         models.forEach((m) => {
@@ -385,6 +506,13 @@ const routes: MockMethod[] = [
             return fail('VALIDATION_FAILED', '')
           if (logical.some((x) => x.id !== id && x.logical_name === b.logical_name))
             return fail('NAME_CONFLICT', '')
+          if (
+            b.logical_name !== l.logical_name &&
+            (!b.confirm_name_change ||
+              b.previous_logical_name !== l.logical_name ||
+              Array.from(b.logical_name).length > 80)
+          )
+            return fail('VALIDATION_FAILED', '')
           l.logical_name = b.logical_name
           models.forEach((m) =>
             m.mounts.forEach((x) => {
@@ -412,6 +540,14 @@ const routes: MockMethod[] = [
       if (!l) return fail('NOT_FOUND', '')
       const target = l.mounts.find((x) => x.physical_model_id === b.physical_model_id)
       if (!target) return fail('NOT_FOUND', '')
+      if (b.placement === 'PRIORITY') {
+        if (!Number.isInteger(b.priority) || Number(b.priority) < 1 || Number(b.priority) > 999)
+          return fail('VALIDATION_FAILED', '')
+        models
+          .find((m) => m.id === target.physical_model_id)!
+          .mounts.find((r) => r.logical_model_id === id)!.priority = Number(b.priority)
+        return receipt(id)
+      }
       const order = l.mounts.filter((x) => x !== target)
       let position = b.placement === 'FIRST' ? 0 : order.length
       if (b.placement === 'BEFORE' || b.placement === 'AFTER') {
@@ -437,7 +573,15 @@ const routes: MockMethod[] = [
       if (method === 'get')
         return success(
           page(
-            grants.filter((g) => g.logical_model_id === id),
+            grants
+              .filter((g) => g.logical_model_id === id)
+              .map((grant) => ({
+                ...grant,
+                subject_type:
+                  grant.subject_type === 'GROUP' && req.query?.subject_type_version === 'v2'
+                    ? 'USER_GROUP'
+                    : grant.subject_type,
+              })),
             req,
           ),
         )
@@ -463,12 +607,15 @@ const routes: MockMethod[] = [
     url: '/api/v1/models/:id/admission-tests',
     method: 'get',
     response: (req: MockRequest) =>
-      success(
-        page(
-          (runHistory.get(modelId(req)) || []).map((run) => runData(run, modelId(req))),
+      success({
+        ...page(
+          (runHistory.get(modelId(req)) || [])
+            .slice(0, 50)
+            .map((run) => runData(run, modelId(req))),
           req,
         ),
-      ),
+        page_snapshot: `mock-window-${modelId(req)}`,
+      }),
   },
   {
     url: '/api/v1/provider-templates',
@@ -479,22 +626,15 @@ const routes: MockMethod[] = [
     url: '/api/v1/providers',
     method: 'get',
     response: (req: MockRequest) => {
-      const provider: ProviderItem = {
-        id: providerId,
-        name: 'OpenAI-主站',
-        template_key: 'openai',
-        template_version: 'v1.0',
-        base_url: 'https://api.openai.com/v1',
-        endpoint_profile: 'openai_v1',
-        auth_mode: 'API_KEY',
-        security_level: 'INTERNET',
-        notes: '',
-        model_count: String(models.length),
-        invocation_generation: '1',
-        public_config: {},
-        configured_secret_fields: [],
-      }
-      return success(page([provider], req))
+      return success(
+        page(
+          mockProviders.map((provider) => ({
+            ...provider,
+            model_count: String(models.filter((model) => model.provider_id === provider.id).length),
+          })),
+          req,
+        ),
+      )
     },
   },
   {
@@ -574,7 +714,7 @@ const routes: MockMethod[] = [
         }
         logical.push(mount)
       }
-      const { reason: _reason, logical_binding: _binding, ...modelFields } = b
+      const { reason: _reason, price: _price, logical_binding: _binding, ...modelFields } = b
       void _reason
       void _binding
       models.unshift(
@@ -596,6 +736,7 @@ const routes: MockMethod[] = [
             : [],
         } as PhysicalModelItem),
       )
+      if (_price) savePrice(id, _price as unknown as ModelPricingBody)
       return receipt(id)
     },
   },
@@ -604,7 +745,24 @@ const routes: MockMethod[] = [
     method: 'get',
     response: (req: MockRequest) => {
       const m = record(req)
-      return m ? success(commands(m)) : fail('NOT_FOUND', '')
+      return m
+        ? success({
+            ...commands(m),
+            admission_checks: [
+              'BASE_REQUEST',
+              'STREAMING',
+              'TOOL_CALLING',
+              'JSON_MODE',
+              'VISION',
+              'RELIABILITY',
+              'LONG_CONTEXT',
+            ].map((key) => ({ key, state: 'AVAILABLE', reason_code: '' })),
+            related_mounts: page(m.mounts, {
+              ...req,
+              query: { page: req.query?.mounts_page, page_size: req.query?.mounts_page_size },
+            }),
+          })
+        : fail('NOT_FOUND', '')
     },
   },
   {
@@ -614,13 +772,10 @@ const routes: MockMethod[] = [
       const m = record(req)
       if (!m) return fail('NOT_FOUND', '')
       if (['TESTING', 'PENDING_REVIEW'].includes(m.status)) return fail('MODEL_STATE_CONFLICT', '')
-      if (
-        ['provider_id', 'model_id_at_provider', 'logical_binding'].some(
-          (key) => key in (req.body || {}),
-        )
-      )
+      if (['logical_binding'].some((key) => key in (req.body || {})))
         return fail('VALIDATION_FAILED', '')
-      const { reason: _reason, ...changes } = req.body || {}
+      const { reason: _reason, price: _price, ...changes } = req.body || {}
+      if (_price) savePrice(m.id, _price as unknown as ModelPricingBody)
       void _reason
       Object.assign(m, changes)
       return receipt(m.id)
@@ -664,12 +819,7 @@ const routes: MockMethod[] = [
       const m = record(req)
       if (!m) return fail('NOT_FOUND', '')
       if (m.status !== 'DRAFT') return fail('MODEL_STATE_CONFLICT', '')
-      if (
-        !req.body?.budget_authorization_ref ||
-        req.body.test_profile_version !== 'm2-admission-v2'
-      )
-        return fail('VALIDATION_FAILED', '')
-      const checks = req.body.selected_checks as string[]
+      const checks = req.body?.selected_checks as string[]
       if (!Array.isArray(checks) || !checks.includes('BASE_REQUEST'))
         return fail('VALIDATION_FAILED', '')
       const jobId = mockId(`admission-job-${++sequence}`)
@@ -713,10 +863,20 @@ const routes: MockMethod[] = [
         budget_batch_id: job.budgetBatchId,
         physical_model_id: job.modelId,
         run_id: job.run.run_id,
-        status: complete ? (job.run.status === 'PASSED' ? 'SUCCEEDED' : 'FAILED') : 'RUNNING',
-        cancel_requested: false,
+        status: complete
+          ? job.cancelRequested
+            ? 'CANCELLED'
+            : job.run.status === 'PASSED'
+              ? 'SUCCEEDED'
+              : 'FAILED'
+          : 'RUNNING',
+        cancel_requested: !!job.cancelRequested,
         safe_error_code: null,
-        remote: { cleanup_required: false, pending_count: 0, unknown_count: 0 },
+        remote: {
+          cleanup_required: false,
+          pending_count: job.cancelRequested && !complete ? 1 : 0,
+          unknown_count: 0,
+        },
       })
     },
   },
@@ -731,20 +891,7 @@ const routes: MockMethod[] = [
       return success({
         admission_valid: m.admission_valid,
         invalid_reason: null,
-        latest_run: latest
-          ? {
-              ...latest,
-              adapter_version: 'm2-base-v1.0.0',
-              manifest_digest: 'mock-manifest',
-              model_generation: m.admission_generation,
-              physical_model_id: m.id,
-              provider_generation: '1',
-              selected_checks: latest.checks.map((x) => x.check_key),
-              test_profile_version: 'm2-admission-v2',
-              validator_version: 'v1',
-              verified_capabilities: capabilities,
-            }
-          : null,
+        latest_run: latest ? runData(latest, m.id) : null,
       })
     },
   },
@@ -776,8 +923,8 @@ const routes: MockMethod[] = [
     response: (req: MockRequest) => {
       const price = prices.get(modelId(req))
       return success({
-        cost_status: price ? 'PRICED' : 'UNPRICED',
-        pricing_status: price ? 'PRICED' : 'UNPRICED',
+        cost_status: price ? 'COMPLETE' : 'UNPRICED',
+        pricing_status: price ? 'CONFIGURED' : 'UNPRICED',
         price: price
           ? {
               input_price: price.input_price,
@@ -799,30 +946,7 @@ const routes: MockMethod[] = [
     method: 'post',
     response: (req: MockRequest) => {
       if (!record(req)) return fail('NOT_FOUND', '')
-      prices.set(modelId(req), req.body as unknown as ModelPricingBody)
-      const body = req.body as unknown as ModelPricingBody
-      const history = priceHistory.get(modelId(req)) || []
-      const m = record(req)!
-      history.unshift({
-        input_price: body.input_price,
-        output_price: body.output_price,
-        cached_input_price: body.cached_input_price,
-        currency: body.currency,
-        unit: body.unit,
-        created_at: new Date().toISOString(),
-        created_by: mockId('mock-model-admin'),
-        revision: String(history.length + 1),
-        coverage_status: 'COMPLETE_FOR_OPERATION',
-        pricing_profile_version: 'v1',
-        uncovered_components: [],
-        identity: {
-          model_id_at_provider: m.model_id_at_provider,
-          physical_model_id: m.id,
-          provider_id: m.provider_id,
-          provider_name: 'OpenAI-主站',
-        },
-      })
-      priceHistory.set(m.id, history)
+      savePrice(modelId(req), req.body as unknown as ModelPricingBody)
       return receipt(modelId(req))
     },
   },
@@ -850,6 +974,254 @@ const routes: MockMethod[] = [
       return receipt(m.id)
     },
   })),
+  ...(['providers', 'models', 'logical-models'] as const).map((resource): MockMethod => ({
+    url: `/api/v1/${resource}/:id/impact`,
+    method: 'get',
+    response: (req: MockRequest) =>
+      success({
+        active_job_count: '0',
+        blocking_codes: [],
+        configuration_version: '1',
+        grant_count: String(grants.filter((g) => g.logical_model_id === modelId(req)).length),
+        mount_count: String(
+          resource === 'logical-models'
+            ? (logicalRecord(modelId(req))?.mounts.length ?? 0)
+            : (record(req)?.mounts.length ?? 0),
+        ),
+        remote_obligation_count: '0',
+        target_id: modelId(req),
+      }),
+  })),
+  {
+    url: '/api/v1/models/:id/admission-tests/:runId',
+    method: 'get',
+    response: (req: MockRequest) => {
+      const id = (req.url || '').split('?')[0].split('/').pop()
+      const run = (runHistory.get(modelId(req)) || []).find((item) => item.run_id === id)
+      return run ? success(runData(run, modelId(req))) : fail('NOT_FOUND', '')
+    },
+  },
+  {
+    url: '/api/v1/model-admission-jobs/:id/cancel',
+    method: 'post',
+    response: (req: MockRequest) => {
+      const id = (req.url || '').split('/')[4]
+      const job = jobs.get(id)
+      if (!job) return fail('NOT_FOUND', '')
+      job.cancelRequested = true
+      return success({ job_id: id, cancel_requested: true, replayed: false })
+    },
+  },
+
+  {
+    url: '/api/v1/providers',
+    method: 'post',
+    response: (req: MockRequest) => {
+      const body = req.body || {}
+      if (!body.name || !body.template_key) return fail('VALIDATION_FAILED', '')
+      const id = mockId(`provider-${++sequence}`)
+      const { secret_actions, reason: _reason, ...fields } = body
+      void _reason
+      mockProviders.push({
+        ...providerSeed,
+        ...fields,
+        id,
+        configured_secret_fields: Object.keys(secret_actions || {}),
+      } as ProviderItem)
+      return receipt(id)
+    },
+  },
+  ...(['get', 'put', 'delete'] as const).map((method): MockMethod => ({
+    url: '/api/v1/providers/:id',
+    method,
+    response: (req: MockRequest) => {
+      const provider = mockProviders.find((item) => item.id === modelId(req))
+      if (!provider) return fail('NOT_FOUND', '')
+      if (method === 'get')
+        return success({
+          ...provider,
+          related_models: page(
+            models
+              .filter((model) => model.provider_id === provider.id)
+              .map(({ id, invocation_api, model_id_at_provider, model_type, status }) => ({
+                id,
+                invocation_api,
+                model_id_at_provider,
+                model_type,
+                status,
+              })),
+            {
+              ...req,
+              query: { page: req.query?.models_page, page_size: req.query?.models_page_size },
+            },
+          ),
+        })
+      if (method === 'delete') mockProviders.splice(mockProviders.indexOf(provider), 1)
+      else {
+        const { secret_actions, reason: _reason, ...fields } = req.body || {}
+        void _reason
+        const actions = (secret_actions || {}) as Record<string, { operation: string }>
+        const configured = new Set(provider.configured_secret_fields)
+        for (const [key, action] of Object.entries(actions)) {
+          if (action.operation === 'CLEAR') configured.delete(key)
+          if (action.operation === 'REPLACE') configured.add(key)
+        }
+        Object.assign(provider, fields, { configured_secret_fields: [...configured] })
+      }
+      return receipt(provider.id)
+    },
+  })),
+  {
+    url: '/api/v1/providers/:id/models/discover',
+    method: 'post',
+    response: (req: MockRequest) => {
+      const provider = mockProviders.find((item) => item.id === modelId(req))
+      if (!provider) return fail('NOT_FOUND', '')
+      const id = mockId(`discovery-${++sequence}`)
+      discoveries.set(id, { providerId: provider.id, candidateId: mockId(`candidate-${sequence}`) })
+      return success({ discovery_id: id, replayed: false })
+    },
+  },
+  {
+    url: '/api/v1/model-discoveries/:id',
+    method: 'get',
+    response: (req: MockRequest) => {
+      const id = modelId(req)
+      const found = discoveries.get(id)
+      if (!found) return fail('NOT_FOUND', '')
+      return success({
+        discovery_id: id,
+        provider_id: found.providerId,
+        provider_name: mockProviders.find((item) => item.id === found.providerId)!.name,
+        provider_generation: '1',
+        expires_at: '2099-01-01T00:00:00Z',
+        item_count: 1,
+        manual_entry_allowed: true,
+        truncated: false,
+        safe_error_code: null,
+        status: 'SUCCEEDED',
+      })
+    },
+  },
+  {
+    url: '/api/v1/model-discoveries/:id/items',
+    method: 'get',
+    response: (req: MockRequest) => {
+      const found = discoveries.get(modelId(req))
+      if (!found) return fail('NOT_FOUND', '')
+      return success(
+        page(
+          [
+            {
+              candidate_id: found.candidateId,
+              model_id_at_provider: 'mock-discovered-model',
+              display_name: 'Mock discovered model',
+              model_type: 'LLM',
+              auto_create_allowed: true,
+              manual_confirmation_reason: null,
+              declared_capabilities: { ...capabilities },
+              logical_suggestions: [],
+            },
+          ],
+          req,
+        ),
+      )
+    },
+  },
+  {
+    url: '/api/v1/providers/:id/models/import',
+    method: 'post',
+    response: (req: MockRequest) => {
+      const body = req.body || {}
+      const items = body.items as {
+        source: string
+        candidate_id?: string
+        model_id_at_provider?: string
+        model_type?: PhysicalModelItem['model_type']
+        invocation_api: string
+        operation_profile: string
+        invocation_config: PhysicalModelItem['invocation_config']
+        logical_binding: { mode: string }
+      }[]
+      const provider = mockProviders.find((item) => item.id === modelId(req))
+      if (!provider) return fail('NOT_FOUND', '')
+      if (
+        !Array.isArray(items) ||
+        !items.length ||
+        items.length > 100 ||
+        items.some(
+          (item) =>
+            !item.invocation_api ||
+            !item.operation_profile ||
+            item.logical_binding?.mode !== 'NONE',
+        )
+      )
+        return fail('VALIDATION_FAILED', '')
+      const found = discoveries.get(String(body.discovery_id))
+      if (
+        items.some(
+          (item) =>
+            item.source === 'DISCOVERY' &&
+            (!found || found.providerId !== provider.id || item.candidate_id !== found.candidateId),
+        )
+      )
+        return fail('VALIDATION_FAILED', '')
+      const ids = items.map((item) => {
+        const id = mockId(`imported-model-${++sequence}`)
+        models.unshift(
+          commands({
+            ...models[0],
+            id,
+            provider_id: provider.id,
+            model_id_at_provider:
+              item.source === 'DISCOVERY' ? 'mock-discovered-model' : item.model_id_at_provider!,
+            model_type: item.model_type || 'LLM',
+            invocation_api: item.invocation_api,
+            operation_profile: item.operation_profile,
+            invocation_config: item.invocation_config,
+            status: 'DRAFT',
+            admission_valid: false,
+            mounts: [],
+            declared_capabilities: { ...capabilities },
+            description: '',
+          }),
+        )
+        return id
+      })
+      const id = mockId(`import-batch-${++sequence}`)
+      importBatches.set(id, { providerId: provider.id, ids })
+      return success({ accepted: true, batch_id: id, replayed: false })
+    },
+  },
+  {
+    url: '/api/v1/model-import-batches/:id',
+    method: 'get',
+    response: (req: MockRequest) => {
+      const id = modelId(req)
+      const batch = importBatches.get(id)
+      if (!batch) return fail('NOT_FOUND', '')
+      return success({
+        batch_id: id,
+        provider_id: batch.providerId,
+        provider_name: mockProviders.find((provider) => provider.id === batch.providerId)!.name,
+        cancel_requested: false,
+        kind: 'IMPORT',
+        status: 'SUCCEEDED',
+        next_index: batch.ids.length,
+        stop_reason: null,
+        remote: { cleanup_required: false, pending_count: 0, unknown_count: 0 },
+        items: batch.ids.map((physical_model_id, index) => ({
+          index,
+          job_id: null,
+          physical_model_id,
+          model_id_at_provider: models.find((model) => model.id === physical_model_id)!
+            .model_id_at_provider,
+          safe_error_code: null,
+          status: 'SUCCEEDED',
+        })),
+      })
+    },
+  },
 ]
 export default routes.map((route) => {
   const handler = route.response

@@ -1,26 +1,31 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   createModelApi,
-  getLogicalModelsApi,
+  getLogicalModelOptionsApi,
   getModelApi,
+  getModelWithAllMountsApi,
   getModelPricingApi,
   mountLogicalModelApi,
   updateModelApi,
-  updateModelPricingApi,
   MODEL_REASON,
 } from '@/api/modules/models'
 import { getProvidersApi, getProviderTemplatesApi } from '@/api/modules/providers'
 import type { ProviderItem, ProviderTemplate } from '@/api/modules/providers'
 import type { ModelStatus } from '@/api/modules/models'
 import { unmountLogicalModelApi } from '@/api/modules/logicalModels'
+import { canReadResource, canWriteResource, useUserStore } from '@/stores/modules/user'
 
 const props = defineProps<{ visible: boolean; modelId?: string }>()
 const emit = defineEmits<{ 'update:visible': [value: boolean]; success: [] }>()
 const { t } = useI18n()
 const tr = (key: string) => t(`model.modelsForm.${key}`)
+const user = useUserStore()
+const canPrice = computed(() => canWriteResource(user.permissions, 'model.pricing'))
+const canMount = computed(() => canWriteResource(user.permissions, 'model.logical'))
+const originalModel = ref<Awaited<ReturnType<typeof getModelApi>>>()
 const providers = ref<ProviderItem[]>([])
 const templates = ref<ProviderTemplate[]>([])
 const logical = ref<{ id: string; display_name: string; logical_name: string }[]>([])
@@ -28,10 +33,12 @@ const saving = ref(false)
 const loading = ref(false)
 const savedId = ref<string>()
 const initialLogicalIds = ref<string[]>([])
-const invocationConfig = ref<{ deployment?: string | null }>({})
+const invocationConfig = ref<{ deployment?: string }>({})
 const initialPrice = ref('')
 const modelStatus = ref<ModelStatus>()
-const identityLocked = computed(() => !!props.modelId || !!savedId.value)
+const identityLocked = computed(
+  () => !!modelStatus.value && ['ACTIVE', 'TESTING', 'PENDING_REVIEW'].includes(modelStatus.value),
+)
 const invocationLocked = computed(
   () => !!modelStatus.value && !['DRAFT', 'RETIRED'].includes(modelStatus.value),
 )
@@ -48,9 +55,9 @@ const defaults = () => ({
   supports_vision: false as boolean | null,
   context_window: 0 as number | null,
   max_output_tokens: 0 as number | null,
-  input_price: 0 as number | undefined,
-  cached_input_price: undefined as number | undefined,
-  output_price: 0 as number | undefined,
+  input_price: '0' as string | undefined,
+  cached_input_price: undefined as string | undefined,
+  output_price: '0' as string | undefined,
   currency: 'CNY' as 'CNY' | 'USD',
   description: '',
 })
@@ -112,29 +119,42 @@ watch(
     initialLogicalIds.value = []
     invocationConfig.value = {}
     Object.assign(form, defaults())
+    form.auto = canMount.value
+    originalModel.value = undefined
     modelStatus.value = undefined
     providers.value = []
     logical.value = []
     templates.value = []
     try {
       const [p, firstLogicalPage, ts] = await Promise.all([
-        getProvidersApi({ page: 1, page_size: 100 }),
-        getLogicalModelsApi({ page: 1, page_size: 100 }),
-        getProviderTemplatesApi(),
+        canReadResource(user.permissions, 'model.providers')
+          ? getProvidersApi({ page: 1, page_size: 100 })
+          : Promise.resolve({ items: [], total_pages: 0 }),
+        canReadResource(user.permissions, 'model.logical')
+          ? getLogicalModelOptionsApi({ page: 1, page_size: 100 })
+          : Promise.resolve({ items: [], total_pages: 0 }),
+        canReadResource(user.permissions, 'model.providers')
+          ? getProviderTemplatesApi()
+          : Promise.resolve({ items: [] }),
       ])
       providers.value = p.items
+      for (let page = 2; page <= p.total_pages; page++)
+        providers.value.push(...(await getProvidersApi({ page, page_size: 100 })).items)
       logical.value = firstLogicalPage.items
       for (let page = 2; page <= firstLogicalPage.total_pages; page++) {
-        const result = await getLogicalModelsApi({ page, page_size: 100 })
+        const result = await getLogicalModelOptionsApi({ page, page_size: 100 })
         logical.value.push(...result.items)
       }
       templates.value = ts.items
       if (props.modelId) {
         const [m, pricing] = await Promise.all([
-          getModelApi(props.modelId),
-          getModelPricingApi(props.modelId),
+          getModelWithAllMountsApi(props.modelId),
+          canReadResource(user.permissions, 'model.pricing')
+            ? getModelPricingApi(props.modelId)
+            : Promise.resolve({ price: null }),
         ])
         modelStatus.value = m.status
+        originalModel.value = m
         invocationConfig.value = m.invocation_config
         initialLogicalIds.value = m.mounts.map((x) => x.logical_model_id)
         Object.assign(form, {
@@ -162,10 +182,10 @@ watch(
         const price = pricing.price
         if (price)
           Object.assign(form, {
-            input_price: Number(price.input_price),
+            input_price: price.input_price,
             cached_input_price:
-              price.cached_input_price == null ? undefined : Number(price.cached_input_price),
-            output_price: Number(price.output_price),
+              price.cached_input_price == null ? undefined : price.cached_input_price,
+            output_price: price.output_price,
             currency: price.currency,
           })
       }
@@ -217,7 +237,11 @@ function matchingLogicalModels() {
 async function submit() {
   if (loading.value || saving.value) return
   const combination =
-    form.combination === undefined ? undefined : combinations.value[form.combination]
+    invocationLocked.value && originalModel.value
+      ? originalModel.value
+      : form.combination === undefined
+        ? originalModel.value
+        : combinations.value[form.combination]
   if (!combination) {
     MessagePlugin.warning(tr('invocationRequired'))
     return
@@ -227,10 +251,15 @@ async function submit() {
     !form.model_id_at_provider.trim() ||
     !form.model_type ||
     [form.input_price, form.cached_input_price, form.output_price].some(
-      (x) => x != null && x < 0,
+      (x) => x != null && !/^\d+(\.\d{1,4})?$/.test(x),
     ) ||
     form.input_price == null ||
-    form.output_price == null
+    form.output_price == null ||
+    (Number(form.context_window) > 2000000 &&
+      String(form.context_window) !== originalModel.value?.declared_capabilities.context_window) ||
+    (Number(form.max_output_tokens) > 1000000 &&
+      String(form.max_output_tokens) !==
+        originalModel.value?.declared_capabilities.max_output_tokens)
   ) {
     MessagePlugin.warning(tr('validationError'))
     return
@@ -255,6 +284,18 @@ async function submit() {
             }
           : { mode: 'NONE' as const }
     const payload = {
+      ...(canPrice.value && (!props.modelId || priceKey() !== initialPrice.value)
+        ? {
+            price: {
+              input_price: form.input_price ?? '0',
+              cached_input_price: form.cached_input_price ?? null,
+              output_price: form.output_price ?? '0',
+              currency: form.currency,
+              unit: 'PER_MILLION_TOKENS' as const,
+              reason: MODEL_REASON.pricing,
+            },
+          }
+        : {}),
       provider_id: form.provider_id,
       model_id_at_provider: form.model_id_at_provider,
       model_type: form.model_type,
@@ -286,15 +327,26 @@ async function submit() {
     let id = props.modelId || savedId.value
     if (id) {
       await updateModelApi(id, {
-        model_type: payload.model_type,
-        invocation_api: payload.invocation_api,
-        operation_profile: payload.operation_profile,
-        invocation_config: payload.invocation_config,
+        ...(payload.price ? { price: payload.price } : {}),
+        ...(!identityLocked.value
+          ? {
+              provider_id: payload.provider_id,
+              model_id_at_provider: payload.model_id_at_provider,
+              model_type: payload.model_type,
+            }
+          : {}),
+        ...(!invocationLocked.value
+          ? {
+              invocation_api: payload.invocation_api,
+              operation_profile: payload.operation_profile,
+              invocation_config: payload.invocation_config,
+            }
+          : {}),
         declared_capabilities: payload.declared_capabilities,
         description: payload.description,
         reason: MODEL_REASON.update,
       })
-      for (const logicalId of form.logical_ids.filter(
+      for (const logicalId of (canMount.value ? form.logical_ids : []).filter(
         (x) => !initialLogicalIds.value.includes(x),
       )) {
         await mountLogicalModelApi(logicalId, {
@@ -304,21 +356,15 @@ async function submit() {
         })
         initialLogicalIds.value.push(logicalId)
       }
-      for (const logicalId of initialLogicalIds.value.filter(
+      for (const logicalId of (canMount.value ? initialLogicalIds.value : []).filter(
         (x) => !form.logical_ids.includes(x),
       )) {
         await unmountLogicalModelApi(logicalId, id, { reason: MODEL_REASON.update })
         initialLogicalIds.value = initialLogicalIds.value.filter((x) => x !== logicalId)
       }
     } else {
-      const result = (await createModelApi(payload)) as {
-        id?: unknown
-        model_id?: unknown
-        resource_id?: unknown
-      }
-      id = [result?.id, result?.model_id, result?.resource_id].find(
-        (x): x is string => typeof x === 'string' && !!x,
-      )
+      const result = await createModelApi(payload)
+      id = result.resource_id
       if (!id) throw new Error(tr('createdMissingId'))
       savedId.value = id
       initialLogicalIds.value =
@@ -336,22 +382,6 @@ async function submit() {
         const created = await getModelApi(id)
         form.logical_ids = created.mounts.map((item) => item.logical_model_id)
         initialLogicalIds.value = [...form.logical_ids]
-      }
-    }
-    if (id && (!props.modelId || priceKey() !== initialPrice.value)) {
-      try {
-        await updateModelPricingApi(id, {
-          input_price: Number(form.input_price ?? 0).toFixed(4),
-          cached_input_price:
-            form.cached_input_price == null ? null : String(form.cached_input_price),
-          output_price: Number(form.output_price ?? 0).toFixed(4),
-          currency: form.currency,
-          unit: 'PER_MILLION_TOKENS',
-          reason: MODEL_REASON.pricing,
-        })
-      } catch (e) {
-        MessagePlugin.error(tr('pricingFailed'))
-        throw e
       }
     }
     emit('success')
@@ -401,7 +431,7 @@ async function submit() {
         <t-form-item :label="tr('modelType')" :required-mark="true"
           ><t-select
             v-model="form.model_type"
-            :disabled="modelStatus === 'ACTIVE'"
+            :disabled="identityLocked"
             :options="
               ['LLM', 'EMBEDDING', 'MULTIMODAL', 'IMAGE', 'AUDIO', 'VIDEO'].map((value) => ({
                 label: value,
@@ -415,9 +445,12 @@ async function submit() {
               v-model="form.logical_ids"
               multiple
               clearable
+              :disabled="!canMount"
               :placeholder="tr('logicalPlaceholder')"
               :options="logical.map((x) => ({ label: x.display_name, value: x.id }))"
-            /><t-checkbox v-model="form.auto">{{ tr('autoMatch') }}</t-checkbox>
+            /><t-checkbox v-model="form.auto" :disabled="!canMount || !!modelId">{{
+              tr('autoMatch')
+            }}</t-checkbox>
           </div></t-form-item
         >
         <t-form-item class="full-row" :label="tr('invocationApi')" :required-mark="true"
@@ -450,23 +483,51 @@ async function submit() {
           ></t-form-item
         >
         <t-form-item :label="tr('contextWindow')"
-          ><t-input-number v-model="form.context_window" :min="0"
+          ><t-input-number
+            v-model="form.context_window"
+            :min="0"
+            :max="
+              Math.max(2000000, Number(originalModel?.declared_capabilities.context_window ?? 0))
+            "
+            :decimal-places="0"
         /></t-form-item>
         <t-form-item :label="tr('maxOutputTokens')"
-          ><t-input-number v-model="form.max_output_tokens" :min="0"
+          ><t-input-number
+            v-model="form.max_output_tokens"
+            :min="0"
+            :max="
+              Math.max(1000000, Number(originalModel?.declared_capabilities.max_output_tokens ?? 0))
+            "
+            :decimal-places="0"
         /></t-form-item>
         <t-form-item :label="tr('inputPrice')" :required-mark="true"
-          ><t-input-number v-model="form.input_price" :min="0" :decimal-places="4"
+          ><t-input-number
+            v-model="form.input_price"
+            large-number
+            :disabled="!canPrice"
+            :min="0"
+            :decimal-places="4"
         /></t-form-item>
         <t-form-item :label="tr('cachedInputPrice')"
-          ><t-input-number v-model="form.cached_input_price" :min="0" :decimal-places="4"
+          ><t-input-number
+            v-model="form.cached_input_price"
+            large-number
+            :disabled="!canPrice"
+            :min="0"
+            :decimal-places="4"
         /></t-form-item>
         <t-form-item :label="tr('outputPrice')" :required-mark="true"
-          ><t-input-number v-model="form.output_price" :min="0" :decimal-places="4"
+          ><t-input-number
+            v-model="form.output_price"
+            large-number
+            :disabled="!canPrice"
+            :min="0"
+            :decimal-places="4"
         /></t-form-item>
         <t-form-item :label="tr('currency')" :required-mark="true"
           ><t-select
             v-model="form.currency"
+            :disabled="!canPrice"
             :options="[
               { label: tr('currencyCny'), value: 'CNY' },
               { label: tr('currencyUsd'), value: 'USD' },
