@@ -257,6 +257,7 @@ while IFS="$(printf '\t')" read -r plugin_name plugin_version plugin_url; do
   install -o jenkins -g jenkins -m 0644 "/var/tmp/ais-jenkins-plugins/${plugin_name}.jpi" \
     "$PLUGIN_DIR/${plugin_name}.jpi"
 done </var/tmp/ais-jenkins-plugins.tsv
+chown -R jenkins:jenkins "$PLUGIN_DIR"
 
 log '配置 Jenkins 登录和项目 SCM 轮询任务'
 admin_password=$(openssl rand -hex 24)
