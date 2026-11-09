@@ -1,0 +1,15 @@
+{
+  "users": [
+    { "username": "mock_admin", "password": "MockAdmin@2026" },
+    { "username": "mock_auditor", "password": "MockAudit@2026", "role": "auditor" }
+  ],
+  "roles": {
+    "auditor": [
+      { "resource_code": "audit.annotations", "can_read": true, "can_write": false },
+      { "resource_code": "audit.management", "can_read": true, "can_write": false },
+      { "resource_code": "audit.terms_acceptances", "can_read": true, "can_write": false },
+      { "resource_code": "personal.profile", "can_read": true, "can_write": true },
+      { "resource_code": "personal.keys", "can_read": true, "can_write": true }
+    ]
+  }
+}

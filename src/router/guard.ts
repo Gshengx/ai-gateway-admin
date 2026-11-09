@@ -56,6 +56,7 @@ export function setupRouterGuard(router: Router): void {
           return to.path === '/login' ? true : { path: '/login', query: { redirect: to.fullPath } }
         }
         MessagePlugin.error(i18n.global.t('authErrors.contextUnavailable'))
+        user.permissionError = i18n.global.t('authErrors.contextUnavailable')
         return false
       }
     }

@@ -1,3 +1,5 @@
+import { logsZh } from './systemLogs'
+import { accessZh } from './modelAccess'
 /**
  * 简体中文语言包。
  * key 约定：route.* 为路由标题（与 meta.title 对应），其余按 页面/模块 分组。
@@ -7,6 +9,8 @@ import { costZh } from './cost'
 import { securityZh } from './security'
 
 export default {
+  logs: logsZh,
+  ma: accessZh,
   security: securityZh,
   cost: costZh,
   model: {
@@ -223,7 +227,7 @@ export default {
     all: '全部',
     mounted: '已挂载',
     unmounted: '未挂载',
-    reset: '重置筛选',
+    reset: '重置',
     create: '创建模型',
     identifier: '供应商侧标识',
     provider: '供应商',
@@ -272,7 +276,7 @@ export default {
     },
     total: '共 {n} 条数据',
     search: '搜索供应商名称或 API 接口',
-    reset: '重置筛选',
+    reset: '重置',
     create: '新建供应商',
     editTitle: '编辑供应商',
     edit: '编辑',
@@ -302,7 +306,7 @@ export default {
   },
   managedKeys: {
     search: '搜索 Key ID、名称、用户名或姓名',
-    reset: '重置筛选',
+    reset: '重置',
     allStatuses: '全部状态',
     allAccess: '全部访问状态',
     allDepartments: '全部部门',
@@ -965,7 +969,8 @@ export default {
         removeHint:
           '确认取消模型「{name}」的用户级直接授权？该用户通过部门、用户组继承的权限不受影响。',
         selectLabel: '选择模型',
-        selectPlaceholder: '选择已上架模型',
+        selectPlaceholder: '选择模型',
+        searchPlaceholder: '搜索模型名称',
         grantSuccess: '模型授权已更新',
         grantUnchanged: '授权未发生变化',
         columns: {

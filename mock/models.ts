@@ -1,5 +1,16 @@
+import { nextSequence, subjectName } from './_runtime'
+import { mockAccounts } from './_accounts'
+import {
+  invocationApis,
+  invocationTargets,
+  validInvocationPath,
+} from '../src/utils/modelInvocation'
+import { modelAccessState } from './_modelAccessState'
+import { pricingError } from '../src/utils/modelPricing'
 import {
   checkCsrf,
+  auditedMock,
+  usernameFromToken,
   checkToken,
   fail,
   mockId,
@@ -9,1244 +20,1100 @@ import {
   type MockRequest,
 } from './_utils'
 import type {
-  PhysicalModelItem,
-  ModelStatus,
-  ModelPricingBody,
-  AdmissionRun,
-  AdmissionCheck,
-} from '../src/api/modules/models'
-import type { ProviderItem, ProviderTemplate } from '../src/api/modules/providers'
-import type { RespThisType } from 'vite-plugin-mock'
-import { logicalState } from './_logical'
-import type {
-  LogicalModel,
-  LogicalModelPermission,
-  SubjectType,
-} from '../src/api/modules/logicalModels'
+  Provider,
+  Template,
+  Model,
+  Pricing,
+  Permission,
+  TestRun,
+  Candidate,
+  Status,
+} from '../src/api/modules/modelAccess'
 
-// 仅由 dev:mock 加载。字段与已核实的模型、检测及审核接口一致。
-const providerId = mockId('model-provider-openai')
-const capabilities = {
-  context_window: '128000',
-  max_output_tokens: '16384',
-  supports_streaming: true,
-  supports_tool_calling: false,
-  supports_json_mode: false,
-  supports_vision: false,
-}
-let sequence = 0
-const models: PhysicalModelItem[] = (
-  ['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'RETIRED', 'SUSPENDED'] as ModelStatus[]
-).map((status, index) => ({
-  id: mockId(`physical-model-${index}`),
-  provider_id: providerId,
-  model_id_at_provider: ['gpt-4o-mini', 'qwen-max', 'gpt-4o', 'retired-model', 'suspended-model'][
-    index
-  ],
-  model_type: 'LLM',
-  invocation_api: 'CHAT_COMPLETIONS',
-  operation_profile: 'chat_completions',
-  invocation_config: {},
-  status,
-  declared_capabilities: { ...capabilities },
-  verified_capabilities:
-    status === 'DRAFT'
-      ? {
-          context_window: null,
-          max_output_tokens: null,
-          supports_streaming: null,
-          supports_tool_calling: null,
-          supports_json_mode: null,
-          supports_vision: null,
-        }
-      : { ...capabilities },
-  capability_sources: [],
-  admission_generation: '1',
-  admission_valid: ['ACTIVE', 'PENDING_REVIEW', 'SUSPENDED'].includes(status),
-  invalid_reason: null,
-  state_reason: null,
-  allowed_commands: [],
-  description: '',
-  mounts:
-    index < 3
-      ? [
-          {
-            logical_model_id: mockId(`logical-${index}`),
-            logical_name: ['gpt-4o-mini', 'qwen-max', 'gpt-4o'][index],
-            display_name: ['gpt-4o-mini', 'qwen-max', 'gpt-4o'][index],
-            priority: 1,
-          },
-        ]
-      : [],
+// V1.4 暂定 mock 契约；不访问上游，不保存或返回凭证明文。
+const now = () => new Date().toISOString()
+const id = () => mockId(`model-access-${nextSequence('model', 100)}`)
+const field = (key: string, label = key, secret = true, required = true) => ({
+  key,
+  label,
+  secret,
+  required,
+})
+const apiKey = [field('api_key', 'API Key')]
+const templates: Template[] = [
+  ['openai', 'OpenAI', 'https://api.openai.com/v1'],
+  ['anthropic', 'Anthropic', 'https://api.anthropic.com/v1'],
+  ['google', 'Google AI', 'https://generativelanguage.googleapis.com/v1beta'],
+  ['qianwen', '通义千问', 'https://maas.qianwenaiapi.com/compatible-mode/v1'],
+  ['minimax', 'MiniMax', 'https://api.minimax.io/v1'],
+  ['deepseek', 'DeepSeek', 'https://api.deepseek.com/v1'],
+  ['zhipu', '智谱 AI', 'https://open.bigmodel.cn/api/paas/v4'],
+  ['moonshot', '月之暗面 Kimi', 'https://api.moonshot.cn/v1'],
+  ['mistral', 'Mistral AI', 'https://api.mistral.ai/v1'],
+  ['azure', 'Azure AI', ''],
+  ['bedrock', 'AWS Bedrock', ''],
+  ['vertex', 'Google Vertex AI', 'https://aiplatform.googleapis.com'],
+  ['bailian', '阿里云百炼', ''],
+  ['qianfan', '百度智能云千帆', 'https://qianfan.baidubce.com/v2'],
+  ['volcengine', '火山引擎方舟', 'https://ark.cn-beijing.volces.com/api/v3'],
+  ['hunyuan', '腾讯混元', ''],
+  ['wangsu', '网宿 AI', ''],
+  ['siliconflow', '硅基流动', 'https://api.siliconflow.cn/v1'],
+  ['openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1'],
+  ['compatible', 'OpenAI兼容', ''],
+  ['ollama', 'Ollama', ''],
+].map(([template_key, name, base_url]) => ({
+  template_key: template_key!,
+  name: name!,
+  base_url: base_url!,
+  fields: apiKey.map((x) => ({ ...x })),
 }))
-const logical: LogicalModel[] = models.flatMap((m) =>
-  m.mounts.map((x) => ({
-    id: x.logical_model_id,
-    logical_name: x.logical_name,
-    display_name: x.display_name,
-    localized_name: x.display_name,
-    description: '',
-    localized_description: '',
-    status: 'ACTIVE',
-    workload_kind: 'TEXT_GENERATION',
-    translations: [],
-    ready: false,
-    mounts: [] as { physical_model_id: string; priority: number }[],
-    candidate_count: 0,
-    created_at: '2026-08-12T03:00:00Z',
-  })),
-)
-logicalState.models = models
-logicalState.logical = logical
-const grants = logicalState.grants
-// mock 热重载重建种子模型时同步重置授权，避免旧 ID 的授权落入新建模型。
-grants.length = 0
-function logicalRecord(id: string) {
-  const l = logical.find((x) => x.id === id)
-  if (!l) return undefined
-  const mounted = models.filter((m) => m.mounts.some((x) => x.logical_model_id === id))
-  return {
-    ...l,
-    ready: l.status === 'ACTIVE' && mounted.some((m) => m.status === 'ACTIVE' && m.admission_valid),
-    candidate_count: mounted.filter((m) => m.status === 'ACTIVE' && m.admission_valid).length,
-    active_model_count: mounted.filter((model) => model.status === 'ACTIVE').length,
-    authorization_summary: {
-      department_count: grants.filter(
-        (grant) => grant.logical_model_id === id && grant.subject_type === 'DEPARTMENT',
-      ).length,
-      user_group_count: grants.filter(
-        (grant) => grant.logical_model_id === id && grant.subject_type === 'GROUP',
-      ).length,
-      user_count: grants.filter(
-        (grant) => grant.logical_model_id === id && grant.subject_type === 'USER',
-      ).length,
-    },
-    mounts: mounted
-      .map((m) => ({
-        physical_model_id: m.id,
-        priority: m.mounts.find((x) => x.logical_model_id === id)!.priority,
-      }))
-      .sort((a, b) => a.priority - b.priority),
-  }
+for (const t of templates) {
+  if (t.template_key === 'anthropic')
+    t.fields.push({ ...field('api_version', 'API Version', false), default_value: '2023-06-01' })
+  if (t.template_key === 'azure')
+    t.fields = [
+      field('tenant_id', 'Tenant ID', false),
+      field('client_id', 'Client ID', false),
+      field('client_secret', 'Client Secret'),
+      field('deployment', 'Deployment', false),
+      field('api_version', 'API Version', false),
+    ]
+  if (t.template_key === 'vertex')
+    t.fields = [
+      field('project_id', 'Project ID', false),
+      field('region', 'Region', false),
+      field('service_account_json', 'Service Account JSON'),
+    ]
+  if (t.template_key === 'qianfan') t.fields.push(field('secret_key', 'Secret Key'))
+  if (t.template_key === 'hunyuan')
+    t.fields = [
+      field('secret_id', 'Secret ID'),
+      field('secret_key', 'Secret Key'),
+      field('region', 'Region', false),
+    ]
+  if (t.template_key === 'volcengine') t.fields.push(field('region', 'Region', false, false))
+  if (t.template_key === 'openrouter')
+    t.fields.push(field('management_api_key', 'Management API Key', true, false))
+  if (['ollama', 'compatible'].includes(t.template_key)) t.fields[0]!.required = false
 }
-function addRelations(id: string, relations: { subject_id: string; subject_type: SubjectType }[]) {
-  for (const r of relations) {
-    const subjectType: SubjectType =
-      String(r.subject_type) === 'USER_GROUP' ? 'GROUP' : r.subject_type
-    if (
-      !grants.some(
-        (g) =>
-          g.logical_model_id === id &&
-          g.subject_type === subjectType &&
-          g.subject_id === r.subject_id,
+const emptyBalance = () => ({
+  method: 'GET' as const,
+  url: '',
+  auth: 'NONE' as const,
+  secret: '',
+  header: '',
+  unit: 'CNY',
+  mapping: 'AVAILABLE' as const,
+  available_path: '',
+  total_path: '',
+  used_path: '',
+  body: '',
+})
+const initialRecipient = process.env.AIS_MOCK_USERNAME ?? mockAccounts.keys().next().value
+const initialRecipientId = initialRecipient ? mockId(initialRecipient) : undefined
+const seedProviders: Provider[] = [
+  ['OpenAI-主站', 'openai', 'https://api.openai.com/v1', 'INTERNET', '默认生产接入'],
+  [
+    '百炼-北京',
+    'bailian',
+    'https://llm-example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    'TRUSTED_CLOUD',
+    '北京地域接入示例',
+  ],
+  [
+    '方舟-北京',
+    'volcengine',
+    'https://ark.cn-beijing.volces.com/api/v3',
+    'TRUSTED_CLOUD',
+    '北京区域业务接入',
+  ],
+  [
+    '内网推理集群',
+    'compatible',
+    'https://llm.internal.example.com/v1',
+    'PRIVATE',
+    '仅供内部应用调用',
+  ],
+  ['OpenRouter-国际', 'openrouter', 'https://openrouter.ai/api/v1', 'INTERNET', '国际模型聚合接入'],
+].map(([name, template_key, base_url, security_level, notes], i) => ({
+  id: mockId(`provider-v13-${i}`),
+  name: name!,
+  template_key: template_key!,
+  base_url: base_url!,
+  security_level: security_level as Provider['security_level'],
+  notes: notes!,
+  provider_config: {},
+  configured_secret_fields: i === 4 ? ['api_key', 'management_api_key'] : ['api_key'],
+  model_count: 0,
+  balance_query_mode: i === 4 ? 'TEMPLATE' : 'NONE',
+  balance_query_config: emptyBalance(),
+  balance_alert_enabled: i === 4 && !!initialRecipientId,
+  balance_alert_threshold: 50,
+  balance_alert_unit: i === 4 ? 'USD' : 'CNY',
+  balance_alert_recipients: i === 4 && initialRecipientId ? [initialRecipientId] : [],
+  balance_alert_channels: ['IN_APP'],
+  last_balance_value: i === 4 ? 36.58 : null,
+  last_balance_attempt_at: i === 4 ? '2026-11-05T02:00:00Z' : null,
+  last_balance_success_at: i === 4 ? '2026-11-05T02:00:00Z' : null,
+  balance_query_status: i === 4 ? 'SUCCESS' : 'NEVER_QUERIED',
+  balance_query_error_code: null,
+  created_at: '2026-08-12T03:00:00Z',
+}))
+if (!modelAccessState.initialized) modelAccessState.providers.push(...seedProviders)
+const providers = modelAccessState.providers
+// 迁移旧版样例中不存在的占位接收人，不改写管理员配置的其他对象。
+function repairLegacyRecipients(provider: Provider) {
+  if (mockAccounts.has('model-admin')) return
+  const legacyRecipientId = mockId('model-admin')
+  provider.balance_alert_recipients = [
+    ...new Set(
+      provider.balance_alert_recipients.flatMap((id) =>
+        id === legacyRecipientId
+          ? provider.balance_query_mode !== 'NONE' && initialRecipientId
+            ? [initialRecipientId]
+            : []
+          : [id],
+      ),
+    ),
+  ]
+}
+providers.forEach(repairLegacyRecipients)
+const seedModels: Model[] = [
+  'o3-mini',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'text-embedding-3-large',
+  'qwen-plus',
+  'qwen-max',
+  'doubao-pro-32k',
+  'deepseek-v3',
+  'company-knowledge-32k',
+].map((name, i) => ({
+  id: mockId(`model-v13-${i}`),
+  provider_id: providers[i < 4 ? 0 : i < 6 ? 1 : i < 8 ? 2 : 3]!.id,
+  model_id_at_gateway: name,
+  model_id_at_provider: name,
+  supported_invocation_apis:
+    i === 3 ? ['EMBEDDINGS'] : i === 1 ? ['CHAT_COMPLETIONS', 'RESPONSES'] : ['CHAT_COMPLETIONS'],
+  custom_invocation_apis: [],
+  input_modalities: i === 1 || i === 2 ? ['text', 'image'] : ['text'],
+  output_modalities: [i === 3 ? 'embeddings' : 'text'],
+  tags: i === 3 ? [] : ['STREAMING', 'TOOL_CALLING', 'JSON_MODE'],
+  context_window: 128000,
+  max_output_tokens: 16384,
+  description: '',
+  status:
+    i === 0 || i === 3 ? 'DRAFT' : i === 5 ? 'PENDING_REVIEW' : i === 8 ? 'SUSPENDED' : 'ACTIVE',
+  health_status: 'UNKNOWN',
+  auto_health_check: false,
+  health_check_interval_minutes: 360,
+  health_checked_at: null,
+  suspend_reason: null,
+  admission_valid: ![0, 3].includes(i),
+  created_at: '2026-08-12T03:10:00Z',
+}))
+if (!modelAccessState.initialized) modelAccessState.models.push(...seedModels)
+const { models, prices, permissions, runs, discoveries, polls } = modelAccessState
+const adaptedModels = new Map(seedModels.map((m) => [m.model_id_at_provider, structuredClone(m)]))
+function adaptedModel(name: string) {
+  return adaptedModels.get(name) ?? adaptedModels.get(name.split('/').pop() ?? '')
+}
+// 初始样例完整经历创建、准入检测、审核上架与暂停，时间为确定的 UTC 值。
+if (!modelAccessState.initialized)
+  for (const [index, model] of models.entries()) {
+    const at = (minutes: number) =>
+      new Date(Date.UTC(2026, 7, 12 + index, 3, 10 + minutes)).toISOString()
+    model.created_at = at(0)
+    const events: NonNullable<Model['lifecycle_events']> = [
+      {
+        action: 'CREATE',
+        status: 'DRAFT',
+        created_at: at(0),
+        actor: 'Mock Administrator',
+        reason: '',
+      },
+    ]
+    if (model.status !== 'DRAFT') {
+      events.push(
+        {
+          action: 'STATUS',
+          status: 'TESTING',
+          created_at: at(5),
+          actor: 'Mock Administrator',
+          reason: '',
+        },
+        {
+          action: 'STATUS',
+          status: 'PENDING_REVIEW',
+          created_at: at(6),
+          actor: 'Mock Administrator',
+          reason: '',
+        },
       )
+      runs.set(model.id, [
+        {
+          id: mockId(`seed-admission-${index}`),
+          model_id: model.id,
+          purpose: 'ADMISSION',
+          trigger_type: 'MANUAL',
+          invocation_api: model.supported_invocation_apis[0]!,
+          invocation_apis: invocationTargets(model).map((a) => a.invocation_api),
+          billing_user: 'system',
+          billing_department: 'HEADQUARTERS',
+          status: 'PASSED',
+          checks: [
+            'CONNECTIVITY',
+            'PROTOCOL',
+            ...(model.tags.includes('STREAMING') ? ['STREAMING'] : []),
+          ].map((key, i) => ({
+            key,
+            status: 'PASSED',
+            duration_ms: 240 + i * 100,
+            detail: 'VALID_RESPONSE',
+          })),
+          started_at: at(5),
+          completed_at: at(6),
+          triggered_by: 'Mock Administrator',
+        },
+      ])
+      if (model.status === 'ACTIVE' || model.status === 'SUSPENDED')
+        events.push({
+          action: 'STATUS',
+          status: 'ACTIVE',
+          created_at: at(10),
+          actor: 'Mock Administrator',
+          reason: '',
+        })
+      if (model.status === 'SUSPENDED') {
+        model.suspend_reason = '计划维护 / Scheduled maintenance'
+        events.push({
+          action: 'STATUS',
+          status: 'SUSPENDED',
+          created_at: at(60),
+          actor: 'Mock Administrator',
+          reason: model.suspend_reason,
+        })
+      }
+    }
+    const record = (purpose: 'ADMISSION' | 'HEALTH', minute: number, passed: boolean): TestRun => ({
+      id: mockId(`seed-${index}-${purpose}-${minute}`),
+      model_id: model.id,
+      purpose,
+      trigger_type: 'MANUAL',
+      invocation_api: model.supported_invocation_apis[0]!,
+      invocation_apis: invocationTargets(model).map((a) => a.invocation_api),
+      billing_user: 'system',
+      billing_department: 'HEADQUARTERS',
+      status: passed ? 'PASSED' : 'FAILED',
+      checks: [
+        'CONNECTIVITY',
+        'PROTOCOL',
+        ...(model.tags.includes('STREAMING') ? ['STREAMING'] : []),
+      ].map((key, i) => ({
+        key,
+        status: passed ? 'PASSED' : 'FAILED',
+        duration_ms: 240 + i * 100,
+        detail: passed ? 'VALID_RESPONSE' : 'MODEL_UNAVAILABLE',
+      })),
+      started_at: at(minute),
+      completed_at: at(minute + 1),
+      triggered_by: 'Mock Administrator',
+    })
+    const history = runs.get(model.id) ?? []
+    for (const minute of [1, 3]) {
+      history.push(record('ADMISSION', minute, false))
+      events.push(
+        {
+          action: 'STATUS',
+          status: 'TESTING',
+          created_at: at(minute),
+          actor: 'Mock Administrator',
+          reason: '',
+        },
+        {
+          action: 'STATUS',
+          status: 'DRAFT',
+          created_at: at(minute + 1),
+          actor: 'Mock Administrator',
+          reason: '',
+        },
+      )
+    }
+    if (['ACTIVE', 'SUSPENDED'].includes(model.status)) {
+      history.push(
+        record('HEALTH', 20, true),
+        record('HEALTH', 30, false),
+        record('HEALTH', 40, true),
+      )
+      model.health_status = 'HEALTHY'
+      model.health_checked_at = at(41)
+    }
+    runs.set(
+      model.id,
+      history.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)),
     )
-      grants.push({
-        ...r,
-        subject_type: subjectType,
-        logical_model_id: id,
-        grant_id: mockId(`grant-${id}-${r.subject_type}-${r.subject_id}`),
-      })
+    events.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+    model.lifecycle_events = events.reverse()
+  }
+if (!modelAccessState.initialized)
+  for (const model of models) {
+    for (const run of runs.get(model.id) ?? []) {
+      run.checks = invocationTargets(model).flatMap((api) =>
+        run.checks.map((check) => ({
+          ...check,
+          invocation_api: api.invocation_api,
+          upstream_path: api.path,
+        })),
+      )
+    }
+  }
+function lifecycle(
+  model: Model,
+  action: 'CREATE' | 'UPDATE' | 'STATUS',
+  reason = '',
+  actor = 'system',
+) {
+  ;(model.lifecycle_events ??= []).unshift({
+    action,
+    status: model.status,
+    created_at: now(),
+    actor,
+    reason,
+  })
+}
+function advance(run: TestRun, count: number) {
+  if (run.status !== 'RUNNING') return
+  const m = models.find((m) => m.id === run.model_id)
+  if (!m) return
+  const failed =
+    m.model_id_at_provider.includes('fail') ||
+    run.checks.some((c) => c.upstream_path?.includes('fail'))
+  run.checks.forEach((c, i) => {
+    c.status =
+      i < count
+        ? (m.model_id_at_provider.includes('fail') && c.key === 'CONNECTIVITY') ||
+          c.upstream_path?.includes('fail')
+          ? 'FAILED'
+          : 'PASSED'
+        : i === count
+          ? 'RUNNING'
+          : 'PENDING'
+    c.duration_ms = i < count ? 240 + i * 100 : 0
+    c.detail =
+      c.status === 'FAILED' ? 'MODEL_UNAVAILABLE' : c.status === 'PASSED' ? 'VALID_RESPONSE' : ''
+  })
+  if (count < run.checks.length) return
+  run.status = failed ? 'FAILED' : 'PASSED'
+  run.completed_at = now()
+  if (run.purpose === 'HEALTH') {
+    m.health_status = failed ? 'UNHEALTHY' : 'HEALTHY'
+    m.health_checked_at = run.completed_at
+  } else {
+    m.admission_valid = !failed
+    m.status = failed ? 'DRAFT' : 'PENDING_REVIEW'
+    lifecycle(m, 'STATUS', '', run.triggered_by)
   }
 }
-function logicalId(req: MockRequest) {
-  return (req.url || '').split('?')[0].split('/')[4]
-}
-const prices = new Map<string, ModelPricingBody>()
-const priceHistory = new Map<string, Record<string, unknown>[]>()
-const runs = new Map<string, AdmissionRun>()
-const runHistory = new Map<string, AdmissionRun[]>()
-const jobs = new Map<
-  string,
-  {
-    modelId: string
-    run: AdmissionRun
-    started: number
-    fail: boolean
-    checks: string[]
-    budgetBatchId: string
-    cancelRequested?: boolean
+// 服务端时间驱动，关闭弹窗不会取消已启动任务；每个模型仅保留规定数量的记录。
+function scheduledWork() {
+  for (const m of models) {
+    const list = runs.get(m.id) ?? []
+    for (const r of list)
+      if (r.status === 'RUNNING')
+        advance(r, Math.floor((Date.now() - Date.parse(r.started_at)) / 500))
+    if (
+      m.status === 'ACTIVE' &&
+      m.auto_health_check &&
+      !list.some((r) => r.status === 'RUNNING') &&
+      Date.now() - Date.parse(m.health_checked_at ?? m.created_at) >=
+        m.health_check_interval_minutes * 60000
+    ) {
+      const run: TestRun = {
+        id: id(),
+        model_id: m.id,
+        purpose: 'HEALTH',
+        trigger_type: 'AUTO',
+        invocation_api: m.supported_invocation_apis[0]!,
+        invocation_apis: invocationTargets(m).map((a) => a.invocation_api),
+        billing_user: 'system',
+        billing_department: 'HEADQUARTERS',
+        status: 'RUNNING',
+        checks: invocationTargets(m).flatMap((api) =>
+          ['CONNECTIVITY', 'PROTOCOL', ...(m.tags.includes('STREAMING') ? ['STREAMING'] : [])].map(
+            (key) => ({
+              key,
+              invocation_api: api.invocation_api,
+              upstream_path: api.path,
+              status: 'PENDING' as const,
+              duration_ms: 0,
+              detail: '',
+            }),
+          ),
+        ),
+        started_at: now(),
+        completed_at: null,
+        triggered_by: 'Mock Scheduler',
+      }
+      list.unshift(run)
+      m.health_status = 'CHECKING'
+    }
+    let admissions = 0,
+      health = 0
+    runs.set(
+      m.id,
+      list.filter((r) => (r.purpose === 'HEALTH' ? ++health <= 5 : ++admissions <= 50)),
+    )
   }
->()
-const template: ProviderTemplate = {
-  template_key: 'openai',
-  display_name: 'OpenAI',
-  version: 'v1.0',
-  default_base_url: 'https://api.openai.com/v1',
-  discovery_supported: true,
-  contract_state: 'planned_local_protocol',
-  fields: [],
-  variants: [
-    {
-      endpoint_profile: 'openai_v1',
-      auth_mode: 'API_KEY',
-      label_zh: 'API 密钥',
-      label_en: 'API key',
-      fields: [],
-    },
-  ],
-  combinations: [
-    {
-      auth_mode: 'API_KEY',
-      endpoint_profile: 'openai_v1',
-      invocation_api: 'CHAT_COMPLETIONS',
-      operation_profile: 'chat_completions',
-      adapter_version: 'm2-base-v1.0.0',
-      support_stage: 'BASE',
-      support_status: 'LOCAL_PROTOCOL_VALIDATED',
-    },
-  ],
 }
+const runtime = globalThis as typeof globalThis & {
+  __modelAccessTimer?: ReturnType<typeof setInterval>
+}
+if (runtime.__modelAccessTimer) clearInterval(runtime.__modelAccessTimer)
+runtime.__modelAccessTimer = setInterval(scheduledWork, 500)
 function page<T>(items: T[], req: MockRequest) {
-  const current = Math.max(1, Number(req.query?.page) || 1)
+  const p = Math.max(1, Number(req.query?.page) || 1)
   const size = Math.min(100, Math.max(1, Number(req.query?.page_size) || 20))
   return {
-    items: items.slice((current - 1) * size, current * size),
-    page: current,
+    items: items.slice((p - 1) * size, p * size),
+    page: p,
     page_size: size,
     total: items.length,
     total_pages: Math.ceil(items.length / size),
   }
 }
-function savePrice(id: string, body: ModelPricingBody) {
-  prices.set(id, body)
-  const history = priceHistory.get(id) || []
-  const m = models.find((item) => item.id === id)!
-  history.unshift({
-    input_price: body.input_price,
-    output_price: body.output_price,
-    cached_input_price: body.cached_input_price,
-    currency: body.currency,
-    unit: body.unit,
-    created_at: new Date().toISOString(),
-    created_by: mockId('mock-model-admin'),
-    revision: String(history.length + 1),
-    coverage_status: 'COMPLETE_FOR_OPERATION',
-    pricing_profile_version: 'v1',
-    uncovered_components: [],
-    identity: {
-      model_id_at_provider: m.model_id_at_provider,
-      physical_model_id: m.id,
-      provider_id: m.provider_id,
-      provider_name: 'OpenAI-主站',
-    },
-  })
-  priceHistory.set(m.id, history)
-}
-function modelId(req: MockRequest) {
-  return (req.url || '').split('?')[0].split('/')[4]
-}
-function record(req: MockRequest) {
-  return models.find((m) => m.id === modelId(req))
-}
-function receipt(id: string) {
-  return success({ applied: true, replayed: false, resource_id: id })
-}
-function commands(model: PhysicalModelItem) {
-  model.admission_checks = [
-    'BASE_REQUEST',
-    'STREAMING',
-    'TOOL_CALLING',
-    'JSON_MODE',
-    'VISION',
-    'RELIABILITY',
-    'LONG_CONTEXT',
-  ].map((key) => ({ key, state: 'AVAILABLE', reason_code: '' }))
-  model.allowed_commands =
-    model.status === 'ACTIVE'
-      ? ['PAUSE', 'RETIRE']
-      : model.status === 'SUSPENDED'
-        ? ['RESUME', 'RETIRE']
-        : model.status === 'RETIRED'
-          ? ['REACTIVATE']
-          : []
-  return model
-}
-function finishedRun(model: PhysicalModelItem): AdmissionRun {
+function blankPrice(): Pricing {
   return {
-    run_id: mockId(`seed-run-${model.id}`),
-    status: 'PASSED',
-    admission_valid: true,
-    checks: [
-      { check_key: 'BASE_REQUEST', status: 'PASSED', duration_ms: '120', safe_error_code: null },
-    ],
-    sealed_at: '2026-11-03T06:00:00Z',
-    invalid_reason: null,
-  }
-}
-for (const model of models) {
-  commands(model)
-  if (model.admission_valid) {
-    const run = finishedRun(model)
-    runs.set(model.id, run)
-    runHistory.set(model.id, [run])
-  }
-}
-function runData(run: AdmissionRun, id: string) {
-  const model = models.find((m) => m.id === id)!
-  return {
-    ...run,
-    checks: run.checks.map((check) => ({
-      sent_count: check.status === 'PENDING' ? 0 : 1,
-      not_executed_count: 0,
-      unknown_count: 0,
-      ...check,
+    id: '',
+    version: 0,
+    source_type: 'BUILT_IN',
+    sync_mode: 'MANUAL',
+    currency: 'CNY',
+    pricing_mode: 'FIXED',
+    metric_rates: ([] as string[]).map((metric_key) => ({
+      metric_key,
+      unit: 'PER_MILLION_TOKENS',
+      unit_price: null,
+      period_prices: {},
     })),
-    adapter_version: 'm2-base-v1.0.0',
-    manifest_digest: 'mock-manifest',
-    model_generation: model.admission_generation,
-    physical_model_id: id,
-    provider_generation: '1',
-    selected_checks: run.checks.map((check) => check.check_key),
-    test_profile_version: 'm2-admission-v2',
-    validator_version: 'v1',
-    verified_capabilities: capabilities,
+    time_periods: [{ id: 'fallback', name: '', is_fallback: true, conditions: [] }],
+    platform_catalog_version: null,
+    last_synced_at: null,
+    created_at: '',
+    created_by: '',
   }
 }
-function advance(job: typeof jobs extends Map<string, infer T> ? T : never) {
-  if (job.run.sealed_at) return true
-  if (job.cancelRequested && Date.now() - job.started >= 1500) {
-    job.run.status = 'ERROR'
-    job.run.admission_valid = false
-    job.run.invalid_reason = 'CANCELLED'
-    job.run.sealed_at = new Date().toISOString()
-    const model = models.find((item) => item.id === job.modelId)!
-    model.status = 'DRAFT'
-    commands(model)
-    return true
+function platformPrice(m: Model): Pricing {
+  return {
+    ...blankPrice(),
+    platform_catalog_version: '2026.11',
+    last_synced_at: now(),
+    metric_rates: (adaptedModel(m.model_id_at_provider)
+      ? m.output_modalities.includes('embeddings')
+        ? ['input_tokens']
+        : ['input_tokens', 'cached_input_tokens', 'output_tokens']
+      : []
+    ).map((metric_key, i) => ({
+      metric_key,
+      unit: 'PER_MILLION_TOKENS',
+      unit_price:
+        m.model_id_at_provider.split('/').pop() === 'gpt-4o'
+          ? [17.5, 8.75, 70][i]!
+          : [1, 0.5, 2][i]!,
+      period_prices: {},
+    })),
   }
-  const elapsed = Date.now() - job.started
-  let failed = false
-  job.run.checks = job.checks.map((key, index) => {
-    const complete = elapsed >= (index + 1) * 1500
-    const status: AdmissionCheck['status'] = complete
-      ? job.fail && index === 0
-        ? 'FAILED'
-        : 'PASSED'
-      : elapsed >= index * 1500
-        ? 'RUNNING'
-        : 'PENDING'
-    failed ||= status === 'FAILED'
-    return {
-      check_key: key,
-      status,
-      duration_ms: complete ? String(120 + index * 37) : null,
-      safe_error_code: status === 'FAILED' ? 'UPSTREAM_REQUEST_FAILED' : null,
-      ...(key === 'RELIABILITY' && complete
-        ? {
-            reliability_metrics: {
-              version: 'v1',
-              assessment_status: 'PASSED',
-              request_count: '10',
-              required_successes: '10',
-              succeeded: '10',
-              failed: '0',
-              not_sent: '0',
-              unknown: '0',
-              success_rate_percent: '100',
-              completed_latency: { count: '10', mean_ms: '1500', p50_ms: '1200', p95_ms: '2600' },
-              successful_latency: { count: '10', mean_ms: '1500', p50_ms: '1200', p95_ms: '2600' },
-              ttft: {
-                status: 'MEASURED',
-                missing_successful_count: '0',
-                not_applicable_reason: '',
-                successful_requests: '10',
-                observed: { count: '10', mean_ms: '500', p50_ms: '420', p95_ms: '920' },
-              },
-            },
-          }
-        : {}),
-      sent_count: complete ? 1 : 0,
-      not_executed_count: 0,
-      unknown_count: 0,
-    }
-  })
-  const complete = elapsed >= job.checks.length * 1500
-  job.run.status = complete ? (failed ? 'FAILED' : 'PASSED') : 'RUNNING'
-  job.run.admission_valid = complete && !failed
-  job.run.sealed_at = complete
-    ? new Date(job.started + job.checks.length * 1500).toISOString()
-    : null
-  const model = models.find((x) => x.id === job.modelId)!
-  model.status = complete ? (failed ? 'DRAFT' : 'PENDING_REVIEW') : 'TESTING'
-  model.admission_valid = job.run.admission_valid
-  commands(model)
-  runs.set(model.id, job.run)
-  return complete
 }
-const providerSeed: ProviderItem = {
-  id: providerId,
-  name: 'OpenAI-主站',
-  template_key: 'openai',
-  template_version: 'v1.0',
-  base_url: 'https://api.openai.com/v1',
-  endpoint_profile: 'openai_v1',
-  auth_mode: 'API_KEY',
-  security_level: 'INTERNET',
-  notes: '',
-  model_count: String(models.length),
-  invocation_generation: '1',
-  public_config: {},
-  configured_secret_fields: [],
+if (!modelAccessState.initialized)
+  for (const m of models) {
+    prices.set(
+      m.id,
+      [3, 2, 1].map((version) => ({
+        ...platformPrice(m),
+        id: mockId(`seed-price-${m.id}-${version}`),
+        version,
+        metric_rates: platformPrice(m).metric_rates.map((rate) => ({
+          ...rate,
+          unit_price: Number(((rate.unit_price ?? 0) * (1 + (3 - version) * 0.1)).toFixed(2)),
+        })),
+        created_at: new Date(Date.parse(m.created_at) + (version - 1) * 86400000).toISOString(),
+        created_by: 'Mock Administrator',
+      })),
+    )
+  }
+modelAccessState.initialized = true
+function savePrice(modelId: string, body: Pricing, actor = 'system') {
+  const list = prices.get(modelId) ?? []
+  const result = {
+    ...structuredClone(body),
+    id: id(),
+    version: list.length + 1,
+    created_at: now(),
+    created_by: actor,
+  }
+  if (result.source_type === 'ENTERPRISE_CUSTOM') {
+    result.sync_mode = 'MANUAL'
+    result.platform_catalog_version = null
+    result.last_synced_at = null
+  }
+  list.unshift(result)
+  prices.set(modelId, list)
+  return result
 }
-const mockProviders: ProviderItem[] = [providerSeed]
-const discoveries = new Map<string, { providerId: string; candidateId: string }>()
-const importBatches = new Map<string, { providerId: string; ids: string[] }>()
+function sanitizedProvider(p: Provider) {
+  repairLegacyRecipients(p)
+  return { ...p, model_count: models.filter((m) => m.provider_id === p.id).length }
+}
+function error(message: string) {
+  return fail('VALIDATION_FAILED', '', { fields: { model_access: message } })
+}
+function modelError(body: Model, existing?: Model) {
+  if (
+    !providers.some((p) => p.id === body.provider_id) ||
+    !body.model_id_at_gateway.trim() ||
+    !body.model_id_at_provider.trim() ||
+    !Array.isArray(body.supported_invocation_apis) ||
+    !body.supported_invocation_apis.length
+  )
+    return 'REQUIRED'
+  if (
+    body.supported_invocation_apis.some((api) => !invocationApis.includes(api)) ||
+    new Set(body.supported_invocation_apis).size !== body.supported_invocation_apis.length
+  )
+    return 'REQUIRED'
+  if (
+    !Array.isArray(body.custom_invocation_apis) ||
+    body.custom_invocation_apis.some((a) => !validInvocationPath(a.path)) ||
+    new Set(body.custom_invocation_apis.map((a) => a.path)).size !==
+      body.custom_invocation_apis.length
+  )
+    return 'INVALID_API_PATH'
+  body.custom_invocation_apis = body.custom_invocation_apis.map((a) => ({
+    path: a.path,
+    invocation_api:
+      existing?.custom_invocation_apis.find((old) => old.path === a.path)?.invocation_api ??
+      `CUSTOM_${mockId(a.path)}`,
+  }))
+  if (
+    models.some((m) => m.id !== existing?.id && m.model_id_at_gateway === body.model_id_at_gateway)
+  )
+    return 'NAME_CONFLICT'
+  if (
+    models.some(
+      (m) =>
+        m.id !== existing?.id &&
+        m.provider_id === body.provider_id &&
+        m.model_id_at_provider === body.model_id_at_provider,
+    )
+  )
+    return 'PROVIDER_MODEL_CONFLICT'
+  if (existing && existing.status !== 'DRAFT') return 'EDIT_LOCKED'
+  return ''
+}
+const transitions: Record<Status, Status[]> = {
+  DRAFT: ['TESTING'],
+  TESTING: [],
+  PENDING_REVIEW: ['ACTIVE', 'DRAFT'],
+  ACTIVE: ['SUSPENDED', 'RETIRED'],
+  SUSPENDED: ['ACTIVE', 'RETIRED'],
+  RETIRED: ['DRAFT'],
+}
+function route(
+  url: string,
+  method: 'get' | 'post' | 'put' | 'delete',
+  handler: (req: MockRequest) => unknown,
+): MockMethod {
+  return {
+    url: `/api/v1${url}`,
+    method,
+    response(req: MockRequest) {
+      if (!checkToken(req)) return unauthorized()
+      if (method !== 'get' && !checkCsrf(req)) return fail('CSRF_INVALID', '')
+      return handler(req)
+    },
+  }
+}
+function pathId(req: MockRequest, section: string) {
+  return (
+    req.url?.split('?')[0]?.split('/')[section === 'providers' || section === 'models' ? 4 : 4] ??
+    ''
+  )
+}
 const routes: MockMethod[] = [
-  {
-    url: '/api/v1/logical-models/options',
-    method: 'get',
-    response: (req: MockRequest) =>
-      success(
-        page(
-          logical
-            .filter(
-              (item) => !req.query?.search || item.logical_name.includes(String(req.query.search)),
-            )
-            .map(({ id, display_name, logical_name, localized_name, status, workload_kind }) => ({
-              id,
-              display_name,
-              logical_name,
-              localized_name,
-              status,
-              workload_kind,
-            })),
-          req,
-        ),
+  route('/model-metadata', 'get', (req) => {
+    const model = adaptedModel(String(req.query?.model_id_at_provider ?? ''))
+    const provider = providers.find((p) => p.id === req.query?.provider_id)
+    return success({
+      supported_invocation_apis:
+        model?.supported_invocation_apis ??
+        (provider?.template_key === 'anthropic' ? ['MESSAGES'] : ['CHAT_COMPLETIONS']),
+      input_modalities: model?.input_modalities ?? [],
+      output_modalities: model?.output_modalities ?? [],
+      tags: model?.tags ?? [],
+      context_window: model?.context_window ?? null,
+      max_output_tokens: model?.max_output_tokens ?? null,
+    })
+  }),
+  route('/pricing-catalog', 'get', (req) => {
+    const model = adaptedModel(String(req.query?.model_id_at_provider ?? ''))
+    return success(model ? platformPrice(model) : blankPrice())
+  }),
+  route('/provider-templates', 'get', () => success(templates)),
+  route('/providers', 'get', (req) => {
+    const search = String(req.query?.search ?? '').toLowerCase()
+    return success(
+      page(
+        providers
+          .filter((p) =>
+            [p.name, p.base_url, p.notes].some((s) => s.toLowerCase().includes(search)),
+          )
+          .map(sanitizedProvider),
+        req,
       ),
-  },
-  {
-    url: '/api/v1/logical-model-permission-batches',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const ids = req.body?.logical_model_ids as string[]
-      const subjects = req.body?.subjects as { subject_id: string; subject_type: SubjectType }[]
-      if (!Array.isArray(ids) || !ids.length || !Array.isArray(subjects) || !subjects.length)
-        return fail('VALIDATION_FAILED', '')
-      if (ids.some((id) => !logicalRecord(id))) return fail('NOT_FOUND', '')
-      ids.forEach((id) => addRelations(id, subjects))
-      return receipt(ids[0])
-    },
-  },
-  {
-    url: '/api/v1/logical-models',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const b = req.body || {}
+    )
+  }),
+  ...(['post', 'put'] as const).map((method) =>
+    route(method === 'post' ? '/providers' : '/providers/:id', method, (req) => {
+      const b = structuredClone(req.body) as unknown as Provider
+      const old = providers.find((p) => p.id === pathId(req, 'providers'))
       if (
-        typeof b.logical_name !== 'string' ||
-        !b.logical_name.trim() ||
-        b.logical_name.length > 128
+        !b.name.trim() ||
+        !/^https?:\/\//.test(b.base_url) ||
+        providers.some((p) => p.id !== old?.id && p.name === b.name)
       )
-        return fail('VALIDATION_FAILED', '')
-      if (logical.some((l) => l.logical_name === b.logical_name)) return fail('NAME_CONFLICT', '')
-      const id = mockId(`logical-created-${++sequence}`)
-      logical.unshift({
-        id,
-        logical_name: b.logical_name,
-        display_name: String(b.display_name),
-        localized_name: String(b.display_name),
-        description: String(b.description || ''),
-        localized_description: String(b.description || ''),
-        translations: [],
-        status: 'ACTIVE',
-        workload_kind: null,
-        ready: false,
-        candidate_count: 0,
-        mounts: [],
-        created_at: new Date().toISOString(),
-      })
-      return receipt(id)
-    },
-  },
-  ...(['get', 'put', 'delete'] as const).map((method): MockMethod => ({
-    url: '/api/v1/logical-models/:id',
-    method,
-    response: (req: MockRequest) => {
-      const id = logicalId(req)
-      const l = logical.find((x) => x.id === id)
-      if (!l) return fail('NOT_FOUND', '')
-      if (method === 'get') {
-        const detail = logicalRecord(id)!
-        const items = detail.mounts.map((mount) => {
-          const m = models.find((item) => item.id === mount.physical_model_id)!
-          return {
-            ...mount,
-            model_id_at_provider: m.model_id_at_provider,
-            provider_id: m.provider_id,
-            provider_name: 'OpenAI-主站',
-            provider_base_url: 'https://api.openai.com/v1',
-            provider_security_level: 'INTERNET',
-            status: m.status,
-          }
-        })
-        return success({
-          ...detail,
-          related_mounts: page(items, {
-            ...req,
-            query: { page: req.query?.mounts_page, page_size: req.query?.mounts_page_size },
-          }),
-        })
+        return error('PROVIDER_INVALID')
+      const template = templates.find((t) => t.template_key === b.template_key)
+      if (!template) return error('REQUIRED')
+      const same = old?.template_key === b.template_key
+      const configured = same ? [...old.configured_secret_fields] : []
+      if (b.template_key === 'bedrock' && b.provider_config.auth_mode === 'IAM') {
+        const index = configured.indexOf('api_key')
+        if (index >= 0) configured.splice(index, 1)
       }
-      if (method === 'delete') {
-        logical.splice(logical.indexOf(l), 1)
-        models.forEach((m) => {
-          m.mounts = m.mounts.filter((x) => x.logical_model_id !== id)
-        })
-        for (let i = grants.length - 1; i >= 0; i--)
-          if (grants[i].logical_model_id === id) grants.splice(i, 1)
-      } else {
-        const b = req.body || {}
-        if (b.logical_name !== undefined) {
-          if (
-            typeof b.logical_name !== 'string' ||
-            !b.logical_name.trim() ||
-            b.logical_name.length > 128
-          )
-            return fail('VALIDATION_FAILED', '')
-          if (logical.some((x) => x.id !== id && x.logical_name === b.logical_name))
-            return fail('NAME_CONFLICT', '')
-          if (
-            b.logical_name !== l.logical_name &&
-            (!b.confirm_name_change ||
-              b.previous_logical_name !== l.logical_name ||
-              Array.from(b.logical_name).length > 80)
-          )
-            return fail('VALIDATION_FAILED', '')
-          l.logical_name = b.logical_name
-          models.forEach((m) =>
-            m.mounts.forEach((x) => {
-              if (x.logical_model_id === id) {
-                x.logical_name = l.logical_name
-                x.display_name = l.logical_name
-              }
-            }),
-          )
-        }
-        if (typeof b.display_name === 'string') l.display_name = l.localized_name = b.display_name
-        if (typeof b.description === 'string')
-          l.description = l.localized_description = b.description
-      }
-      return receipt(id)
-    },
-  })),
-  {
-    url: '/api/v1/logical-models/:id/mount-order',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const id = logicalId(req)
-      const l = logicalRecord(id)
-      const b = req.body || {}
-      if (!l) return fail('NOT_FOUND', '')
-      const target = l.mounts.find((x) => x.physical_model_id === b.physical_model_id)
-      if (!target) return fail('NOT_FOUND', '')
-      if (b.placement === 'PRIORITY') {
-        if (!Number.isInteger(b.priority) || Number(b.priority) < 1 || Number(b.priority) > 999)
-          return fail('VALIDATION_FAILED', '')
-        models
-          .find((m) => m.id === target.physical_model_id)!
-          .mounts.find((r) => r.logical_model_id === id)!.priority = Number(b.priority)
-        return receipt(id)
-      }
-      const order = l.mounts.filter((x) => x !== target)
-      let position = b.placement === 'FIRST' ? 0 : order.length
-      if (b.placement === 'BEFORE' || b.placement === 'AFTER') {
-        position = order.findIndex((x) => x.physical_model_id === b.anchor_id)
-        if (position < 0) return fail('VALIDATION_FAILED', '')
-        if (b.placement === 'AFTER') position++
-      }
-      order.splice(position, 0, target)
-      order.forEach((x, i) => {
-        models
-          .find((m) => m.id === x.physical_model_id)!
-          .mounts.find((r) => r.logical_model_id === id)!.priority = i + 1
-      })
-      return receipt(id)
-    },
-  },
-  ...(['get', 'post', 'delete'] as const).map((method): MockMethod => ({
-    url: '/api/v1/logical-models/:id/permissions',
-    method,
-    response: (req: MockRequest) => {
-      const id = logicalId(req)
-      if (!logicalRecord(id)) return fail('NOT_FOUND', '')
-      if (method === 'get')
-        return success(
-          page(
-            grants
-              .filter((g) => g.logical_model_id === id)
-              .map((grant) => ({
-                ...grant,
-                subject_type:
-                  grant.subject_type === 'GROUP' && req.query?.subject_type_version === 'v2'
-                    ? 'USER_GROUP'
-                    : grant.subject_type,
-              })),
-            req,
-          ),
+      if (b.balance_query_config.secret && !configured.includes('balance_query_secret'))
+        configured.push('balance_query_secret')
+      if (
+        b.balance_query_mode === 'CUSTOM' &&
+        b.balance_query_config.auth !== 'NONE' &&
+        !configured.includes('balance_query_secret')
+      )
+        return error('BALANCE_INVALID')
+      for (const f of template.fields) {
+        if (
+          b.template_key === 'bedrock' &&
+          b.provider_config.auth_mode === 'IAM' &&
+          f.key === 'api_key'
         )
-      const relations = req.body?.relations as LogicalModelPermission[]
-      if (!Array.isArray(relations) || !relations.length) return fail('VALIDATION_FAILED', '')
-      if (method === 'post') addRelations(id, relations)
-      else
-        for (let i = grants.length - 1; i >= 0; i--)
-          if (
-            grants[i].logical_model_id === id &&
-            relations.some((x) => x.grant_id === grants[i].grant_id)
-          )
-            grants.splice(i, 1)
-      return receipt(id)
-    },
-  })),
-  {
-    url: '/api/v1/models/:id/pricing',
-    method: 'get',
-    response: (req: MockRequest) => success(page(priceHistory.get(modelId(req)) || [], req)),
-  },
-  {
-    url: '/api/v1/models/:id/admission-tests',
-    method: 'get',
-    response: (req: MockRequest) =>
-      success({
-        ...page(
-          (runHistory.get(modelId(req)) || [])
-            .slice(0, 50)
-            .map((run) => runData(run, modelId(req))),
-          req,
-        ),
-        page_snapshot: `mock-window-${modelId(req)}`,
-      }),
-  },
-  {
-    url: '/api/v1/provider-templates',
-    method: 'get',
-    response: (req: MockRequest) => success(page([template], req)),
-  },
-  {
-    url: '/api/v1/providers',
-    method: 'get',
-    response: (req: MockRequest) => {
-      return success(
-        page(
-          mockProviders.map((provider) => ({
-            ...provider,
-            model_count: String(models.filter((model) => model.provider_id === provider.id).length),
-          })),
-          req,
-        ),
+          continue
+        const value = b.provider_config[f.key]
+        if (f.required && !value && !(f.secret && configured.includes(f.key)))
+          return error('REQUIRED')
+        if (f.secret) {
+          if (value && !configured.includes(f.key)) configured.push(f.key)
+          delete b.provider_config[f.key]
+        }
+      }
+      if (b.balance_query_mode === 'NONE') b.balance_alert_enabled = false
+      if (
+        b.balance_alert_enabled &&
+        (!(b.balance_alert_threshold > 0) ||
+          !b.balance_alert_recipients.length ||
+          !b.balance_alert_channels.length)
       )
-    },
-  },
-  {
-    url: '/api/v1/logical-models',
-    method: 'get',
-    response: (req: MockRequest) =>
-      success(
-        page(
-          logical
-            .filter(
-              (l) =>
-                !req.query?.search ||
-                l.logical_name.toLowerCase().includes(String(req.query.search).toLowerCase()),
-            )
-            .map((l) => logicalRecord(l.id)!),
-          req,
-        ),
-      ),
-  },
-  {
-    url: '/api/v1/models',
-    method: 'get',
-    response: (req: MockRequest) => {
-      for (const job of jobs.values()) advance(job)
-      const q = req.query || {}
-      return success(
-        page(
-          models
-            .filter(
-              (m) =>
-                (!q.status || m.status === q.status) &&
-                (!q.provider_id || m.provider_id === q.provider_id) &&
-                (!q.logical_model_id ||
-                  m.mounts.some((x) => x.logical_model_id === q.logical_model_id)) &&
-                (q.unmounted == null || (m.mounts.length === 0) === (q.unmounted === 'true')) &&
-                (!q.search ||
-                  `${m.model_id_at_provider} OpenAI-主站 https://api.openai.com/v1`
-                    .toLowerCase()
-                    .includes(String(q.search).toLowerCase())),
-            )
-            .map(commands),
-          req,
-        ),
-      )
-    },
-  },
-  {
-    url: '/api/v1/models',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const b = req.body || {}
-      if (!b.provider_id || !b.model_id_at_provider || !b.invocation_api)
-        return fail('VALIDATION_FAILED', '')
+        return error('BALANCE_INVALID')
+      b.balance_query_config.secret = ''
+      b.configured_secret_fields = configured
+      b.id = old?.id ?? id()
+      b.created_at = old?.created_at ?? now()
+      if (old) Object.assign(old, b)
+      else providers.push(b)
+      return success(sanitizedProvider(b))
+    }),
+  ),
+  route('/providers/:id', 'get', (req) => {
+    const p = providers.find((p) => p.id === pathId(req, 'providers'))
+    return p ? success(sanitizedProvider(p)) : fail('NOT_FOUND', '')
+  }),
+  route('/providers/:id', 'delete', (req) => {
+    if (!req.body?.reason) return error('REASON_REQUIRED')
+    const key = pathId(req, 'providers')
+    const i = providers.findIndex((p) => p.id === key)
+    if (i < 0) return fail('NOT_FOUND', '')
+    providers.splice(i, 1)
+    for (const m of models.filter((m) => m.provider_id === key)) {
+      m.provider_id = ''
+      m.status = 'DRAFT'
+      lifecycle(m, 'STATUS', String(req.body.reason), usernameFromToken(req)!)
+      m.admission_valid = false
+    }
+    return success({ applied: true })
+  }),
+  route('/providers/:id/balance-query', 'post', (req) => {
+    const p = providers.find((p) => p.id === pathId(req, 'providers'))
+    if (!p || p.balance_query_mode === 'NONE') return error('BALANCE_DISABLED')
+    p.last_balance_attempt_at = now()
+    if (p.base_url.includes('fail')) {
+      p.balance_query_status = 'FAILED'
+      p.balance_query_error_code = 'AUTH_FAILED'
+    } else {
+      p.last_balance_value = 36.58
+      p.last_balance_success_at = now()
+      p.balance_query_status = 'SUCCESS'
+      p.balance_query_error_code = null
+    }
+    return success(sanitizedProvider(p))
+  }),
+  route('/providers/:id/models/discover', 'post', (req) => {
+    const p = providers.find((p) => p.id === pathId(req, 'providers'))
+    if (!p) return fail('NOT_FOUND', '')
+    const names = p.base_url.includes('fail')
+      ? []
+      : p.template_key === 'openai'
+        ? ['gpt-4o', 'gpt-4o-mini', 'text-embedding-3-large', 'o3-mini']
+        : p.template_key === 'deepseek'
+          ? ['deepseek-chat', 'deepseek-reasoner']
+          : p.template_key === 'bailian'
+            ? ['qwen-plus', 'qwen-max']
+            : p.template_key === 'openrouter'
+              ? ['openai/gpt-4o', 'anthropic/claude-sonnet-4']
+              : []
+    const items = names.map((name) => ({
+      model_id_at_provider: name,
+      model_id_at_gateway: name,
+      display_name: name,
+      input_modalities: adaptedModel(name)?.input_modalities ?? [],
+      output_modalities: adaptedModel(name)?.output_modalities ?? [],
+      tags: adaptedModel(name)?.tags ?? [],
+      context_window: adaptedModel(name)?.context_window ?? null,
+      max_output_tokens: adaptedModel(name)?.max_output_tokens ?? null,
+      supported_invocation_apis:
+        name === 'text-embedding-3-large'
+          ? ['EMBEDDINGS']
+          : name.includes('gpt-4o')
+            ? ['CHAT_COMPLETIONS', 'RESPONSES']
+            : ['CHAT_COMPLETIONS'],
+      custom_invocation_apis: [],
+      already_added: models.some((m) => m.provider_id === p.id && m.model_id_at_provider === name),
+    }))
+    const key = id()
+    discoveries.set(key, { provider: p.id, items })
+    return success({
+      discovery_id: key,
+      items,
+      error_code: p.base_url.includes('fail')
+        ? 'AUTH_FAILED'
+        : names.length
+          ? null
+          : 'LIST_UNAVAILABLE',
+    })
+  }),
+  route('/providers/:id/models/import', 'post', (req) => {
+    const key = pathId(req, 'providers')
+    const snapshot = discoveries.get(String(req.body?.discovery_id))
+    if (!snapshot || snapshot.provider !== key) return error('DISCOVERY_EXPIRED')
+    const imported: Model[] = []
+    const errors: string[] = []
+    for (const item of req.body?.items as Candidate[]) {
       if (
         models.some(
-          (m) =>
-            m.provider_id === b.provider_id && m.model_id_at_provider === b.model_id_at_provider,
+          (m) => m.provider_id === key && m.model_id_at_provider === item.model_id_at_provider,
         )
       )
-        return fail('MODEL_STATE_CONFLICT', '')
-      const id = mockId(`created-model-${++sequence}`)
-      const binding = b.logical_binding as {
-        mode: string
-        logical_model_id?: string
-        logical_name?: string
-        display_name?: string
-      }
-      let mount = logical.find((x) => x.id === binding.logical_model_id)
-      if (binding.mode === 'CREATE') {
-        mount = {
-          ...logical[0],
-          id: mockId(`created-logical-${sequence}`),
-          logical_name: binding.logical_name!,
-          display_name: binding.display_name!,
-          localized_name: binding.display_name!,
-          mounts: [],
-        }
-        logical.push(mount)
-      }
-      const { reason: _reason, price: _price, logical_binding: _binding, ...modelFields } = b
-      void _reason
-      void _binding
-      models.unshift(
-        commands({
-          ...models[0],
-          ...modelFields,
-          id,
-          status: 'DRAFT',
-          admission_valid: false,
-          mounts: mount
-            ? [
-                {
-                  logical_model_id: mount.id,
-                  logical_name: mount.logical_name,
-                  display_name: mount.display_name,
-                  priority: 1,
-                },
-              ]
-            : [],
-        } as PhysicalModelItem),
+        continue
+      const trusted = snapshot.items.find(
+        (x) => x.model_id_at_provider === item.model_id_at_provider,
       )
-      if (_price) savePrice(id, _price as unknown as ModelPricingBody)
-      return receipt(id)
-    },
-  },
-  {
-    url: '/api/v1/models/:id',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      return m
-        ? success({
-            ...commands(m),
-            admission_checks: [
-              'BASE_REQUEST',
-              'STREAMING',
-              'TOOL_CALLING',
-              'JSON_MODE',
-              'VISION',
-              'RELIABILITY',
-              'LONG_CONTEXT',
-            ].map((key) => ({ key, state: 'AVAILABLE', reason_code: '' })),
-            related_mounts: page(m.mounts, {
-              ...req,
-              query: { page: req.query?.mounts_page, page_size: req.query?.mounts_page_size },
-            }),
-          })
-        : fail('NOT_FOUND', '')
-    },
-  },
-  {
-    url: '/api/v1/models/:id',
-    method: 'put',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      if (!m) return fail('NOT_FOUND', '')
-      if (['TESTING', 'PENDING_REVIEW'].includes(m.status)) return fail('MODEL_STATE_CONFLICT', '')
-      if (['logical_binding'].some((key) => key in (req.body || {})))
-        return fail('VALIDATION_FAILED', '')
-      const { reason: _reason, price: _price, ...changes } = req.body || {}
-      if (_price) savePrice(m.id, _price as unknown as ModelPricingBody)
-      void _reason
-      Object.assign(m, changes)
-      return receipt(m.id)
-    },
-  },
-  {
-    url: '/api/v1/models/:id',
-    method: 'delete',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      if (!m) return fail('NOT_FOUND', '')
-      if (m.status === 'ACTIVE' || !req.body?.reason) return fail('MODEL_STATE_CONFLICT', '')
-      models.splice(models.indexOf(m), 1)
-      return receipt(m.id)
-    },
-  },
-  {
-    url: '/api/v1/models/:id/commands',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      if (!m) return fail('NOT_FOUND', '')
-      const command = String(req.body?.command)
-      if (!commands(m).allowed_commands.includes(command) || !req.body?.reason)
-        return fail('MODEL_STATE_CONFLICT', '')
-      m.status = (
-        { PAUSE: 'SUSPENDED', RESUME: 'ACTIVE', RETIRE: 'RETIRED', REACTIVATE: 'DRAFT' } as Record<
-          string,
-          ModelStatus
-        >
-      )[command]
-      if (m.status === 'DRAFT') m.admission_valid = false
-      commands(m)
-      return receipt(m.id)
-    },
-  },
-  {
-    url: '/api/v1/models/:id/admission-tests',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      if (!m) return fail('NOT_FOUND', '')
-      if (m.status !== 'DRAFT') return fail('MODEL_STATE_CONFLICT', '')
-      const checks = req.body?.selected_checks as string[]
-      if (!Array.isArray(checks) || !checks.includes('BASE_REQUEST'))
-        return fail('VALIDATION_FAILED', '')
-      const jobId = mockId(`admission-job-${++sequence}`)
-      const run: AdmissionRun = {
-        run_id: mockId(`admission-run-${sequence}`),
-        status: 'RUNNING',
+      const adapted = adaptedModel(item.model_id_at_provider)
+      const m: Model = {
+        id: id(),
+        provider_id: key,
+        model_id_at_gateway: item.model_id_at_gateway,
+        model_id_at_provider: item.model_id_at_provider,
+        supported_invocation_apis:
+          adapted?.supported_invocation_apis ??
+          trusted?.supported_invocation_apis ??
+          item.supported_invocation_apis,
+        custom_invocation_apis: [],
+        input_modalities:
+          adapted?.input_modalities ?? trusted?.input_modalities ?? item.input_modalities,
+        output_modalities:
+          adapted?.output_modalities ?? trusted?.output_modalities ?? item.output_modalities,
+        tags: adapted?.tags ?? trusted?.tags ?? item.tags,
+        context_window: adapted?.context_window ?? trusted?.context_window ?? null,
+        max_output_tokens: adapted?.max_output_tokens ?? trusted?.max_output_tokens ?? null,
+        description: '',
+        status: 'DRAFT',
+        health_status: 'UNKNOWN',
+        auto_health_check: false,
+        health_check_interval_minutes: 360,
+        health_checked_at: null,
+        created_at: now(),
+        suspend_reason: null,
         admission_valid: false,
-        checks: [],
-        sealed_at: null,
-        invalid_reason: null,
       }
-      jobs.set(jobId, {
-        modelId: m.id,
-        run,
-        started: Date.now(),
-        budgetBatchId: mockId(`budget-${sequence}`),
-        fail: m.model_id_at_provider.includes('fail'),
-        checks,
-      })
-      runHistory.set(m.id, [run, ...(runHistory.get(m.id) || [])])
-      m.status = 'TESTING'
-      m.admission_valid = false
-      return success({
-        accepted: true,
-        job_id: jobId,
-        budget_batch_id: mockId(`budget-${sequence}`),
-        replayed: false,
-      })
-    },
-  },
-  {
-    url: '/api/v1/model-admission-jobs/:id',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const id = (req.url || '').split('?')[0].split('/').pop()!
-      const job = jobs.get(id)
-      if (!job) return fail('NOT_FOUND', '')
-      const complete = advance(job)
-      return success({
-        job_id: id,
-        budget_batch_id: job.budgetBatchId,
-        physical_model_id: job.modelId,
-        run_id: job.run.run_id,
-        status: complete
-          ? job.cancelRequested
-            ? 'CANCELLED'
-            : job.run.status === 'PASSED'
-              ? 'SUCCEEDED'
-              : 'FAILED'
-          : 'RUNNING',
-        cancel_requested: !!job.cancelRequested,
-        safe_error_code: null,
-        remote: {
-          cleanup_required: false,
-          pending_count: job.cancelRequested && !complete ? 1 : 0,
-          unknown_count: 0,
-        },
-      })
-    },
-  },
-  {
-    url: '/api/v1/models/:id/admission-tests/latest',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      if (!m) return fail('NOT_FOUND', '')
-      for (const job of jobs.values()) if (job.modelId === m.id) advance(job)
-      const latest = runs.get(m.id)
-      return success({
-        admission_valid: m.admission_valid,
-        invalid_reason: null,
-        latest_run: latest ? runData(latest, m.id) : null,
-      })
-    },
-  },
-  {
-    url: '/api/v1/models/:id/review',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const m = record(req)
-      if (!m) return fail('NOT_FOUND', '')
-      const run = runs.get(m.id)
-      if (
-        m.status !== 'PENDING_REVIEW' ||
-        !run ||
-        req.body?.run_id !== run.run_id ||
-        !req.body.reason
-      )
-        return fail('MODEL_STATE_CONFLICT', '')
-      if (!['PUBLISH', 'REJECT'].includes(String(req.body.decision)))
-        return fail('VALIDATION_FAILED', '')
-      m.status = req.body.decision === 'PUBLISH' ? 'ACTIVE' : 'DRAFT'
-      m.admission_valid = m.status === 'ACTIVE'
-      commands(m)
-      return receipt(m.id)
-    },
-  },
-  {
-    url: '/api/v1/models/:id/pricing/current',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const price = prices.get(modelId(req))
-      return success({
-        cost_status: price ? 'COMPLETE' : 'UNPRICED',
-        pricing_status: price ? 'CONFIGURED' : 'UNPRICED',
-        price: price
-          ? {
-              input_price: price.input_price,
-              output_price: price.output_price,
-              cached_input_price: price.cached_input_price,
-              currency: price.currency,
-              unit: price.unit,
-              coverage_status: 'COMPLETE_FOR_OPERATION',
-              pricing_profile_version: 'v1',
-              revision: '1',
-              uncovered_components: [],
-            }
-          : null,
-      })
-    },
-  },
-  {
-    url: '/api/v1/models/:id/pricing',
-    method: 'post',
-    response: (req: MockRequest) => {
-      if (!record(req)) return fail('NOT_FOUND', '')
-      savePrice(modelId(req), req.body as unknown as ModelPricingBody)
-      return receipt(modelId(req))
-    },
-  },
-  ...(['post', 'delete'] as const).map((method): MockMethod => ({
-    url:
-      method === 'post'
-        ? '/api/v1/logical-models/:logicalId/mount'
-        : '/api/v1/logical-models/:logicalId/mount/:modelId',
-    method,
-    response: (req: MockRequest) => {
-      const parts = (req.url || '').split('?')[0].split('/')
-      const l = logical.find((x) => x.id === parts[4])
-      const m = models.find(
-        (x) => x.id === (method === 'post' ? req.body?.physical_model_id : parts[6]),
-      )
-      if (!m || !l) return fail('NOT_FOUND', '')
-      m.mounts = m.mounts.filter((x) => x.logical_model_id !== l.id)
-      if (method === 'post')
-        m.mounts.push({
-          logical_model_id: l.id,
-          logical_name: l.logical_name,
-          display_name: l.display_name,
-          priority: Number(req.body?.priority || (logicalRecord(l.id)?.mounts.length || 0) + 1),
-        })
-      return receipt(m.id)
-    },
-  })),
-  ...(['providers', 'models', 'logical-models'] as const).map((resource): MockMethod => ({
-    url: `/api/v1/${resource}/:id/impact`,
-    method: 'get',
-    response: (req: MockRequest) =>
-      success({
-        active_job_count: '0',
-        blocking_codes: [],
-        configuration_version: '1',
-        grant_count: String(grants.filter((g) => g.logical_model_id === modelId(req)).length),
-        mount_count: String(
-          resource === 'logical-models'
-            ? (logicalRecord(modelId(req))?.mounts.length ?? 0)
-            : (record(req)?.mounts.length ?? 0),
+      const e = modelError(m)
+      if (e) {
+        errors.push(`${m.model_id_at_gateway}: ${e}`)
+        continue
+      }
+      models.unshift(m)
+      lifecycle(m, 'CREATE', '', usernameFromToken(req)!)
+      if (platformPrice(m).metric_rates.length) {
+        prices.set(m.id, [
+          { ...platformPrice(m), id: id(), version: 1, created_at: now(), created_by: 'system' },
+        ])
+      }
+      imported.push(m)
+    }
+    return success({ items: imported, errors })
+  }),
+  route('/models', 'get', (req) => {
+    const q = req.query ?? {}
+    const search = String(q.search ?? '').toLowerCase()
+    return success(
+      page(
+        models.filter(
+          (m) =>
+            (!q.provider_id || m.provider_id === q.provider_id) &&
+            (!q.status || m.status === q.status) &&
+            (!q.input_modality || m.input_modalities.includes(String(q.input_modality))) &&
+            (!q.output_modality || m.output_modalities.includes(String(q.output_modality))) &&
+            [
+              m.model_id_at_gateway,
+              m.model_id_at_provider,
+              providers.find((p) => p.id === m.provider_id)?.name ?? '',
+            ].some((s) => s.toLowerCase().includes(search)),
         ),
-        remote_obligation_count: '0',
-        target_id: modelId(req),
-      }),
-  })),
-  {
-    url: '/api/v1/models/:id/admission-tests/:runId',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const id = (req.url || '').split('?')[0].split('/').pop()
-      const run = (runHistory.get(modelId(req)) || []).find((item) => item.run_id === id)
-      return run ? success(runData(run, modelId(req))) : fail('NOT_FOUND', '')
-    },
-  },
-  {
-    url: '/api/v1/model-admission-jobs/:id/cancel',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const id = (req.url || '').split('/')[4]
-      const job = jobs.get(id)
-      if (!job) return fail('NOT_FOUND', '')
-      job.cancelRequested = true
-      return success({ job_id: id, cancel_requested: true, replayed: false })
-    },
-  },
-
-  {
-    url: '/api/v1/providers',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const body = req.body || {}
-      if (!body.name || !body.template_key) return fail('VALIDATION_FAILED', '')
-      const id = mockId(`provider-${++sequence}`)
-      const { secret_actions, reason: _reason, ...fields } = body
-      void _reason
-      mockProviders.push({
-        ...providerSeed,
-        ...fields,
-        id,
-        configured_secret_fields: Object.keys(secret_actions || {}),
-      } as ProviderItem)
-      return receipt(id)
-    },
-  },
-  ...(['get', 'put', 'delete'] as const).map((method): MockMethod => ({
-    url: '/api/v1/providers/:id',
-    method,
-    response: (req: MockRequest) => {
-      const provider = mockProviders.find((item) => item.id === modelId(req))
-      if (!provider) return fail('NOT_FOUND', '')
-      if (method === 'get')
-        return success({
-          ...provider,
-          related_models: page(
-            models
-              .filter((model) => model.provider_id === provider.id)
-              .map(({ id, invocation_api, model_id_at_provider, model_type, status }) => ({
-                id,
-                invocation_api,
-                model_id_at_provider,
-                model_type,
-                status,
-              })),
-            {
-              ...req,
-              query: { page: req.query?.models_page, page_size: req.query?.models_page_size },
-            },
-          ),
-        })
-      if (method === 'delete') mockProviders.splice(mockProviders.indexOf(provider), 1)
-      else {
-        const { secret_actions, reason: _reason, ...fields } = req.body || {}
-        void _reason
-        const actions = (secret_actions || {}) as Record<string, { operation: string }>
-        const configured = new Set(provider.configured_secret_fields)
-        for (const [key, action] of Object.entries(actions)) {
-          if (action.operation === 'CLEAR') configured.delete(key)
-          if (action.operation === 'REPLACE') configured.add(key)
-        }
-        Object.assign(provider, fields, { configured_secret_fields: [...configured] })
+        req,
+      ),
+    )
+  }),
+  ...(['post', 'put'] as const).map((method) =>
+    route(method === 'post' ? '/models' : '/models/:id', method, (req) => {
+      const b = structuredClone(req.body) as unknown as Model
+      const old = models.find((m) => m.id === pathId(req, 'models'))
+      const e = modelError(b, old)
+      if (e) return error(e)
+      if (old) {
+        const changed =
+          JSON.stringify(old.supported_invocation_apis) !==
+            JSON.stringify(b.supported_invocation_apis) ||
+          JSON.stringify(old.custom_invocation_apis) !== JSON.stringify(b.custom_invocation_apis) ||
+          old.provider_id !== b.provider_id ||
+          old.model_id_at_provider !== b.model_id_at_provider
+        b.status = old.status
+        b.health_status = old.health_status
+        b.health_checked_at = old.health_checked_at
+        b.created_at = old.created_at
+        b.admission_valid = old.admission_valid && !changed
+        b.lifecycle_events = old.lifecycle_events
+        Object.assign(old, b)
+        lifecycle(old, 'UPDATE', '', usernameFromToken(req)!)
+      } else {
+        b.id = id()
+        b.status = 'DRAFT'
+        b.health_status = 'UNKNOWN'
+        b.admission_valid = false
+        b.created_at = now()
+        models.unshift(b)
+        lifecycle(b, 'CREATE', '', usernameFromToken(req)!)
       }
-      return receipt(provider.id)
-    },
-  })),
-  {
-    url: '/api/v1/providers/:id/models/discover',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const provider = mockProviders.find((item) => item.id === modelId(req))
-      if (!provider) return fail('NOT_FOUND', '')
-      const id = mockId(`discovery-${++sequence}`)
-      discoveries.set(id, { providerId: provider.id, candidateId: mockId(`candidate-${sequence}`) })
-      return success({ discovery_id: id, replayed: false })
-    },
-  },
-  {
-    url: '/api/v1/model-discoveries/:id',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const id = modelId(req)
-      const found = discoveries.get(id)
-      if (!found) return fail('NOT_FOUND', '')
-      return success({
-        discovery_id: id,
-        provider_id: found.providerId,
-        provider_name: mockProviders.find((item) => item.id === found.providerId)!.name,
-        provider_generation: '1',
-        expires_at: '2099-01-01T00:00:00Z',
-        item_count: 1,
-        manual_entry_allowed: true,
-        truncated: false,
-        safe_error_code: null,
-        status: 'SUCCEEDED',
-      })
-    },
-  },
-  {
-    url: '/api/v1/model-discoveries/:id/items',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const found = discoveries.get(modelId(req))
-      if (!found) return fail('NOT_FOUND', '')
-      return success(
+      if (!old && platformPrice(b).metric_rates.length) {
+        const builtIn = platformPrice(b)
+        prices.set(b.id, [
+          { ...builtIn, id: id(), version: 1, created_at: now(), created_by: 'system' },
+        ])
+      }
+      return success(b)
+    }),
+  ),
+  route('/models/:id', 'get', (req) => {
+    const m = models.find((m) => m.id === pathId(req, 'models'))
+    return m ? success(m) : fail('NOT_FOUND', '')
+  }),
+  route('/models/:id', 'delete', (req) => {
+    const key = pathId(req, 'models')
+    const m = models.find((m) => m.id === key)
+    if (!m || m.status === 'ACTIVE' || !req.body?.reason) return error('DELETE_BLOCKED')
+    models.splice(models.indexOf(m), 1)
+    prices.delete(key)
+    permissions.delete(key)
+    runs.delete(key)
+    return success({ applied: true })
+  }),
+  route('/models/:id/status', 'put', (req) => {
+    const m = models.find((m) => m.id === pathId(req, 'models'))
+    const status = req.body?.status as Status
+    if (!m || !transitions[m.status].includes(status) || !req.body?.reason)
+      return error('STATUS_BLOCKED')
+    if (m.status === 'PENDING_REVIEW' && status === 'ACTIVE' && !m.admission_valid)
+      return error('TEST_REQUIRED')
+    m.status = status
+    lifecycle(m, 'STATUS', String(req.body.reason), usernameFromToken(req)!)
+    m.suspend_reason = String(req.body.reason)
+    if (status === 'DRAFT') m.admission_valid = false
+    return success(m)
+  }),
+]
+for (const purpose of ['ADMISSION', 'HEALTH'] as const) {
+  const segment = purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'
+  routes.push(
+    route(`/models/:id/${segment}`, 'post', (req) => {
+      const m = models.find((m) => m.id === pathId(req, 'models'))
+      if (!m || !m.provider_id || !m.supported_invocation_apis.length) return error('REQUIRED')
+      const list = runs.get(m.id) ?? []
+      if (list.some((r) => r.status === 'RUNNING')) return error('TEST_BUSY')
+      if (purpose === 'HEALTH' ? !['ACTIVE', 'SUSPENDED'].includes(m.status) : m.status !== 'DRAFT')
+        return error('STATUS_BLOCKED')
+      const keys = [
+        'CONNECTIVITY',
+        'PROTOCOL',
+        ...(m.tags.includes('STREAMING') ? ['STREAMING'] : []),
+      ].filter(
+        (k) =>
+          ['CONNECTIVITY', 'PROTOCOL'].includes(k) ||
+          (req.body?.selected_checks as string[]).includes(k),
+      )
+      const run: TestRun = {
+        id: id(),
+        model_id: m.id,
+        purpose,
+        trigger_type: 'MANUAL',
+        invocation_api: m.supported_invocation_apis[0]!,
+        invocation_apis: invocationTargets(m).map((a) => a.invocation_api),
+        billing_user: 'system',
+        billing_department: 'HEADQUARTERS',
+        status: 'RUNNING',
+        checks: invocationTargets(m).flatMap((api) =>
+          keys.map((key) => ({
+            key,
+            invocation_api: api.invocation_api,
+            upstream_path: api.path,
+            status: 'PENDING' as const,
+            duration_ms: 0,
+            detail: '',
+          })),
+        ),
+        started_at: now(),
+        completed_at: null,
+        triggered_by: usernameFromToken(req)!,
+      }
+      list.unshift(run)
+      runs.set(m.id, list)
+      polls.set(run.id, 0)
+      if (purpose === 'HEALTH') m.health_status = 'CHECKING'
+      else {
+        m.status = 'TESTING'
+        lifecycle(m, 'STATUS', '', usernameFromToken(req)!)
+      }
+      return success(run)
+    }),
+    route(`/models/:id/${segment}`, 'get', (req) =>
+      success(
         page(
-          [
-            {
-              candidate_id: found.candidateId,
-              model_id_at_provider: 'mock-discovered-model',
-              display_name: 'Mock discovered model',
-              model_type: 'LLM',
-              auto_create_allowed: true,
-              manual_confirmation_reason: null,
-              declared_capabilities: { ...capabilities },
-              logical_suggestions: [],
-            },
-          ],
+          (runs.get(pathId(req, 'models')) ?? [])
+            .filter((r) => r.purpose === purpose)
+            .slice(0, purpose === 'HEALTH' ? 5 : 50),
           req,
         ),
-      )
-    },
-  },
-  {
-    url: '/api/v1/providers/:id/models/import',
-    method: 'post',
-    response: (req: MockRequest) => {
-      const body = req.body || {}
-      const items = body.items as {
-        source: string
-        candidate_id?: string
-        model_id_at_provider?: string
-        model_type?: PhysicalModelItem['model_type']
-        invocation_api: string
-        operation_profile: string
-        invocation_config: PhysicalModelItem['invocation_config']
-        logical_binding: { mode: string }
-      }[]
-      const provider = mockProviders.find((item) => item.id === modelId(req))
-      if (!provider) return fail('NOT_FOUND', '')
+      ),
+    ),
+    route(`/models/:id/${segment}/:run`, 'get', (req) => {
+      const key = pathId(req, 'models')
+      const run = (runs.get(key) ?? []).find((r) => r.id === req.url?.split('?')[0]?.split('/')[6])
+      if (!run) return fail('NOT_FOUND', '')
+      if (run.status === 'RUNNING') {
+        const count = (polls.get(run.id) ?? 0) + 1
+        polls.set(run.id, count)
+        advance(run, count)
+      }
+      return success(run)
+    }),
+  )
+}
+routes.push(
+  route('/models/:id/permissions', 'get', (req) =>
+    success(
+      page(
+        (permissions.get(pathId(req, 'models')) ?? [])
+          .map((grant) => ({
+            ...grant,
+            subject_name: subjectName(grant.subject_type, grant.subject_id, grant.subject_name),
+          }))
+          .filter((p) => !req.query?.subject_type || p.subject_type === req.query.subject_type),
+        req,
+      ),
+    ),
+  ),
+  route('/models/:id/permissions', 'post', (req) => {
+    const key = pathId(req, 'models')
+    const list = permissions.get(key) ?? []
+    for (const item of req.body?.items as Permission[])
       if (
-        !Array.isArray(items) ||
-        !items.length ||
-        items.length > 100 ||
-        items.some(
-          (item) =>
-            !item.invocation_api ||
-            !item.operation_profile ||
-            item.logical_binding?.mode !== 'NONE',
-        )
+        !list.some((x) => x.subject_type === item.subject_type && x.subject_id === item.subject_id)
       )
-        return fail('VALIDATION_FAILED', '')
-      const found = discoveries.get(String(body.discovery_id))
-      if (
-        items.some(
-          (item) =>
-            item.source === 'DISCOVERY' &&
-            (!found || found.providerId !== provider.id || item.candidate_id !== found.candidateId),
-        )
+        list.push({ ...item, id: id(), physical_model_id: key, created_at: now() })
+    permissions.set(key, list)
+    return success({ applied: true })
+  }),
+  route('/models/:id/permissions', 'delete', (req) => {
+    if (!req.body?.reason) return error('REASON_REQUIRED')
+    const key = pathId(req, 'models')
+    permissions.set(
+      key,
+      (permissions.get(key) ?? []).filter((p) => !(req.body?.ids as string[]).includes(p.id)),
+    )
+    return success({ applied: true })
+  }),
+  route('/models/:id/pricing/current', 'get', (req) =>
+    success(
+      prices.get(pathId(req, 'models'))?.[0] ??
+        platformPrice(models.find((m) => m.id === pathId(req, 'models'))!),
+    ),
+  ),
+  route('/models/:id/pricing', 'get', (req) =>
+    success(page(prices.get(pathId(req, 'models')) ?? [], req)),
+  ),
+  route('/models/:id/pricing', 'post', (req) => {
+    const body = req.body as unknown as Pricing
+    const model = models.find((m) => m.id === pathId(req, 'models'))
+    if (!model) return fail('NOT_FOUND', '')
+    const allowed = platformPrice(model)
+      .metric_rates.map((r) => r.metric_key)
+      .sort()
+    if (
+      JSON.stringify(body.metric_rates.map((r) => r.metric_key).sort()) !== JSON.stringify(allowed)
+    )
+      return error('invalidPrice')
+    if (body.source_type === 'BUILT_IN') {
+      return success(savePrice(model.id, platformPrice(model), usernameFromToken(req)!))
+    }
+    body.source_type = 'ENTERPRISE_CUSTOM'
+    const problem = pricingError(body)
+    return problem
+      ? error(problem)
+      : success(savePrice(pathId(req, 'models'), body, usernameFromToken(req)!))
+  }),
+  route('/models/:id/pricing/sync', 'post', (req) => {
+    const key = pathId(req, 'models')
+    const m = models.find((m) => m.id === key)
+    if (!m) return fail('NOT_FOUND', '')
+    if (
+      !['gpt-4o', 'gpt-4o-mini', 'qwen-plus', 'qwen-max', 'o3-mini'].includes(
+        m.model_id_at_provider,
       )
-        return fail('VALIDATION_FAILED', '')
-      const ids = items.map((item) => {
-        const id = mockId(`imported-model-${++sequence}`)
-        models.unshift(
-          commands({
-            ...models[0],
-            id,
-            provider_id: provider.id,
-            model_id_at_provider:
-              item.source === 'DISCOVERY' ? 'mock-discovered-model' : item.model_id_at_provider!,
-            model_type: item.model_type || 'LLM',
-            invocation_api: item.invocation_api,
-            operation_profile: item.operation_profile,
-            invocation_config: item.invocation_config,
-            status: 'DRAFT',
-            admission_valid: false,
-            mounts: [],
-            declared_capabilities: { ...capabilities },
-            description: '',
-          }),
-        )
-        return id
-      })
-      const id = mockId(`import-batch-${++sequence}`)
-      importBatches.set(id, { providerId: provider.id, ids })
-      return success({ accepted: true, batch_id: id, replayed: false })
-    },
-  },
-  {
-    url: '/api/v1/model-import-batches/:id',
-    method: 'get',
-    response: (req: MockRequest) => {
-      const id = modelId(req)
-      const batch = importBatches.get(id)
-      if (!batch) return fail('NOT_FOUND', '')
-      return success({
-        batch_id: id,
-        provider_id: batch.providerId,
-        provider_name: mockProviders.find((provider) => provider.id === batch.providerId)!.name,
-        cancel_requested: false,
-        kind: 'IMPORT',
-        status: 'SUCCEEDED',
-        next_index: batch.ids.length,
-        stop_reason: null,
-        remote: { cleanup_required: false, pending_count: 0, unknown_count: 0 },
-        items: batch.ids.map((physical_model_id, index) => ({
-          index,
-          job_id: null,
-          physical_model_id,
-          model_id_at_provider: models.find((model) => model.id === physical_model_id)!
-            .model_id_at_provider,
-          safe_error_code: null,
-          status: 'SUCCEEDED',
-        })),
-      })
-    },
-  },
-]
-export default routes.map((route) => {
-  const handler = route.response
-  return {
-    ...route,
-    response: function (this: RespThisType, req: MockRequest) {
-      const result = !checkToken(req)
-        ? unauthorized()
-        : route.method !== 'get' && !checkCsrf(req)
-          ? fail('CSRF_INVALID', '')
-          : handler(req)
-      this.res.statusCode =
-        result.code === 'OK'
-          ? 200
-          : (
-              {
-                UNAUTHENTICATED: 401,
-                NOT_FOUND: 404,
-                MODEL_STATE_CONFLICT: 409,
-                NAME_CONFLICT: 409,
-                VALIDATION_FAILED: 422,
-                CSRF_INVALID: 403,
-              } as Record<string, number>
-            )[result.code] || 400
-      return result
-    },
-  }
-}) as MockMethod[]
+    )
+      return error('NO_PLATFORM_PRICE')
+    return success(
+      savePrice(
+        key,
+        {
+          ...platformPrice(m),
+          sync_mode: prices.get(key)?.[0]?.sync_mode ?? 'MANUAL',
+        },
+        usernameFromToken(req)!,
+      ),
+    )
+  }),
+)
+export default auditedMock(routes)

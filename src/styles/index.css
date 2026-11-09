@@ -1,10 +1,22 @@
 :root {
+  /* 模型接入宽表在窄桌面保留列宽并横向滚动；原型包含名称、模态与操作等九列，无对应 TDesign 尺寸 token。 */
+  --model-tab-indicator-width: 2px; /* 模型供应商选项卡选中指示线 */
+  /* 图 7 计费单元的最小可读宽度，窄抽屉自动排为一列，TDesign 无对应业务尺寸。 */
+  --model-price-cell-min-width: 300px;
+  --model-access-table-width: 1400px;
+  /* 原型弹窗将长表单限制在视口内，内容滚动且确认按钮始终可见；无对应 TDesign 业务高度 token。 */
+  --model-access-dialog-body-height: 65vh;
   /* 品牌色：与 TDesign Token 对齐，统一在此覆盖 */
   --brand-primary: var(--td-brand-color);
 
   --layout-header-height: 64px;
   --layout-aside-width: 232px;
   --layout-aside-width-collapsed: 64px;
+}
+
+.model-access-dialog .t-dialog__body {
+  max-height: var(--model-access-dialog-body-height);
+  overflow-y: auto;
 }
 
 /* 原型浅色页面底色实测值；在主题入口统一覆盖 TDesign 页面背景 token，
@@ -64,15 +76,19 @@ body {
 }
 
 /* 部门筛选业务宽度：TDesign 无对应宽度 token。
- * 输入项以 280px 为换行基准并弹性占满父容器；面板取 640px 为十层缩进预留名称空间，
+ * 输入项固定以 280px 为宽度上限，窄屏允许收缩换行；面板取 640px 为十层缩进预留名称空间，
  * 组件读取此上限，按容器内容区与主题安全边距计算实际 px 宽度。
  */
 :root {
   --department-filter-field-basis: 280px;
   --department-tree-popup-max-width: 640px;
+  /* Key 表格最小宽度为各固定列与名称列可读宽度之和，避免固定脱敏列被按比例拉伸。 */
+  --managed-key-table-width: 1728px;
+  --personal-key-table-width: 1250px;
 }
 .managed-key-panel .managed-key-department {
-  flex: 2 1 var(--department-filter-field-basis);
+  flex: 0 1 var(--department-filter-field-basis);
+  width: var(--department-filter-field-basis);
   min-width: 0;
   max-width: 100%;
 }
@@ -108,6 +124,9 @@ body {
 /* 创建/编辑模型原型弹窗约 760 CSS px，准入结果使用相同宽度；无对应 TDesign 宽度 token。 */
 :root {
   --physical-model-dialog-width: 760px;
+  /* 模型配置新原型抽屉宽度及固定单价控件宽度。检测弹窗保持独立尺寸。 */
+  --physical-model-form-width: 900px;
+  --model-price-input-width: 280px;
   /* 发起检测弹窗按原型约 560 CSS px；额外额度引用由用户确认临时增加。 */
   --admission-start-dialog-width: 560px;
 }
@@ -115,4 +134,23 @@ body {
 /* 用户管理部门侧栏沿用页面原有 260px 宽度，无对应 TDesign 业务宽度 token。 */
 :root {
   --users-sidebar-width: 260px;
+}
+
+/* 系统日志原型：内容宽 1888px、筛选宽 144px、搜索宽 164px、详情抽屉 640px、配置弹窗 480px；TDesign 无对应业务尺寸 token。 */
+:root {
+  --system-log-page-width: 1888px;
+  --system-log-filter-width: 144px;
+  --system-log-search-width: 164px;
+  --system-log-table-width: 1180px;
+  --system-log-drawer-width: min(640px, 100vw);
+  --system-log-config-width: min(480px, 94vw);
+  --system-log-label-width: 112px;
+}
+
+/* Dialog and drawer confirmation controls share the bottom-right alignment. */
+.t-dialog__footer,
+.t-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }

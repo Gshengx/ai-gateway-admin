@@ -154,6 +154,26 @@ instance.interceptors.request.use(async (config) => {
   const method = (config.method ?? 'get').toUpperCase()
   const locale = getCurrentLocale()
 
+  // 空筛选不参与请求；保留有意义的 0 和 false，不影响请求体中的清空操作。
+  const hasQueryValue = (value: unknown) =>
+    value !== undefined &&
+    value !== null &&
+    !(typeof value === 'string' && value.trim() === '') &&
+    !(Array.isArray(value) && value.length === 0)
+  if (config.params instanceof URLSearchParams) {
+    const params = new URLSearchParams(config.params)
+    for (const key of new Set(params.keys())) {
+      const values = params.getAll(key).filter(hasQueryValue)
+      params.delete(key)
+      values.forEach((value) => params.append(key, value))
+    }
+    config.params = params
+  } else if (config.params && typeof config.params === 'object') {
+    config.params = Object.fromEntries(
+      Object.entries(config.params).filter(([, value]) => hasQueryValue(value)),
+    )
+  }
+
   // 国际化：后端按 Accept-Language 解析 display_name 等本地化字段
   config.headers['Accept-Language'] = locale
   // 国际化入参：读接口统一追加 locale（调用方可传 skipLocale 关闭）
@@ -164,7 +184,10 @@ instance.interceptors.request.use(async (config) => {
       !(config.params instanceof URLSearchParams)
         ? config.params
         : {}
-    config.params = { locale, ...params }
+    config.params =
+      config.params instanceof URLSearchParams
+        ? new URLSearchParams([['locale', locale], ...config.params.entries()])
+        : { locale, ...params }
   }
 
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {

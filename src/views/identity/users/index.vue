@@ -372,6 +372,7 @@ import { copyText } from '@/utils/clipboard'
 import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import {
   MessagePlugin,
   type DropdownProps,
@@ -404,6 +405,7 @@ import {
   getRoleOptionsApi,
   getUserRoleOptionsApi,
   getUserListApi,
+  getUserDetailApi,
   placeDepartmentApi,
   previewBatchDeleteUsersApi,
   resetUserPasswordApi,
@@ -1081,6 +1083,8 @@ function onEdit(row: UserItem) {
   drawerVisible.value = true
 }
 
+const route = useRoute()
+const router = useRouter()
 const detailVisible = ref(false)
 const detailUser = ref<UserItem | null>(null)
 
@@ -1089,6 +1093,31 @@ function onView(row: UserItem) {
   detailUser.value = row
   detailVisible.value = true
 }
+
+// Deep links from API Key ownership open the same read-only user drawer.
+watch(
+  () => route.query.user,
+  async (value, _previous, onCleanup) => {
+    let stale = false
+    onCleanup(() => {
+      stale = true
+    })
+    if (typeof value !== 'string' || !value) return
+    try {
+      const result = await getUserDetailApi(value)
+      if (!stale) onView(result.user)
+    } catch {
+      // The request layer reports unavailable or out-of-scope users.
+    }
+  },
+  { immediate: true },
+)
+watch(detailVisible, (visible) => {
+  if (visible || !route.query.user) return
+  const query = { ...route.query }
+  delete query.user
+  void router.replace({ query })
+})
 
 async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
   submitting.value = true

@@ -55,6 +55,7 @@ function derivePermissions(capabilities: Capability[]): string[] {
   }
   return codes
 }
+let permissionRequest: { key: string; promise: Promise<void> } | undefined
 
 export const useUserStore = defineStore('user', {
   state: (): UserState => ({
@@ -118,6 +119,17 @@ export const useUserStore = defineStore('user', {
       return this.loadContext()
     },
     async fetchUserInfo() {
+      const key = `${this.context.session?.user_id}:${this.context.session?.expires_at}:${getCurrentLocale()}`
+      if (permissionRequest?.key === key) return permissionRequest.promise
+      const pending = this.fetchPermissionSnapshot()
+      permissionRequest = { key, promise: pending }
+      try {
+        await pending
+      } finally {
+        if (permissionRequest?.promise === pending) permissionRequest = undefined
+      }
+    },
+    async fetchPermissionSnapshot() {
       const session = this.context.session
       if (!session || session.scope !== 'FULL' || session.gate !== 'READY') {
         throw new Error('Session gate is not ready')
@@ -141,7 +153,8 @@ export const useUserStore = defineStore('user', {
         if (
           epoch !== this.permissionEpoch ||
           locale !== getCurrentLocale() ||
-          session !== this.context.session
+          session.user_id !== this.context.session?.user_id ||
+          session.expires_at !== this.context.session?.expires_at
         )
           return
         validatePermissions(permissions)
@@ -190,6 +203,7 @@ export const useUserStore = defineStore('user', {
       }
     },
     invalidatePermissions() {
+      permissionRequest = undefined
       this.permissionEpoch++
       this.permissionsReady = false
       this.permissionsLoading = false

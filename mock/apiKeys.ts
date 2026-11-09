@@ -1,3 +1,5 @@
+import { apiKeys, runtimeState, nextSequence, directory } from './_runtime'
+import { hasAcceptedTerms } from './terms'
 import type { RespThisType } from 'vite-plugin-mock'
 import { managedKeyOwners, managedKeyDepartmentIds } from './identity'
 import type {
@@ -11,6 +13,7 @@ import type {
 } from '../src/api/modules/apiKeys'
 import {
   checkToken,
+  auditedMock,
   checkCsrf,
   usernameFromToken,
   mockId,
@@ -23,30 +26,18 @@ import {
 } from './_utils'
 
 // 与现有 mock 一致：仅模拟服务端签发的 Key，不在页面生成 Key。
-const stores = new Map<string, ApiKeyItem[]>()
-const replays = new Map<string, CreateMyKeyResult | UpdateMyKeyResult | DeleteMyKeyResult>()
-let sequence = 0
+const replays = runtimeState(
+  'keyReplays',
+  () => new Map<string, CreateMyKeyResult | UpdateMyKeyResult | DeleteMyKeyResult>(),
+)
 const activeLimit = 10
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value)
 function keysFor(user: string) {
-  if (!stores.has(user)) {
-    stores.set(
-      user,
-      Array.from({ length: 24 }, (_, i): ApiKeyItem => ({
-        id: mockId(`${user}-key-${i}`),
-        user_id: user,
-        name: `Client ${i + 1}`,
-        masked_value: `sk-mock-****${String(i + 1).padStart(4, '0')}`,
-        status: i < 3 ? 'ACTIVE' : 'DISABLED',
-        created_at: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
-        updated_at: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
-        usage_source: 'NOT_CONNECTED',
-        last_used_at: null,
-        last_used_ip: null,
-      })),
-    )
-  }
-  return stores.get(user)!
+  return apiKeys.filter((key) => key.user_id === user)
+}
+function currentUserId(req: MockRequest) {
+  const username = usernameFromToken(req)!
+  return directory.get(username)?.id ?? mockId(username)
 }
 function replayId(req: MockRequest, user: string) {
   const key = req.headers?.['idempotency-key']
@@ -60,7 +51,7 @@ function validName(req: MockRequest): string | null {
 }
 
 // 管理端与用户详情的 Key 列表共用这一个数据源，不重复注册 GET /api-keys。
-const managedKeys: ApiKeyItem[] = managedKeyOwners('zh-CN').flatMap((user, index) =>
+const seedKeys: ApiKeyItem[] = managedKeyOwners('zh-CN').flatMap((user, index) =>
   Array.from({ length: index === 0 ? 3 : index % 4 }, (_, i) => ({
     id: mockId(`managed-key-${user.id}-${i}`),
     user_id: user.id,
@@ -75,10 +66,16 @@ const managedKeys: ApiKeyItem[] = managedKeyOwners('zh-CN').flatMap((user, index
     last_used_ip: (index + i) % 5 === 0 ? null : `10.21.${index % 20}.${i + 1}`,
   })),
 )
-const managedReplays = new Map<
-  string,
-  { body: string; result: ManagedKeyMutationResult | ManagedKeysBatchResult }
->()
+const managedKeys = apiKeys
+runtimeState('apiKeySeeds', () => {
+  apiKeys.push(...seedKeys)
+  return true
+})
+const managedReplays = runtimeState(
+  'managedKeyReplays',
+  () =>
+    new Map<string, { body: string; result: ManagedKeyMutationResult | ManagedKeysBatchResult }>(),
+)
 function managedItems(locale: string): ManagedKeyItem[] {
   const owners = managedKeyOwners(locale)
   const mandatory =
@@ -93,7 +90,7 @@ function managedItems(locale: string): ManagedKeyItem[] {
     const reasons = [
       ...(owner.status === 'DISABLED' ? ['USER_DISABLED'] : []),
       // 确定性覆盖条款未确认及 Key 禁用返回 BLOCKED + KEY_DISABLED 的分支。
-      ...(mandatory && owners.indexOf(owner) % 11 === 4 ? ['TERMS_REQUIRED'] : []),
+      ...(mandatory && !hasAcceptedTerms(owner.username) ? ['TERMS_REQUIRED'] : []),
       ...(key.status === 'DISABLED' ? ['KEY_DISABLED'] : []),
     ]
     return [
@@ -253,7 +250,7 @@ const methods: MockMethod[] = [
     url: '/api/v1/me/keys',
     method: 'get',
     response: (req: MockRequest) => {
-      const user = mockId(usernameFromToken(req)!)
+      const user = currentUserId(req)
       const all = keysFor(user)
       const search = first(req.query?.search) || ''
       const status = first(req.query?.status) || ''
@@ -291,7 +288,7 @@ const methods: MockMethod[] = [
     url: '/api/v1/me/keys',
     method: 'post',
     response: (req: MockRequest) => {
-      const user = mockId(usernameFromToken(req)!)
+      const user = currentUserId(req)
       const replay = replayId(req, user)
       const previous = replays.get(replay) as CreateMyKeyResult | undefined
       if (previous)
@@ -301,7 +298,7 @@ const methods: MockMethod[] = [
       const keys = keysFor(user)
       if (keys.filter((key) => key.status === 'ACTIVE').length >= activeLimit)
         return fail('KEY_LIMIT_EXCEEDED', '')
-      sequence += 1
+      const sequence = nextSequence('apiKey')
       const id = mockId(`${user}:created:${sequence}`)
       const plaintext = `sk-mock-${mockId(`${id}:secret`)}`
       const now = new Date().toISOString()
@@ -317,7 +314,7 @@ const methods: MockMethod[] = [
         last_used_at: null,
         last_used_ip: null,
       }
-      keys.unshift(key)
+      apiKeys.unshift(key)
       const result: CreateMyKeyResult = {
         key: { ...key },
         plaintext,
@@ -333,7 +330,7 @@ const methods: MockMethod[] = [
     url: '/api/v1/me/keys/:key_id',
     method: 'patch',
     response: (req: MockRequest) => {
-      const user = mockId(usernameFromToken(req)!)
+      const user = currentUserId(req)
       const replay = replayId(req, user)
       const previous = replays.get(replay) as UpdateMyKeyResult | undefined
       if (previous) return success({ ...previous, replayed: true })
@@ -352,7 +349,7 @@ const methods: MockMethod[] = [
     url: '/api/v1/me/keys/:key_id',
     method: 'delete',
     response: (req: MockRequest) => {
-      const user = mockId(usernameFromToken(req)!)
+      const user = currentUserId(req)
       const id = pathId(req)
       const replay = replayId(req, user)
       const previous = replays.get(replay) as DeleteMyKeyResult | undefined
@@ -360,14 +357,17 @@ const methods: MockMethod[] = [
       const keys = keysFor(user)
       const index = keys.findIndex((key) => key.id === id)
       if (index < 0) return fail('NOT_FOUND', '')
-      keys.splice(index, 1)
+      apiKeys.splice(
+        apiKeys.findIndex((key) => key.id === id),
+        1,
+      )
       const result: DeleteMyKeyResult = { key_id: id, applied: true, replayed: false }
       if (replay) replays.set(replay, result)
       return success(result)
     },
   },
 ]
-export default methods.map((method) => {
+export default auditedMock(methods).map((method) => {
   const handler = method.response
   return {
     ...method,

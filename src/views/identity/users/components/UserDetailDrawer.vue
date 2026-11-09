@@ -118,16 +118,12 @@
 
         <t-tab-panel value="models" :label="t('users.detail.tabs.models', { n: modelRows.length })">
           <div v-if="canWriteUsers" class="model-toolbar">
-            <t-select
+            <ModelGrantSelect
+              :key="detail.id"
               v-model="selectedModelIds"
-              multiple
-              filterable
-              :input-props="{ name: 'user-model-filter', autocomplete: 'off' }"
-              clearable
-              class="model-select"
+              :locked-ids="directModelIdList"
               :disabled="grantDialog.loading"
-              :placeholder="t('users.detail.models.selectPlaceholder')"
-              :options="modelSelectOptions"
+              @names="Object.assign(modelNames, $event)"
             />
             <t-button
               v-if="canWriteUsers"
@@ -321,7 +317,7 @@
         >
           <ul class="selected-models">
             <li v-for="id in grantDialog.modelIds" :key="id">
-              {{ modelSelectOptions.find((item) => item.value === id)?.label || id }}
+              {{ modelNames[id] || id }}
             </li>
           </ul>
         </t-form-item>
@@ -345,6 +341,7 @@
 </template>
 
 <script setup lang="ts">
+import ModelGrantSelect from './ModelGrantSelect.vue'
 import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -352,13 +349,11 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import type { PageInfo, PrimaryTableCol } from 'tdesign-vue-next'
 
 import {
-  getLogicalModelOptionsApi,
   getUserApiKeysApi,
   getUserDetailApi,
   getUserModelGrantSourcesApi,
   getUserModelGrantsApi,
   setUserModelGrantsApi,
-  type LogicalModelOption,
   type UserApiKeyItem,
   type UserItem,
   type UserModelGrant,
@@ -395,7 +390,7 @@ const modelSources = ref<UserModelGrantSource[]>([])
 /** 用户级直接授权（F-USER-09：取消授权只能作用于直接授权） */
 const directGrants = ref<UserModelGrant[]>([])
 const grantsReady = ref(false)
-const modelOptions = ref<LogicalModelOption[]>([])
+const modelNames = ref<Record<string, string>>({})
 const keys = ref<UserApiKeyItem[]>([])
 const keySearch = ref('')
 const selectedModelIds = ref<string[]>([])
@@ -426,18 +421,7 @@ const canWriteKeys = computed(() => canWriteResource(userStore.permissions, 'ide
 const canWriteUsers = computed(() => canWriteResource(userStore.permissions, 'identity.users'))
 
 const directModelIds = computed(() => new Set(directGrants.value.map((item) => item.model.id)))
-
-/** 模型选择列表展示系统中所有已上架模型 */
-const activeModelOptions = computed(() =>
-  modelOptions.value.filter((item) => item.status === 'ACTIVE'),
-)
-
-const modelSelectOptions = computed(() =>
-  activeModelOptions.value.map((item) => ({
-    label: item.localized_name || item.display_name,
-    value: item.id,
-  })),
-)
+const directModelIdList = computed(() => [...directModelIds.value])
 
 const grantDialog = reactive({
   visible: false,
@@ -723,7 +707,7 @@ watch(
     modelSources.value = []
     directGrants.value = []
     grantsReady.value = false
-    modelOptions.value = []
+    modelNames.value = {}
     keys.value = []
     termsLoading.value = true
     termsInfo.value = null
@@ -754,10 +738,6 @@ watch(
         modelSources.value = result
       }),
       loadModelGrants(userId, generation),
-      collectPages(getLogicalModelOptionsApi, () => !stale).then((result) => {
-        if (stale) return
-        modelOptions.value = result
-      }),
     ]
     if (canViewKeys.value) {
       tasks.push(loadKeys(userId))

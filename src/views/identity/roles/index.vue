@@ -618,7 +618,7 @@ onMounted(() => {
 }
 .permission-actions {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   gap: var(--td-comp-margin-s);
 }
 .permission-drawer .permission-actions :deep(.t-button) {

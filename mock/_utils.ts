@@ -1,5 +1,6 @@
 import type { MockMethod, RespThisType } from 'vite-plugin-mock'
 import { randomBytes, createHash } from 'node:crypto'
+import { directory, operationLogs, nextSequence, existingState, apiKeys } from './_runtime'
 
 export type { MockMethod }
 
@@ -50,10 +51,14 @@ export function issueToken(username: string): string {
   return token
 }
 
-export function revokeAllTokens(): void {
-  validTokens.clear()
-  tokenUsernames.clear()
-  csrfTokens.clear()
+export function revokeUserTokens(username: string): void {
+  for (const [token, owner] of tokenUsernames) {
+    if (owner !== username) continue
+    validTokens.delete(token)
+    tokenUsernames.delete(token)
+    csrfTokens.delete(token)
+    fullSessions.delete(token)
+  }
 }
 
 /** vite-plugin-mock 传入的请求对象（仅声明本文件用到的字段） */
@@ -75,7 +80,9 @@ function sessionToken(req: MockRequest): string {
   )
 }
 export function checkToken(req: MockRequest): boolean {
-  return validTokens.has(sessionToken(req))
+  const username = usernameFromToken(req)
+  const user = username ? directory.get(username) : undefined
+  return validTokens.has(sessionToken(req)) && (!user || user.status === 'ACTIVE')
 }
 const csrfStore = globalThis as typeof globalThis & { __aisMockCsrf?: Map<string, string> }
 const csrfTokens = (csrfStore.__aisMockCsrf ??= new Map<string, string>())
@@ -98,15 +105,17 @@ export function mockCookie(res: RespThisType['res'], username?: string): string 
   return token
 }
 const gateStore = globalThis as typeof globalThis & {
-  __aisMockNeedsPassword?: boolean
+  __aisMockPasswordUsers?: Set<string>
   __aisMockFullSessions?: Set<string>
 }
 const fullSessions = (gateStore.__aisMockFullSessions ??= new Set<string>())
-export function setMockPasswordRequired(value: boolean) {
-  gateStore.__aisMockNeedsPassword = value
+const passwordUsers = (gateStore.__aisMockPasswordUsers ??= new Set<string>())
+export function setMockPasswordRequired(username: string, value: boolean) {
+  if (value) passwordUsers.add(username)
+  else passwordUsers.delete(username)
 }
-export function mockPasswordRequired() {
-  return gateStore.__aisMockNeedsPassword === true
+export function mockPasswordRequired(req: MockRequest) {
+  return passwordUsers.has(usernameFromToken(req) ?? '')
 }
 export function upgradeMockSession(req: MockRequest, res: RespThisType['res']): MockRequest {
   if (fullSessions.has(sessionToken(req))) return req
@@ -121,7 +130,7 @@ export function upgradeMockSession(req: MockRequest, res: RespThisType['res']): 
 }
 /** Preserve real HTTP errors for the authentication contract. */
 export function authMock(methods: MockMethod[]): MockMethod[] {
-  return methods.map((method) => {
+  return auditedMock(methods).map((method) => {
     const handler = method.response
     return {
       ...method,
@@ -144,6 +153,163 @@ export function authMock(methods: MockMethod[]): MockMethod[] {
                       : code === 'AUTHENTICATION_BUSY'
                         ? 503
                         : 403
+        return result
+      },
+    }
+  })
+}
+
+interface AuditEntity {
+  id: string
+  name?: string
+  display_name?: string
+  model_id_at_gateway?: string
+  status?: string
+}
+function auditEntity(group: string, id: string): AuditEntity | undefined {
+  if (group === 'users') return [...directory.values()].find((user) => user.id === id)
+  if (group === 'api-keys' || group === 'keys') return apiKeys.find((key) => key.id === id)
+  if (group === 'models' || group === 'providers')
+    return existingState<Record<string, AuditEntity[]>>('modelAccess')?.[group]?.find(
+      (item) => item.id === id,
+    )
+  if (group === 'groups' || group === 'departments')
+    return existingState<AuditEntity[]>(group)?.find((item) => item.id === id)
+  return undefined
+}
+/** Shared audit for successful mutations; never copy request credentials into logs. */
+export function auditedMock(methods: MockMethod[]): MockMethod[] {
+  return methods.map((method) => {
+    if (!method.response || method.method === 'get') return method
+    const handler = method.response
+    return {
+      ...method,
+      response(this: RespThisType, req: MockRequest) {
+        const username = usernameFromToken(req) ?? String(req.body?.username ?? 'system')
+        const resourcePath = String(req.url ?? method.url)
+          .split('?')[0]
+          .replace('/api/v1/', '')
+          .split('/')
+        const routeGroup = resourcePath[0] === 'me' ? resourcePath[1] : resourcePath[0]
+        const parentId = resourcePath[resourcePath[0] === 'me' ? 2 : 1]
+        const entity = auditEntity(routeGroup, parentId)
+        const before = entity ? { ...entity } : undefined
+        const beforeStatus = before?.status
+        const result = handler.call(this, req)
+        const path = String(req.url ?? method.url).split('?')[0]
+        if (
+          result.code !== 'OK' ||
+          result.data?.replayed ||
+          result.data?.changed === false ||
+          /preview|options|balance-query/.test(path)
+        )
+          return result
+        const parts = path.replace('/api/v1/', '').split('/')
+        const group = parts[0] === 'me' ? parts[1] : parts[0]
+        const resource =
+          (
+            {
+              users: 'user',
+              groups: 'group',
+              departments: 'department',
+              models: 'model',
+              providers: 'provider',
+              keys: 'api_key',
+              'api-keys': 'api_key',
+              auth: 'session',
+              settings: 'password_policy',
+              terms: 'terms',
+            } as Record<string, string>
+          )[group] ?? group
+        const module = ['models', 'providers'].includes(group)
+          ? 'model'
+          : ['settings', 'prototype'].includes(group)
+            ? 'system'
+            : 'identity'
+        const last = parts[parts.length - 1]
+        const operation = ['login', 'logout', 'enable', 'disable', 'import', 'export'].includes(
+          last,
+        )
+          ? last
+          : method.method === 'delete' || last === 'delete'
+            ? 'delete'
+            : ['admission-tests', 'health-checks'].includes(last)
+              ? 'execute'
+              : ['settings', 'prototype'].includes(group)
+                ? 'configure'
+                : method.method === 'post' && parts.length === (parts[0] === 'me' ? 2 : 1)
+                  ? 'create'
+                  : 'update'
+        const data = result.data ?? {}
+        const target = data.user ?? data.key ?? data
+        const resourceId =
+          before?.id ??
+          target.physical_model_id ??
+          target.id ??
+          data.user_id ??
+          data.group_id ??
+          data.key_id ??
+          parentId ??
+          null
+        const owner = directory.get(username)
+        const live = auditEntity(group, resourceId)
+        const name = String(
+          live?.model_id_at_gateway ??
+            live?.name ??
+            live?.display_name ??
+            before?.model_id_at_gateway ??
+            before?.name ??
+            before?.display_name ??
+            target.model_id_at_gateway ??
+            target.name ??
+            target.display_name ??
+            req.body?.name ??
+            resourceId ??
+            resource,
+        )
+        if (
+          group === 'terms' &&
+          last === 'accept' &&
+          operationLogs.some((log) => log.resource_id === target.id)
+        )
+          return result
+        const time = new Date().toISOString()
+        operationLogs.unshift({
+          event_id: mockId(`operation-${nextSequence('operation')}`),
+          occurred_at: time,
+          action: `${module}.${resource}.${operation}`,
+          actor_user_id: owner?.id ?? mockId(username),
+          actor_username_snapshot: username,
+          actor_display_name_snapshot: owner?.display_name ?? username,
+          resource_id: resourceId,
+          resource_type: resource,
+          target_display_name_snapshot: name,
+          outcome: 'SUCCEEDED',
+          reason: typeof req.body?.reason === 'string' ? req.body.reason : null,
+          request_id: result.request_id,
+          changes:
+            beforeStatus !== undefined &&
+            target.status !== undefined &&
+            beforeStatus !== target.status
+              ? [{ field: 'status', before: beforeStatus, after: target.status }]
+              : [],
+          prototype: {
+            role:
+              owner?.role_id === 'role-super-admin'
+                ? 'super'
+                : owner?.role_id === 'role-auditor'
+                  ? 'auditor'
+                  : 'admin',
+            module,
+            operation,
+            resource_name: name,
+            description: `${operation} ${name}`,
+            client_ip: '127.0.0.1',
+            user_agent: String(req.headers?.['user-agent'] ?? ''),
+            parameters: {},
+            error: null,
+          },
+        })
         return result
       },
     }

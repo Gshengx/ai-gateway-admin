@@ -508,8 +508,8 @@ export type UserTermsInfo =
   | { visibility: 'FORBIDDEN' }
 
 /** 用户详情（GET /users/{id}） */
-export function getUserDetailApi(id: string) {
-  return request.get<{ user: UserItem; terms: UserTermsInfo | null }>(`/users/${id}`)
+export function getUserDetailApi(id: string, config?: RequestConfig) {
+  return request.get<{ user: UserItem; terms: UserTermsInfo | null }>(`/users/${id}`, config)
 }
 
 /** 模型授权来源中的模型信息（GET /users/{id}/model-grant-sources） */
@@ -610,7 +610,9 @@ export interface LogicalModelOption {
   workload_kind: string
 }
 
-export function getLogicalModelOptionsApi(params: OffsetPageQuery = { page: 1, page_size: 20 }) {
+export function getLogicalModelOptionsApi(
+  params: OffsetPageQuery & { search?: string } = { page: 1, page_size: 20 },
+) {
   return request.get<OffsetPageResult<LogicalModelOption>>('/logical-models/options', { params })
 }
 
@@ -941,6 +943,7 @@ export interface UserGroupItem {
 
 /** 用户组列表查询参数（页码分页） */
 export interface UserGroupQuery extends OffsetPageQuery {
+  department_id?: string
   /** 用户组名称模糊匹配 */
   search?: string
 }

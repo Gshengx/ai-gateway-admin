@@ -76,7 +76,7 @@
               clearable
               @change="loadFirst"
             />
-            <t-button theme="default" variant="text" @click="reset">{{ t('cost.reset') }}</t-button>
+            <t-button theme="default" variant="base" @click="reset">{{ t('cost.reset') }}</t-button>
             <t-button
               v-if="tab === 'users'"
               v-permission.write="'cost.budgets'"

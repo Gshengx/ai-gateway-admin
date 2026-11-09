@@ -14,6 +14,8 @@ export default defineConfig(({ command, mode }) => {
       // Mock 模式：npm run dev:mock；默认 dev 直连真实后端（走代理）
       viteMockServe({
         mockPath: 'mock',
+        // 多实例或编译失败时，目录可能残留 bundle-require 的临时模块。
+        ignore: /\.bundled_.*\.(mjs|cjs)$/,
         enable: command === 'serve' && env.VITE_USE_MOCK === 'true',
         watchFiles: true,
         logger: true,

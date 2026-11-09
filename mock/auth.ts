@@ -1,3 +1,6 @@
+import { CAPABILITIES } from './_capabilities'
+import { directory, preferencesFor } from './_runtime'
+import { mockAccounts, mockRoles } from './_accounts'
 import { getPasswordRules } from './settings'
 import { mockNavigation } from './navigation'
 import type { RespThisType } from 'vite-plugin-mock'
@@ -13,48 +16,35 @@ import {
   mockCookie,
   mockId,
   fail,
-  revokeAllTokens,
+  revokeUserTokens,
+  usernameFromToken,
   success,
   unauthorized,
   type MockRequest,
 } from './_utils'
-const CAPABILITIES = [
-  { resource_code: 'identity.users', can_read: true, can_write: true },
-  { resource_code: 'identity.groups', can_read: true, can_write: true },
-  { resource_code: 'identity.roles', can_read: true, can_write: true },
-  { resource_code: 'identity.keys', can_read: true, can_write: true },
-  { resource_code: 'identity.permission_resources', can_read: true, can_write: true },
-  { resource_code: 'audit.annotations', can_read: true, can_write: true },
-  { resource_code: 'audit.management', can_read: true, can_write: true },
-  { resource_code: 'audit.terms_acceptances', can_read: true, can_write: true },
-  { resource_code: 'system.settings', can_read: true, can_write: true },
-  { resource_code: 'personal.profile', can_read: true, can_write: true },
-  { resource_code: 'personal.keys', can_read: true, can_write: true },
-  { resource_code: 'demo.control_plane', can_read: false, can_write: false },
-  { resource_code: 'model.admission', can_read: true, can_write: true },
-  { resource_code: 'model.logical', can_read: true, can_write: true },
-  { resource_code: 'model.models', can_read: true, can_write: true },
-  { resource_code: 'model.permissions', can_read: true, can_write: true },
-  { resource_code: 'model.pricing', can_read: true, can_write: true },
-  { resource_code: 'model.providers', can_read: true, can_write: true },
-  { resource_code: 'model.review', can_read: true, can_write: true },
-]
 
-// Mock credentials are supplied locally at runtime, never embedded in source.
-const username = process.env.AIS_MOCK_USERNAME ?? ''
-let password = process.env.AIS_MOCK_PASSWORD ?? ''
-let needsPassword = process.env.AIS_MOCK_NEEDS_PASSWORD === 'true'
-setMockPasswordRequired(needsPassword)
-function session(req?: MockRequest): SessionInfo {
-  const gate = needsPassword
-    ? 'NEEDS_PASSWORD'
-    : !req || !isTermsConfirmed(req)
-      ? 'NEEDS_TERMS'
-      : 'READY'
+for (const account of mockAccounts.values()) {
+  setMockPasswordRequired(account.username, account.needs_password)
+}
+function accountFor(req: MockRequest) {
+  return mockAccounts.get(usernameFromToken(req) ?? '')!
+}
+function roleFor(req: MockRequest) {
+  const account = accountFor(req)
+  return (
+    directory
+      .get(account.username)
+      ?.role_id?.replace(/^role-/, '')
+      .replace(/-/g, '_') ?? account.role
+  )
+}
+function session(req: MockRequest): SessionInfo {
+  const { username, needs_password: needsPassword } = accountFor(req)
+  const gate = needsPassword ? 'NEEDS_PASSWORD' : !isTermsConfirmed(req) ? 'NEEDS_TERMS' : 'READY'
   return {
-    user_id: mockId(username),
+    user_id: directory.get(username)?.id ?? mockId(username),
     username,
-    display_name: username,
+    display_name: directory.get(username)?.display_name ?? username,
     scope: gate === 'READY' ? 'FULL' : 'ONBOARDING',
     gate,
     next_action:
@@ -65,8 +55,8 @@ function session(req?: MockRequest): SessionInfo {
           : 'ENTER_APPLICATION',
     expires_at: new Date(Date.now() + 8 * 3600000).toISOString(),
     idle_expires_at: new Date(Date.now() + 30 * 60000).toISOString(),
-    time_zone: 'Asia/Shanghai',
-    preferred_locale: 'zh-CN',
+    time_zone: preferencesFor(username).time_zone,
+    preferred_locale: preferencesFor(username).preferred_locale ?? 'zh-CN',
   }
 }
 export default authMock([
@@ -75,14 +65,17 @@ export default authMock([
     method: 'post',
     response(this: RespThisType, req: MockRequest) {
       if (!req.body?.username || !req.body?.password) return fail('MALFORMED_REQUEST', '')
+      const account = mockAccounts.get(String(req.body.username))
       if (
-        !username ||
-        !password ||
-        req.body.username !== username ||
-        req.body.password !== password
+        !account ||
+        req.body.password !== account.password ||
+        directory.get(account.username)?.status === 'DISABLED'
       )
         return fail('AUTHENTICATION_FAILED', '')
-      revokeAllTokens()
+      const { username } = account
+      const profile = directory.get(username)
+      if (profile) profile.last_login_at = new Date().toISOString()
+      revokeUserTokens(username)
       const token = mockCookie(this.res, username)
       return success(session({ ...req, headers: { cookie: `ais_session_dev=${token}` } }))
     },
@@ -116,6 +109,8 @@ export default authMock([
     response(this: RespThisType, req: MockRequest) {
       if (!checkToken(req)) return unauthorized()
       if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
+      const account = accountFor(req)
+      const { username, password } = account
       const next = req.body?.new_password
       const current = req.body?.current_password
       if (typeof next !== 'string' || typeof current !== 'string')
@@ -134,10 +129,10 @@ export default authMock([
         return fail('VALIDATION_FAILED', '', { fields, password_policy: rules })
       if (next === password)
         return fail('PASSWORD_REUSED', '', { fields: { new_password: 'PASSWORD_REUSED' } })
-      password = next
-      needsPassword = false
-      setMockPasswordRequired(false)
-      revokeAllTokens()
+      account.password = next
+      account.needs_password = false
+      setMockPasswordRequired(username, false)
+      revokeUserTokens(username)
       const token = mockCookie(this.res, username)
       return success(session({ ...req, headers: { cookie: `ais_session_dev=${token}` } }))
     },
@@ -154,7 +149,8 @@ export default authMock([
           '',
         )
       return success({
-        capabilities: CAPABILITIES,
+        capabilities:
+          roleFor(req) === 'super_admin' ? CAPABILITIES : (mockRoles.get(roleFor(req)) ?? []),
         navigation: mockNavigation(
           String(req.query?.locale ?? req.headers?.['accept-language'] ?? 'zh-CN'),
         ),
@@ -171,7 +167,7 @@ export default authMock([
       if (!checkToken(req)) return unauthorized()
       if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
       if (!req.body || Object.keys(req.body).length) return fail('MALFORMED_REQUEST', '')
-      revokeAllTokens()
+      revokeUserTokens(usernameFromToken(req)!)
       mockCookie(this.res)
       return success({ applied: true, replayed: false })
     },

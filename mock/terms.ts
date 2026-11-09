@@ -1,3 +1,5 @@
+import { runtimeState, directory } from './_runtime'
+import type { AcceptTermsResult } from '../src/api/modules/terms'
 import {
   checkToken,
   checkCsrf,
@@ -29,6 +31,19 @@ interface AcceptanceRecord {
 interface TermsState {
   config: TermsConfig
   records: AcceptanceRecord[]
+}
+const acceptanceEvidence = runtimeState(
+  'acceptanceEvidence',
+  () => new Map<string, AcceptTermsResult>(),
+)
+export function termsAcceptances() {
+  return [...acceptanceEvidence.values()]
+}
+export function hasAcceptedTerms(username: string) {
+  return (
+    !state.config.mandatory_confirmation ||
+    state.records.some((r) => r.username === username && r.version === state.config.version)
+  )
 }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const detail = (item: TermsTranslation): TermsTranslationDetail => ({
@@ -218,7 +233,7 @@ export default authMock([
     response: (req: MockRequest) => {
       if (!checkToken(req)) return unauthorized()
       if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
-      if (mockPasswordRequired()) return fail('PASSWORD_CHANGE_REQUIRED', '')
+      if (mockPasswordRequired(req)) return fail('PASSWORD_CHANGE_REQUIRED', '')
       const displayed = currentTerms({
         ...req,
         query: { locale: String(req.body?.locale_code ?? '') },
@@ -235,9 +250,9 @@ export default authMock([
         const header = req.headers?.['x-forwarded-for'] ?? req.headers?.['X-Forwarded-For']
         const forwarded = Array.isArray(header) ? header[0] : header
         record = {
-          user_id: mockId(username),
+          user_id: directory.get(username)?.id ?? mockId(username),
           username,
-          display_name: username,
+          display_name: directory.get(username)?.display_name ?? username,
           accepted_at: new Date().toISOString(),
           version: state.config.version,
           ip:
@@ -247,7 +262,7 @@ export default authMock([
         }
         state.records.unshift(record)
       }
-      return success({
+      const evidence: AcceptTermsResult = {
         id: mockId(`acceptance-${record.username}-${record.version}`),
         user_id: record.user_id,
         terms_id: displayed.terms_id,
@@ -259,12 +274,14 @@ export default authMock([
         display_name_snapshot: record.display_name,
         department_snapshot: {
           snapshot_version: 1,
-          department_id: null,
+          department_id: directory.get(record.username)?.department_id ?? null,
           name: '',
           ancestor_ids: [],
           path: [],
         },
-      })
+      }
+      acceptanceEvidence.set(evidence.id, evidence)
+      return success(evidence)
     },
   },
 ] as MockMethod[])

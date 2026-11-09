@@ -21,9 +21,9 @@
         @change="onLanguageChange"
       />
       <t-dropdown trigger="click" :options="userOptions" @click="onUserAction">
-        <t-button variant="text">
+        <t-button variant="text" class="header-bar__user">
           <t-icon name="user-circle" class="header-bar__user-icon" />
-          {{ userStore.userInfo?.name ?? '-' }}
+          <span>{{ userStore.userInfo?.name ?? '-' }}</span>
           <t-icon name="chevron-down" class="header-bar__user-arrow" />
         </t-button>
       </t-dropdown>
@@ -166,6 +166,11 @@ onMounted(loadLocales)
 
 .header-bar__language {
   width: 160px;
+}
+
+.header-bar__user :deep(.t-button__text) {
+  display: inline-flex;
+  align-items: center;
 }
 
 .header-bar__user-icon {

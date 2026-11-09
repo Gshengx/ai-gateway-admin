@@ -88,15 +88,6 @@ const catalogs: Record<string, Navigation> = {
       },
       {
         sidebar_hidden: false,
-        parent_group_code: 'model_access',
-        menu_code: 'logical_models',
-        route_id: 'logical_models',
-        title: '逻辑模型',
-        title_locale: 'zh-CN',
-        sort_order: 70,
-      },
-      {
-        sidebar_hidden: false,
         parent_group_code: 'system',
         menu_code: 'settings',
         route_id: 'settings',
@@ -288,15 +279,6 @@ const catalogs: Record<string, Navigation> = {
         title: 'Model management',
         title_locale: 'en',
         sort_order: 60,
-      },
-      {
-        sidebar_hidden: false,
-        parent_group_code: 'model_access',
-        menu_code: 'logical_models',
-        route_id: 'logical_models',
-        title: 'Logical models',
-        title_locale: 'en',
-        sort_order: 70,
       },
       {
         sidebar_hidden: false,

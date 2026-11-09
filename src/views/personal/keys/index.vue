@@ -22,6 +22,7 @@
     <t-table
       row-key="id"
       table-layout="fixed"
+      table-content-width="max(100%, var(--personal-key-table-width))"
       :max-height="560"
       :data="items"
       :columns="columns"
@@ -174,8 +175,8 @@ function idempotencyKey() {
 }
 const columns = computed<PrimaryTableCol<ApiKeyItem>[]>(() => [
   { colKey: 'id', title: t('myKeys.id'), width: 260 },
-  { colKey: 'masked_value', title: t('myKeys.masked'), width: 240 },
-  { colKey: 'name', title: t('myKeys.name'), width: 220 },
+  { colKey: 'masked_value', title: t('myKeys.masked'), width: 160 },
+  { colKey: 'name', title: t('myKeys.name'), width: 'auto' },
   { colKey: 'status', title: t('myKeys.status'), width: 110 },
   { colKey: 'created_at', title: t('myKeys.createdAt'), width: 190 },
   { colKey: 'last_used_at', title: t('myKeys.lastUsed'), width: 190 },

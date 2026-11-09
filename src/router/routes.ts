@@ -98,7 +98,7 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
   management_audit: {
     path: '/system/logs',
     name: 'SystemLogs',
-    component: placeholder,
+    component: () => import('@/views/system/logs/index.vue'),
     meta: { permission: 'audit.management', icon: 'file-search' },
   },
   terms_acceptances: {

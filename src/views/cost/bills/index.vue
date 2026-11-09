@@ -33,7 +33,7 @@
             clearable
             @change="loadFirst"
           />
-          <t-button theme="default" variant="text" @click="reset">{{ t('cost.reset') }}</t-button>
+          <t-button theme="default" variant="base" @click="reset">{{ t('cost.reset') }}</t-button>
           <t-button v-permission.write="'cost.bills'" class="primary-action" @click="openForm()">{{
             t(tab === 'bills' ? 'cost.generate' : 'cost.newTask')
           }}</t-button>

@@ -1,8 +1,22 @@
+import {
+  runtimeState,
+  nextSequence,
+  directory,
+  apiKeys,
+  preferencesFor,
+  subjectName,
+} from './_runtime'
+import { mockAccounts, mockRoles } from './_accounts'
+import { CAPABILITIES, CAPABILITY_NAMES } from './_capabilities'
+import { getPasswordRules } from './settings'
+import { termsAcceptances } from './terms'
+import { modelAccessState } from './_modelAccessState'
 import { createHash } from 'node:crypto'
-import { logicalState } from './_logical'
-import type { LogicalModel } from '../src/api/modules/logicalModels'
 import {
   checkToken,
+  auditedMock,
+  revokeUserTokens,
+  setMockPasswordRequired,
   checkCsrf,
   mockId,
   fail,
@@ -72,7 +86,7 @@ interface MockGroup {
   created_by_username: string
 }
 
-const DEPARTMENTS: MockDepartment[] = [
+const DEPARTMENTS = runtimeState<MockDepartment[]>('departments', () => [
   {
     id: 'd-root',
     name: '总部',
@@ -183,8 +197,7 @@ const DEPARTMENTS: MockDepartment[] = [
     sort_order: 9,
     translations: { 'en-US': { name: 'Human Resources', description: 'People and organization' } },
   },
-]
-
+])
 const ROLES: MockRole[] = [
   {
     id: 'role-super-admin',
@@ -362,20 +375,103 @@ function buildUsers(): MockUser[] {
   })
 }
 
-const users = buildUsers()
-const GROUPS: MockGroup[] = buildGroups()
-let userSeq = TOTAL + 1
-let groupSeq = GROUPS.length + 1
-let deptSeq = 1
-let orgVersion = 1
+const users = runtimeState('users', buildUsers)
+const GROUPS = runtimeState('groups', buildGroups)
+const org = runtimeState('orgVersion', () => ({ value: 1 }))
 
-const PREFERENCES = {
-  preferred_locale: null as string | null,
-  time_zone: 'Asia/Shanghai',
+runtimeState('configuredUsers', () => {
+  for (const account of mockAccounts.values()) {
+    if (!users.some((user) => user.username === account.username))
+      users.push({
+        id: mockId(account.username),
+        username: account.username,
+        display_name: account.username,
+        email: null,
+        phone: null,
+        department_id: 'd-root',
+        role_id: ROLES.find((role) => role.code === account.role)?.id ?? null,
+        status: 'ACTIVE',
+        last_login_at: null,
+        created_at: toIso(new Date()),
+        updated_at: toIso(new Date()),
+      })
+  }
+  return true
+})
+for (const user of users) directory.set(user.username, user)
+function cleanUser(user: MockUser) {
+  directory.delete(user.username)
+  mockAccounts.delete(user.username)
+  revokeUserTokens(user.username)
+  for (const group of GROUPS) group.member_ids = group.member_ids.filter((id) => id !== user.id)
+  for (let i = apiKeys.length - 1; i >= 0; i--)
+    if (apiKeys[i].user_id === user.id) apiKeys.splice(i, 1)
+  for (const [model, grants] of modelAccessState.permissions)
+    modelAccessState.permissions.set(
+      model,
+      grants.filter((g) => g.subject_type !== 'USER' || g.subject_id !== user.id),
+    )
 }
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function apiRole(role: MockRole, locale: string) {
+  return {
+    id: role.id,
+    name: role.name,
+    display_name: localized(role.translations, role.name, locale),
+    description: role.description,
+    display_description: role.translations[locale]?.description ?? role.description,
+    builtin_code: role.is_builtin ? role.code : null,
+    is_builtin: role.is_builtin,
+    permissions_version: '1',
+    user_count: users.filter((user) => user.role_id === role.id).length,
+    created_at: toIso(new Date(Date.UTC(2026, 0, 1))),
+    updated_at: toIso(new Date(Date.UTC(2026, 0, 1))),
+    requested_locale: locale,
+    resolved_locale: locale,
+  }
+}
+function resourceRestriction(code: string, locale: string) {
+  const descriptions: Record<string, [string, string]> = {
+    'identity.permission_resources': ['受保护资源，仅供查看', 'Protected resource; view only'],
+    'demo.control_plane': ['资源已禁用，仅供查看', 'Disabled resource; view only'],
+    'audit.annotations': ['该资源不可分配，仅供查看', 'Resource is not assignable; view only'],
+  }
+  return descriptions[code]?.[locale.startsWith('en') ? 1 : 0] ?? ''
+}
+function roleResources(locale: string) {
+  return CAPABILITIES.map((capability, index) => ({
+    id: mockId(`permission-${capability.resource_code}`),
+    resource_code: capability.resource_code,
+    display_name: CAPABILITY_NAMES[capability.resource_code]?.[0] ?? capability.resource_code,
+    description: resourceRestriction(capability.resource_code, 'zh-CN'),
+    localized_name:
+      CAPABILITY_NAMES[capability.resource_code]?.[locale.startsWith('en') ? 1 : 0] ??
+      capability.resource_code,
+    localized_description: resourceRestriction(capability.resource_code, 'zh-CN'),
+    requested_locale: locale,
+    resolved_locale: locale,
+    status: capability.resource_code === 'demo.control_plane' ? 'DISABLED' : 'ACTIVE',
+    management_policy:
+      capability.resource_code === 'audit.annotations' ? 'SUPER_ADMIN_ONLY' : 'STANDARD',
+    is_builtin: true,
+    is_protected: capability.resource_code === 'identity.permission_resources',
+    registered_in_code: true,
+    sort_order: index,
+    grant_count: ROLES.filter((role) => {
+      const grant =
+        role.code === 'super_admin'
+          ? capability
+          : mockRoles
+              .get(role.code)
+              ?.find((item) => item.resource_code === capability.resource_code)
+      return grant?.can_read || grant?.can_write
+    }).length,
+    actions: ['READ', 'WRITE'],
+  }))
 }
 
 function firstOf(value: string | string[] | undefined): string {
@@ -476,8 +572,7 @@ function groupsOfUser(userId: string): MockGroup[] {
 }
 
 function nextGroupId(): string {
-  const id = `g-${groupSeq}`
-  groupSeq += 1
+  const id = `g-${nextSequence('group', GROUP_PLAN.length)}`
   return id
 }
 
@@ -578,7 +673,7 @@ function toApiUser(user: MockUser, locale: string) {
     last_login_at: user.last_login_at,
     created_at: user.created_at,
     updated_at: user.updated_at,
-    must_change_password: false,
+    must_change_password: mockAccounts.get(user.username)?.needs_password ?? false,
     ai_access_status: 'ACTIVE',
   }
 }
@@ -619,9 +714,12 @@ function validateProfile(payload: {
 }
 
 function passwordError(password: string): string | null {
-  if (password.length < 8 || password.length > 32) return '密码长度需为 8-32 位'
+  const rules = getPasswordRules()
+  if (password.length < rules.min_length || password.length > rules.max_length)
+    return '密码长度不符合密码策略'
   const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length
-  if (classes < 3) return '密码需包含大写字母、小写字母、数字、特殊字符中的至少三种'
+  if (classes < rules.complexity_categories)
+    return '密码需包含大写字母、小写字母、数字、特殊字符中的至少三种'
   return null
 }
 
@@ -649,12 +747,12 @@ function pathSegmentBefore(req: MockRequest, suffix: string): string {
 }
 
 function nextUserId(): string {
-  const id = `u-${String(userSeq).padStart(4, '0')}`
-  userSeq += 1
+  const id = `u-${String(nextSequence('user', TOTAL)).padStart(4, '0')}`
   return id
 }
 
 function createUser(fields: {
+  initial_password?: string
   username: string
   display_name: string
   email: string
@@ -678,6 +776,14 @@ function createUser(fields: {
   }
   // 就地插入，保持 users 数组引用不变（各 mock 路由共享同一实例）
   users.unshift(user)
+  directory.set(user.username, user)
+  if (fields.initial_password)
+    mockAccounts.set(user.username, {
+      username: user.username,
+      password: fields.initial_password,
+      role: roleOf(user.role_id)?.code ?? 'user',
+      needs_password: false,
+    })
   return user
 }
 
@@ -725,7 +831,7 @@ interface MockImportTask {
   rows: MockImportPreviewRow[]
 }
 
-const importTasks = new Map<string, MockImportTask>()
+const importTasks = runtimeState('importTasks', () => new Map<string, MockImportTask>())
 
 function buildImportPreview(inputRows: unknown[], mode: 'SKIP' | 'OVERWRITE'): MockImportTask {
   const usernameCounts = new Map<string, number>()
@@ -803,7 +909,7 @@ function buildImportPreview(inputRows: unknown[], mode: 'SKIP' | 'OVERWRITE'): M
   return task
 }
 
-const pendingImportRows = new Map<string, number[]>()
+const pendingImportRows = runtimeState('pendingImportRows', () => new Map<string, number[]>())
 
 function executeImport(task: MockImportTask, selected: number[]) {
   let created = 0
@@ -813,6 +919,7 @@ function executeImport(task: MockImportTask, selected: number[]) {
     if (row.disposition === 'CREATE') {
       createUser({
         username: row.username,
+        initial_password: row.password,
         display_name: row.fields.display_name,
         email: row.fields.email ?? '',
         phone: row.fields.phone ?? '',
@@ -830,6 +937,15 @@ function executeImport(task: MockImportTask, selected: number[]) {
         existing.department_id = row.department_id
         existing.role_id = row.role_id
         existing.updated_at = toIso(new Date())
+        if (row.password) {
+          mockAccounts.set(existing.username, {
+            username: existing.username,
+            password: row.password,
+            role: roleOf(existing.role_id)?.code ?? 'user',
+            needs_password: false,
+          })
+          revokeUserTokens(existing.username)
+        }
         row.execution_state = 'APPLIED'
         overwritten += 1
       }
@@ -904,165 +1020,6 @@ function importResultCsv(task: MockImportTask): string {
 
 /* ---------------------- 用户详情：可访问模型与 API Key ---------------------- */
 
-interface MockModel {
-  id: string
-  name: string
-  en_name: string
-  description: string
-  en_description: string
-  logical_name: string
-  selectable: boolean
-  status: string
-}
-
-const MODELS: MockModel[] = [
-  {
-    id: 'm-gpt-4o',
-    name: 'GPT-4o',
-    en_name: 'GPT-4o',
-    description: '多模态旗舰模型，支持文本与图像理解。',
-    en_description: 'Flagship multimodal model for text and image understanding.',
-    logical_name: 'openai/gpt-4o',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-gpt-4o-mini',
-    name: 'GPT-4o mini',
-    en_name: 'GPT-4o mini',
-    description: '轻量多模态模型，适合高并发场景。',
-    en_description: 'Lightweight multimodal model for high-concurrency workloads.',
-    logical_name: 'openai/gpt-4o-mini',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-claude-3-5-sonnet',
-    name: 'Claude 3.5 Sonnet',
-    en_name: 'Claude 3.5 Sonnet',
-    description: '长上下文推理与代码生成模型。',
-    en_description: 'Long-context reasoning and code generation model.',
-    logical_name: 'anthropic/claude-3-5-sonnet',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-qwen-max',
-    name: '通义千问 Max',
-    en_name: 'Qwen Max',
-    description: '中文理解与生成的旗舰模型。',
-    en_description: 'Flagship model for Chinese understanding and generation.',
-    logical_name: 'qwen/qwen-max',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-qwen-plus',
-    name: '通义千问 Plus',
-    en_name: 'Qwen Plus',
-    description: '兼顾效果与成本的中文通用模型。',
-    en_description: 'Balanced Chinese general-purpose model.',
-    logical_name: 'qwen/qwen-plus',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-deepseek-v3',
-    name: 'DeepSeek V3',
-    en_name: 'DeepSeek V3',
-    description: '通用对话与推理模型。',
-    en_description: 'General-purpose chat and reasoning model.',
-    logical_name: 'deepseek/deepseek-v3',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-gemini-1-5-pro',
-    name: 'Gemini 1.5 Pro',
-    en_name: 'Gemini 1.5 Pro',
-    description: '超长上下文多模态模型。',
-    en_description: 'Multimodal model with ultra-long context.',
-    logical_name: 'google/gemini-1-5-pro',
-    selectable: true,
-    status: 'ACTIVE',
-  },
-  {
-    id: 'm-text-embedding-3',
-    name: 'Text Embedding 3',
-    en_name: 'Text Embedding 3',
-    description: '文本向量化模型。',
-    en_description: 'Text embedding model.',
-    logical_name: 'openai/text-embedding-3',
-    selectable: false,
-    status: 'OFFLINE',
-  },
-]
-
-interface MockGrantSource {
-  model_id: string
-  source_type: 'USER' | 'DEPARTMENT' | 'USER_GROUP'
-  source_id: string | null
-  source_display_name: string | null
-  scope_mode: string | null
-}
-
-/** 稳定生成用户的模型授权来源：部门 / 上级部门 / 用户组继承 + 用户直接授权 */
-function grantSourcesOf(user: MockUser, locale: string): MockGrantSource[] {
-  const index = Math.max(Number(user.id.replace('u-', '')) - 1, 0)
-  const department = departmentOf(user.department_id)
-  const parent = department?.parent_id ? departmentOf(department.parent_id) : undefined
-  const group = groupsOfUser(user.id)[0]
-  const deptName = department ? localized(department.translations, department.name, locale) : null
-  const parentName = parent ? localized(parent.translations, parent.name, locale) : null
-
-  const candidates: MockGrantSource[] = [
-    {
-      model_id: MODELS[index % 5].id,
-      source_type: 'DEPARTMENT',
-      source_id: department?.id ?? null,
-      source_display_name: deptName,
-      scope_mode: 'SUBTREE',
-    },
-    {
-      model_id: MODELS[(index + 2) % 5].id,
-      source_type: 'DEPARTMENT',
-      source_id: department?.id ?? null,
-      source_display_name: deptName,
-      scope_mode: 'SUBTREE',
-    },
-    {
-      model_id: MODELS[(index + 2) % 5].id,
-      source_type: 'DEPARTMENT',
-      source_id: parent?.id ?? null,
-      source_display_name: parentName,
-      scope_mode: 'SUBTREE',
-    },
-    {
-      model_id: MODELS[(index + 3) % 6].id,
-      source_type: 'USER_GROUP',
-      source_id: group?.id ?? null,
-      source_display_name: group?.name ?? null,
-      scope_mode: null,
-    },
-    {
-      model_id: MODELS[(index + 5) % 7].id,
-      source_type: 'USER',
-      source_id: user.id,
-      source_display_name: user.display_name,
-      scope_mode: null,
-    },
-  ]
-
-  const seen = new Set<string>()
-  return candidates.filter((item) => {
-    if (!item.source_id) return false
-    const key = `${item.model_id}|${item.source_type}|${item.source_id}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
 /** API Key mock 用户数据 */
 export function managedKeyOwners(locale: string) {
   return users.map((user) => {
@@ -1094,26 +1051,13 @@ function batchDeleteDigest(
     .digest('hex')
 }
 
-function logicalGrantModel(model: LogicalModel, locale: string) {
-  return {
-    id: model.id,
-    display_name: model.logical_name,
-    localized_name: model.logical_name,
-    logical_name: model.logical_name,
-    description: model.description,
-    localized_description: model.description,
-    requested_locale: locale,
-    resolved_locale: null,
-    selectable: true,
-    status: model.status,
-  }
-}
 function logicalSources(user: MockUser, locale: string) {
-  return logicalState.grants
+  return [...modelAccessState.permissions.values()]
+    .flat()
     .filter(
       (g) =>
         (g.subject_type === 'USER' && g.subject_id === user.id) ||
-        (g.subject_type === 'GROUP' &&
+        (g.subject_type === 'USER_GROUP' &&
           GROUPS.some(
             (group) => group.id === g.subject_id && group.member_ids.includes(user.id),
           )) ||
@@ -1122,27 +1066,61 @@ function logicalSources(user: MockUser, locale: string) {
           descendantDepartmentIds(g.subject_id).includes(user.department_id)),
     )
     .flatMap((g) => {
-      const model = logicalState.logical.find((m) => m.id === g.logical_model_id)
+      const model = modelAccessState.models.find((m) => m.id === g.physical_model_id)
       if (!model) return []
-      const source =
-        g.subject_type === 'DEPARTMENT'
-          ? DEPARTMENTS.find((d) => d.id === g.subject_id)?.name
-          : g.subject_type === 'GROUP'
-            ? GROUPS.find((group) => group.id === g.subject_id)?.name
-            : user.display_name
       return [
         {
-          model: logicalGrantModel(model, locale),
+          model: {
+            id: model.id,
+            display_name: model.model_id_at_gateway,
+            localized_name: model.model_id_at_gateway,
+            logical_name: model.model_id_at_gateway,
+            description: model.description,
+            localized_description: model.description,
+            requested_locale: locale,
+            resolved_locale: null,
+            selectable: true,
+            status: model.status,
+          },
           source_type: g.subject_type,
           source_id: g.subject_id,
-          source_display_name: source || null,
+          source_display_name: subjectName(g.subject_type, g.subject_id, g.subject_name),
           source_in_scope: true,
           scope_mode: g.subject_type === 'DEPARTMENT' ? 'SUBTREE' : 'SELF',
         },
       ]
     })
 }
-export default [
+export default auditedMock([
+  {
+    url: '/api/v1/users/:user_id/accessible-models',
+    method: 'get',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      const user = users.find((u) => u.id === pathSegmentBefore(req, 'accessible-models'))
+      if (!user) return fail('NOT_FOUND', '')
+      const sources = logicalSources(user, requestLocale(req)).filter(
+        (s) => s.model.status === 'ACTIVE',
+      )
+      const ids = [...new Set(sources.map((s) => s.model.id))]
+      return success(
+        groupOffsetPage(
+          ids.map((id) => ({
+            id,
+            model_id_at_gateway: sources.find((s) => s.model.id === id)!.model.display_name,
+            permission_sources: sources
+              .filter((s) => s.model.id === id)
+              .map((s) => ({
+                subject_type: s.source_type,
+                subject_id: s.source_id,
+                subject_name: s.source_display_name,
+              })),
+          })),
+          req,
+        ),
+      )
+    },
+  },
   {
     url: '/api/v1/logical-models/options',
     method: 'get',
@@ -1150,14 +1128,20 @@ export default [
       if (!checkToken(req)) return unauthorized()
       return success(
         groupOffsetPage(
-          logicalState.logical.map((l) => ({
-            id: l.id,
-            logical_name: l.logical_name,
-            display_name: l.logical_name,
-            localized_name: l.logical_name,
-            status: l.status,
-            workload_kind: l.workload_kind,
-          })),
+          modelAccessState.models
+            .filter((m) =>
+              m.model_id_at_gateway
+                .toLowerCase()
+                .includes(firstOf(req.query?.search).trim().toLowerCase()),
+            )
+            .map((l) => ({
+              id: l.id,
+              logical_name: l.model_id_at_gateway,
+              display_name: l.model_id_at_gateway,
+              localized_name: l.model_id_at_gateway,
+              status: l.status,
+              workload_kind: '',
+            })),
           req,
         ),
       )
@@ -1192,22 +1176,24 @@ export default [
       const id = pathSegmentBefore(req, 'model-grants')
       if (!users.some((u) => u.id === id)) return fail('NOT_FOUND', '')
       const ids = req.body?.model_ids as string[]
-      if (!Array.isArray(ids) || ids.some((x) => !logicalState.logical.some((m) => m.id === x)))
+      if (!Array.isArray(ids) || ids.some((x) => !modelAccessState.models.some((m) => m.id === x)))
         return fail('VALIDATION_FAILED', '')
-      for (let i = logicalState.grants.length - 1; i >= 0; i--)
-        if (
-          logicalState.grants[i].subject_type === 'USER' &&
-          logicalState.grants[i].subject_id === id
+      const user = users.find((u) => u.id === id)!
+      for (const m of modelAccessState.models) {
+        const list = (modelAccessState.permissions.get(m.id) ?? []).filter(
+          (g) => !(g.subject_type === 'USER' && g.subject_id === id),
         )
-          logicalState.grants.splice(i, 1)
-      ids.forEach((modelId) =>
-        logicalState.grants.push({
-          grant_id: mockId(`grant-${modelId}-USER-${id}`),
-          logical_model_id: modelId,
-          subject_type: 'USER',
-          subject_id: id,
-        }),
-      )
+        if (ids.includes(m.id))
+          list.push({
+            id: mockId(`grant-${m.id}-${id}`),
+            physical_model_id: m.id,
+            subject_type: 'USER',
+            subject_id: id,
+            subject_name: user.display_name || user.username,
+            created_at: new Date().toISOString(),
+          })
+        modelAccessState.permissions.set(m.id, list)
+      }
       return success({
         applied: true,
         changed: true,
@@ -1223,30 +1209,7 @@ export default [
     response: (req: MockRequest) => {
       if (!checkToken(req)) return unauthorized()
       const userId = firstOf(req.query?.user_id)
-      const items = users
-        .filter((user) => !userId || user.id === userId)
-        .map((user) => {
-          const department = DEPARTMENTS.find((item) => item.id === user.department_id)
-          return {
-            id: `acceptance-${user.id}`,
-            user_id: user.id,
-            terms_id: 'mock-terms-id',
-            locale_code: 'zh-CN',
-            accepted_at: user.created_at,
-            content_digest: 'mock-content-digest',
-            evidence_digest: 'mock-evidence-digest',
-            username_snapshot: user.username,
-            display_name_snapshot: user.display_name,
-            department_snapshot: {
-              snapshot_version: 1,
-              department_id: department?.id ?? '',
-              name: department?.name ?? '',
-              ancestor_ids: [],
-              path: department ? [{ id: department.id, name: department.name }] : [],
-            },
-            content: null,
-          }
-        })
+      const items = termsAcceptances().filter((record) => !userId || record.user_id === userId)
       return success(groupOffsetPage(items, req))
     },
   },
@@ -1272,35 +1235,7 @@ export default [
       const locale = requestLocale(req)
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'model-grant-sources'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (logicalState.logical.length || logicalState.models.length)
-        return success(groupOffsetPage(logicalSources(user, locale), req))
-      const items = grantSourcesOf(user, locale).map((item) => {
-        const model = MODELS.find((m) => m.id === item.model_id)
-        return {
-          model: {
-            id: model?.id ?? item.model_id,
-            display_name: model?.name ?? item.model_id,
-            localized_name:
-              locale === 'en-US'
-                ? (model?.en_name ?? item.model_id)
-                : (model?.name ?? item.model_id),
-            logical_name: model?.logical_name ?? item.model_id,
-            description: model?.description ?? '',
-            localized_description:
-              locale === 'en-US' ? (model?.en_description ?? '') : (model?.description ?? ''),
-            requested_locale: locale,
-            resolved_locale: locale,
-            selectable: model?.selectable ?? false,
-            status: model?.status ?? 'ACTIVE',
-          },
-          source_type: item.source_type,
-          source_id: item.source_id,
-          source_display_name: item.source_display_name,
-          source_in_scope: true,
-          scope_mode: item.scope_mode,
-        }
-      })
-      return success(groupOffsetPage(items, req))
+      return success(groupOffsetPage(logicalSources(user, locale), req))
     },
   },
   {
@@ -1315,6 +1250,7 @@ export default [
     timeout: 120,
     response: (req: MockRequest) => {
       if (!checkToken(req)) return unauthorized()
+      const PREFERENCES = preferencesFor(usernameFromToken(req)!)
       const body = req.body ?? {}
       if ('preferred_locale' in body) {
         const locale = body.preferred_locale
@@ -1329,7 +1265,7 @@ export default [
       const requested = requestLocale(req)
       const resolved = PREFERENCES.preferred_locale ?? requested
       return success({
-        user_id: 'u-0001',
+        user_id: directory.get(usernameFromToken(req)!)?.id ?? mockId(usernameFromToken(req)!),
         preferred_locale: PREFERENCES.preferred_locale,
         requested_locale: requested,
         resolved_locale: resolved,
@@ -1392,7 +1328,7 @@ export default [
         items: items.map((department) =>
           toApiDepartment(department, locale, matched.has(department.id)),
         ),
-        org_version: String(orgVersion),
+        org_version: String(org.value),
         scope_root_id: 'd-root',
       })
     },
@@ -1427,17 +1363,16 @@ export default [
           ? (body.translations as Record<string, { name: string; description: string }>)
           : {}
       const department: MockDepartment = {
-        id: `d-new-${deptSeq}`,
+        id: `d-new-${nextSequence('department')}`,
         name,
         description,
         parent_id: parentId,
         sort_order: Number(body.sort_order) || 0,
         translations,
       }
-      deptSeq += 1
       DEPARTMENTS.push(department)
-      orgVersion += 1
-      return success({ id: department.id, org_version: String(orgVersion), replayed: false })
+      org.value += 1
+      return success({ id: department.id, org_version: String(org.value), replayed: false })
     },
   },
   {
@@ -1468,7 +1403,7 @@ export default [
         max_dependencies: 1000,
         max_users: 1000,
         user_count: userCount,
-        org_version: String(orgVersion),
+        org_version: String(org.value),
       })
     },
   },
@@ -1530,8 +1465,8 @@ export default [
           { name: string; description: string }
         >
       }
-      orgVersion += 1
-      return success({ id: department.id, org_version: String(orgVersion), replayed: false })
+      org.value += 1
+      return success({ id: department.id, org_version: String(org.value), replayed: false })
     },
   },
   {
@@ -1550,11 +1485,16 @@ export default [
       }
 
       // 就地删除，保持 DEPARTMENTS 引用不变
+      for (const [model, grants] of modelAccessState.permissions)
+        modelAccessState.permissions.set(
+          model,
+          grants.filter((g) => g.subject_type !== 'DEPARTMENT' || g.subject_id !== department.id),
+        )
       DEPARTMENTS.splice(
         DEPARTMENTS.findIndex((d) => d.id === department.id),
         1,
       )
-      orgVersion += 1
+      org.value += 1
       return success({ applied: true, id: department.id, replayed: false })
     },
   },
@@ -1603,21 +1543,14 @@ export default [
     response: (req: MockRequest) => {
       if (!checkToken(req)) return unauthorized()
       const locale = requestLocale(req)
-      const items = ROLES.map((role) => ({
-        id: role.id,
-        name: role.name,
-        display_name: localized(role.translations, role.name, locale),
-        description: role.description,
-        display_description: role.description,
-        builtin_code: role.is_builtin ? role.code : null,
-        is_builtin: role.is_builtin,
-        permissions_version: '1',
-        user_count: users.filter((u) => u.role_id === role.id).length,
-        created_at: toIso(new Date(Date.UTC(2026, 0, 1))),
-        updated_at: toIso(new Date(Date.UTC(2026, 0, 1))),
-        requested_locale: locale,
-        resolved_locale: locale,
-      }))
+      const search = firstOf(req.query?.search).trim().toLowerCase()
+      const builtin = firstOf(req.query?.builtin)
+      const items = ROLES.map((role) => apiRole(role, locale)).filter(
+        (role) =>
+          (!search ||
+            [role.name, role.display_name].some((name) => name.toLowerCase().includes(search))) &&
+          (!builtin || role.is_builtin === (builtin === 'true')),
+      )
       const page = Math.max(1, Number(firstOf(req.query?.page)) || 1)
       const pageSize = Math.min(100, Math.max(1, Number(firstOf(req.query?.page_size)) || 20))
       return success({
@@ -1630,6 +1563,57 @@ export default [
     },
   },
   {
+    url: '/api/v1/permission-resources',
+    method: 'get',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      const search = firstOf(req.query?.search).trim().toLowerCase()
+      const status = firstOf(req.query?.status)
+      const items = roleResources(requestLocale(req)).filter(
+        (item) =>
+          (!search ||
+            item.resource_code.toLowerCase().includes(search) ||
+            item.localized_name.toLowerCase().includes(search)) &&
+          (!status || item.status === status),
+      )
+      return success(groupOffsetPage(items, req))
+    },
+  },
+  {
+    url: '/api/v1/roles/:id',
+    method: 'get',
+    response: (req: MockRequest) => {
+      if (!checkToken(req)) return unauthorized()
+      const role = ROLES.find((item) => item.id === pathId(req))
+      if (!role) return fail('NOT_FOUND', '')
+      const locale = requestLocale(req)
+      const capabilities =
+        role.code === 'super_admin' ? CAPABILITIES : (mockRoles.get(role.code) ?? [])
+      return success({
+        role: apiRole(role, locale),
+        translations: role.translations,
+        permissions: roleResources(locale).map((resource) => {
+          const grant = capabilities.find((item) => item.resource_code === resource.resource_code)
+          return {
+            resource_id: resource.id,
+            resource_code: resource.resource_code,
+            name: resource.localized_name,
+            status: resource.status,
+            management_policy: resource.management_policy,
+            actions: resource.actions,
+            can_read: grant?.can_read ?? false,
+            can_write: grant?.can_write ?? false,
+            is_assignable:
+              resource.status === 'ACTIVE' &&
+              !resource.is_protected &&
+              resource.management_policy !== 'SUPER_ADMIN_ONLY',
+            is_protected: resource.is_protected,
+          }
+        }),
+      })
+    },
+  },
+  {
     url: '/api/v1/groups',
     method: 'get',
     timeout: 120,
@@ -1637,7 +1621,17 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const locale = requestLocale(req)
       const search = firstOf(req.query?.search).trim().toLowerCase()
+      const departmentId = firstOf(req.query?.department_id)
+      const departmentScope = departmentId ? descendantDepartmentIds(departmentId) : []
       const items = [...GROUPS]
+        .filter(
+          (group) =>
+            !departmentId ||
+            group.member_ids.some((id) => {
+              const user = users.find((u) => u.id === id)
+              return !!user?.department_id && departmentScope.includes(user.department_id)
+            }),
+        )
         .filter(
           (group) =>
             !search ||
@@ -1698,7 +1692,7 @@ export default [
         ? body.initial_member_ids.map(String)
         : []
       const now = toIso(new Date())
-      const creator = users[0]
+      const creator = users.find((user) => user.username === usernameFromToken(req))
       const group: MockGroup = {
         id: nextGroupId(),
         name,
@@ -1756,6 +1750,11 @@ export default [
       if (index < 0) return fail('NOT_FOUND', '用户组不存在')
       // 就地删除，保持 GROUPS 引用不变
       const [removed] = GROUPS.splice(index, 1)
+      for (const [model, grants] of modelAccessState.permissions)
+        modelAccessState.permissions.set(
+          model,
+          grants.filter((g) => g.subject_type !== 'USER_GROUP' || g.subject_id !== removed.id),
+        )
       return success({ applied: true, group_id: removed.id, replayed: false })
     },
   },
@@ -1768,27 +1767,35 @@ export default [
       const group = GROUPS.find((item) => item.id === pathSegmentBefore(req, 'model-grants'))
       if (!group) return fail('NOT_FOUND', '用户组不存在')
       const locale = requestLocale(req)
-      const items = MODELS.filter(
-        (model) => group.id === 'g-2' && ['m-gpt-4o', 'm-claude-3-5-sonnet'].includes(model.id),
-      ).map((model) => ({
-        id: `${group.id}:${model.id}`,
-        granted_at: group.created_at,
-        source_type: 'GROUP',
-        source_id: group.id,
-        scope_mode: 'SELF',
-        model: {
-          id: model.id,
-          display_name: model.name,
-          localized_name: locale === 'en-US' ? model.en_name : model.name,
-          logical_name: model.logical_name,
-          description: model.description,
-          localized_description: locale === 'en-US' ? model.en_description : model.description,
-          requested_locale: locale,
-          resolved_locale: locale,
-          selectable: model.selectable,
-          status: model.status,
-        },
-      }))
+      const items = [...modelAccessState.permissions.values()]
+        .flat()
+        .filter((grant) => grant.subject_type === 'USER_GROUP' && grant.subject_id === group.id)
+        .flatMap((grant) => {
+          const model = modelAccessState.models.find((m) => m.id === grant.physical_model_id)
+          return model
+            ? [
+                {
+                  id: grant.id,
+                  granted_at: grant.created_at,
+                  source_type: 'GROUP',
+                  source_id: group.id,
+                  scope_mode: 'SELF',
+                  model: {
+                    id: model.id,
+                    display_name: model.model_id_at_gateway,
+                    localized_name: model.model_id_at_gateway,
+                    logical_name: model.model_id_at_gateway,
+                    description: model.description,
+                    localized_description: model.description,
+                    requested_locale: locale,
+                    resolved_locale: locale,
+                    selectable: model.status === 'ACTIVE',
+                    status: model.status,
+                  },
+                },
+              ]
+            : []
+        })
       return success(groupOffsetPage(items, req))
     },
   },
@@ -1999,7 +2006,7 @@ export default [
       const pwdError = passwordError(password)
       if (pwdError) return fail('INVALID_ARGUMENT', pwdError)
 
-      const user = createUser({ username, ...payload })
+      const user = createUser({ username, initial_password: password, ...payload })
       return success({ replayed: false, user: toApiUser(user, locale) })
     },
   },
@@ -2048,6 +2055,7 @@ export default [
         if (user && user.username === 'admin') return
         if (user && user.status !== 'DISABLED') {
           user.status = 'DISABLED'
+          revokeUserTokens(user.username)
           user.updated_at = toIso(new Date())
           changed += 1
         }
@@ -2092,7 +2100,9 @@ export default [
         }))
       return success({
         allowed: deletable.length > 0,
-        api_key_count: 0,
+        api_key_count: apiKeys.filter((key) =>
+          deletable.some((user) => user.user_id === key.user_id),
+        ).length,
         block_reason: '',
         deletable,
         dependency_count: 0,
@@ -2139,14 +2149,18 @@ export default [
       if (batchDeleteDigest(deletable, excluded) !== digest) {
         return fail('TARGET_SET_CHANGED', '目标集合已变化，请重新预览')
       }
+      const removedKeyCount = apiKeys.filter((key) =>
+        deletableUsers.some((u) => u.id === key.user_id),
+      ).length
       deletableUsers.forEach((user) => {
+        cleanUser(user)
         users.splice(
           users.findIndex((u) => u.id === user.id),
           1,
         )
       })
       return success({
-        api_key_count: 0,
+        api_key_count: removedKeyCount,
         applied: true,
         deleted_count: deletable.length,
         excluded_count: excluded.length,
@@ -2325,6 +2339,14 @@ export default [
       const temporary = `Tmp@${Math.random().toString(36).slice(2, 8)}${Math.floor(
         Math.random() * 90 + 10,
       )}`
+      mockAccounts.set(user.username, {
+        username: user.username,
+        password: temporary,
+        role: roleOf(user.role_id)?.code ?? 'user',
+        needs_password: true,
+      })
+      setMockPasswordRequired(user.username, true)
+      revokeUserTokens(user.username)
       return success({
         replayed: false,
         secret_available: true,
@@ -2366,6 +2388,7 @@ export default [
 
       const changed = user.status !== 'DISABLED'
       user.status = 'DISABLED'
+      revokeUserTokens(user.username)
       user.updated_at = toIso(new Date())
       return success({
         applied: true,
@@ -2384,13 +2407,18 @@ export default [
       if (!checkToken(req)) return unauthorized()
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'delete-preview'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      const allowed = user.username !== 'admin'
+      const allowed =
+        user.username !== 'admin' &&
+        user.username !== usernameFromToken(req) &&
+        user.role_id !== 'role-super-admin'
       return success({
         allowed,
         block_reason: allowed ? '' : '内置管理员不允许删除',
-        dependency_count: 0,
+        dependency_count:
+          apiKeys.filter((key) => key.user_id === user.id).length +
+          GROUPS.filter((group) => group.member_ids.includes(user.id)).length,
         max_dependencies: 1000,
-        org_version: String(orgVersion),
+        org_version: String(org.value),
         user_id: user.id,
       })
     },
@@ -2436,8 +2464,14 @@ export default [
 
       const user = users.find((u) => u.id === pathId(req))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (user.username === 'admin') return fail('FORBIDDEN', '内置管理员不允许删除')
+      if (
+        user.username === 'admin' ||
+        user.username === usernameFromToken(req) ||
+        user.role_id === 'role-super-admin'
+      )
+        return fail('FORBIDDEN', '管理员不允许删除')
 
+      cleanUser(user)
       // 就地删除，保持 users 数组引用不变（各 mock 路由共享同一实例）
       users.splice(
         users.findIndex((u) => u.id === user.id),
@@ -2452,4 +2486,4 @@ export default [
       })
     },
   },
-] as MockMethod[]
+] as MockMethod[])

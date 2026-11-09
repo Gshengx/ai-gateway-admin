@@ -33,7 +33,7 @@
             class="managed-key-department"
             :disabled="busy"
           />
-          <t-button variant="text" theme="default" :disabled="busy" @click="resetFilters">{{
+          <t-button variant="base" theme="default" :disabled="busy" @click="resetFilters">{{
             t('managedKeys.reset')
           }}</t-button>
         </div>
@@ -70,6 +70,7 @@
     <t-table
       row-key="id"
       table-layout="fixed"
+      table-content-width="max(100%, var(--managed-key-table-width))"
       :data="items"
       :columns="columns"
       :loading="loading"
@@ -261,8 +262,8 @@ const columns = computed<PrimaryTableCol<ManagedKeyItem>[]>(() => [
     disabled: () => busy.value || loading.value,
   },
   { colKey: 'id', title: t('myKeys.id'), width: 150 },
-  { colKey: 'masked_value', title: t('myKeys.masked'), width: 210 },
-  { colKey: 'name', title: t('managedKeys.name'), width: 160 },
+  { colKey: 'masked_value', title: t('myKeys.masked'), width: 160 },
+  { colKey: 'name', title: t('managedKeys.name'), width: 'auto' },
   { colKey: 'user', title: t('managedKeys.user'), width: 150 },
   { colKey: 'department', title: t('managedKeys.department'), width: 140 },
   { colKey: 'status', title: t('managedKeys.status'), width: 110 },
@@ -489,7 +490,7 @@ onBeforeUnmount(() => {
 :deep(.filter-bar) {
   margin-bottom: var(--td-comp-margin-m);
 }
-:deep(.filter-bar > .t-card__body) {
+:deep(.filter-bar .t-card__body) {
   padding: 0;
 }
 .key-filters {
