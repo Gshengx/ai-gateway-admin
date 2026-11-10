@@ -78,6 +78,7 @@
         </div>
         <div v-for="purpose in ['ADMISSION', 'HEALTH'] as const" :key="purpose" class="ma-stack">
           <h3>{{ t(purpose === 'HEALTH' ? 'ma.healthHistory' : 'ma.admissionHistory') }}</h3>
+          <p class="test-history-meta">{{ t('ma.matrixHelp') }}</p>
           <LoadingState
             height="var(--stable-detail-section-height)"
             :loading="historyLoading[purpose]"

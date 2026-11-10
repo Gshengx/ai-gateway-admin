@@ -1,6 +1,5 @@
 <template>
   <div class="ma-stack test-matrix">
-    <p class="test-history-meta">{{ t('ma.matrixHelp') }}</p>
     <t-table
       row-key="id"
       :data="rows"
