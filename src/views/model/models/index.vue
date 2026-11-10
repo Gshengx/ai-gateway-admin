@@ -1,11 +1,19 @@
 <template>
   <section ref="actionTableRoot" class="panel identity-list-panel model-list-panel ma-stack">
-    <ProviderTabs
-      v-model="providerId"
-      :providers="providers"
-      :total="modelTotal"
-      @change="selectProvider"
-    />
+    <LoadingState
+      height="var(--td-comp-size-xxxl)"
+      :loading="tabsLoading"
+      :failed="tabsFailed"
+      retryable
+      @retry="loadAll"
+    >
+      <ProviderTabs
+        v-model="providerId"
+        :providers="providers"
+        :total="modelTotal"
+        @change="selectProvider"
+      />
+    </LoadingState>
     <FilterBar class="ma-filter"
       ><template #content
         ><div class="ma-row">
@@ -30,6 +38,7 @@
       <t-button
         theme="primary"
         v-permission.write="'model.models'"
+        :disabled="tabsLoading || tabsFailed"
         @click="
           () => {
             editingId = ''
@@ -46,6 +55,7 @@
       >
     </div>
     <t-table
+      height="var(--stable-table-height)"
       class="ma-table"
       table-layout="fixed"
       table-content-width="max(100%, var(--model-access-table-width))"
@@ -55,10 +65,12 @@
       :loading="loading"
       :selected-row-keys="selected"
       :pagination="pagination"
+      :class="{ 'stable-table--pending-footer': (loading || listFailed) && !items.length }"
       :disable-data-page="true"
       @select-change="(v: (string | number)[]) => (selected = v.map(String))"
       @page-change="changePage"
     >
+      <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
       <template #model_id_at_gateway="{ row }"
         ><t-link class="ma-name" theme="primary" @click="detailId = row.id">{{
           row.model_id_at_gateway || '—'
@@ -119,12 +131,14 @@
     />
     <t-dialog
       dialog-class-name="model-access-dialog"
-      :close-btn="true"
+      :close-btn="!mutating"
       :visible="!!pending"
+      :close-on-esc-keydown="!mutating"
+      :close-on-overlay-click="false"
       :header="pending ? t('ma.' + pending.label) : ''"
       :confirm-btn="{ content: t('ma.confirm'), loading: mutating }"
-      :cancel-btn="t('ma.cancel')"
-      @close="pending = undefined"
+      :cancel-btn="{ content: t('ma.cancel'), disabled: mutating }"
+      @close="!mutating && (pending = undefined)"
       @confirm="confirmAction"
       ><div class="ma-stack">
         <p>{{ confirmationMessage }}</p>
@@ -132,12 +146,15 @@
           v-if="pending?.target === 'DELETE'"
           theme="warning"
           :message="t('ma.deleteConfirm')"
-        /><t-textarea v-model="reason" :placeholder="t('ma.reason')" /></div
+        /><t-textarea v-model="reason" :disabled="mutating" :placeholder="t('ma.reason')" /></div
     ></t-dialog>
     <t-dialog
       dialog-class-name="model-access-dialog"
-      :close-btn="true"
-      v-model:visible="batchVisible"
+      :close-btn="!batchBusy"
+      :visible="batchVisible"
+      :close-on-overlay-click="!batchBusy"
+      :close-on-esc-keydown="!batchBusy"
+      @close="!batchBusy && (batchVisible = false)"
       :header="t('ma.batchGrant')"
       :footer="false"
       width="var(--physical-model-dialog-width)"
@@ -151,13 +168,18 @@
               .join('、')
           }}
         </div>
-        <PermissionsEditor v-if="batchVisible" :model-ids="selected" /></div
+        <PermissionsEditor
+          @busy-change="batchBusy = $event"
+          v-if="batchVisible"
+          :model-ids="selected"
+        /></div
     ></t-dialog>
   </section>
 </template>
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
 import FilterBar from '@/components/FilterBar.vue'
 import {
@@ -186,13 +208,17 @@ const providers = ref<Provider[]>([]),
 const search = ref(''),
   status = ref(''),
   providerId = ref(''),
-  loading = ref(false),
+  loading = ref(true),
   modelTotal = ref(0)
+const listFailed = ref(false),
+  tabsLoading = ref(true),
+  tabsFailed = ref(false)
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, pageSizeOptions: [20, 50, 100] })
 const formVisible = ref(false),
   editingId = ref(''),
   detailId = ref(''),
-  batchVisible = ref(false)
+  batchVisible = ref(false),
+  batchBusy = ref(false)
 const testModel = ref<Model>(),
   testPurpose = ref<'ADMISSION' | 'HEALTH'>('ADMISSION'),
   historyRun = ref<TestRun>()
@@ -227,7 +253,7 @@ function rowActions(model: Model): RowAction[] {
   const actions: RowAction[] = []
   const add = (label: string, permission: string | undefined, run: () => unknown, danger = false) =>
     actions.push({ label: t('ma.' + label), permission, run, danger })
-  add('edit', 'model.models', () => edit(model.id))
+  if (model.status !== 'PENDING_REVIEW') add('edit', 'model.models', () => edit(model.id))
   if (['ACTIVE', 'SUSPENDED'].includes(model.status))
     add('healthTitle', 'model.models', () => test(model, 'HEALTH'))
   if (model.status === 'DRAFT')
@@ -250,6 +276,7 @@ function rowActions(model: Model): RowAction[] {
   return actions
 }
 function providerName(id: string) {
+  if (tabsLoading.value) return t('common.loading')
   return providers.value.find((p) => p.id === id)?.name || '—'
 }
 let generation = 0,
@@ -257,6 +284,7 @@ let generation = 0,
 async function load() {
   const g = ++generation
   loading.value = true
+  listFailed.value = false
   try {
     const result = await accessApi.models({
       page: pagination.current,
@@ -274,22 +302,55 @@ async function load() {
     items.value = result.items
     pagination.total = result.total
     selected.value = []
+  } catch {
+    if (g === generation) listFailed.value = true
   } finally {
     if (g === generation) loading.value = false
   }
 }
-async function loadAll() {
+async function loadProviders() {
   const first = await accessApi.providers({ page: 1, page_size: 100 })
   const all = [...first.items]
   for (let page = 2; page <= first.total_pages; page++)
     all.push(...(await accessApi.providers({ page, page_size: 100 })).items)
   providers.value = all
-  modelTotal.value = (await accessApi.models({ page: 1, page_size: 1 })).total
-  await load()
 }
+async function loadTotal() {
+  modelTotal.value = (await accessApi.models({ page: 1, page_size: 1 })).total
+}
+async function loadAll() {
+  tabsLoading.value = true
+  tabsFailed.value = false
+  await Promise.allSettled([
+    Promise.all([loadProviders(), loadTotal()])
+      .catch(() => {
+        tabsFailed.value = true
+      })
+      .finally(() => {
+        tabsLoading.value = false
+      }),
+    load(),
+  ])
+}
+let testRefresh: Promise<void> | undefined
+let refreshAgain = false
 async function refreshAfterTest() {
-  await loadAll()
-  await detailRef.value?.refresh()
+  if (testRefresh) {
+    refreshAgain = true
+    return testRefresh
+  }
+  const pending = (async () => {
+    do {
+      refreshAgain = false
+      await Promise.allSettled([load(), detailRef.value?.refreshTest(testPurpose.value)])
+    } while (refreshAgain)
+  })()
+  testRefresh = pending
+  try {
+    await pending
+  } finally {
+    if (testRefresh === pending) testRefresh = undefined
+  }
 }
 function selectProvider(id: string) {
   providerId.value = id
@@ -322,6 +383,7 @@ function action(model: Model, target: Status | 'DELETE', label: string) {
   reason.value = ''
 }
 async function confirmAction() {
+  if (mutating.value) return
   if (!pending.value) return
   if (!reason.value.trim()) {
     MessagePlugin.warning(t('ma.reasonRequired'))
@@ -332,6 +394,7 @@ async function confirmAction() {
     const p = pending.value
     if (p.target === 'DELETE') await accessApi.removeModel(p.model.id, reason.value)
     else await accessApi.status(p.model.id, p.target, reason.value)
+    MessagePlugin.success(t('ma.success'))
     if (p.target === 'DELETE' && detailId.value === p.model.id) detailId.value = ''
     pending.value = undefined
     await loadAll()
@@ -341,6 +404,8 @@ async function confirmAction() {
   }
 }
 watch([search, status], () => {
+  ++generation
+  loading.value = true
   clearTimeout(timer)
   timer = setTimeout(() => {
     pagination.current = 1

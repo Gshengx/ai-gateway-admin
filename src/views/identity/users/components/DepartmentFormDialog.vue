@@ -8,41 +8,52 @@
     :close-on-overlay-click="false"
     :confirm-btn="{
       content: t('common.save'),
-      loading: submitting,
-      disabled: loading || !!limitMessage,
+      loading: submitting || validating,
+      disabled: loading || loadFailed || submitting || validating || !!limitMessage,
     }"
-    :cancel-btn="{ content: t('common.cancel') }"
+    :cancel-btn="{ content: t('common.cancel'), disabled: submitting || validating }"
+    :close-btn="!submitting && !validating"
+    :close-on-esc-keydown="!submitting && !validating"
     @confirm="handleSubmit"
     @close="onClose"
   >
-    <t-alert v-if="limitMessage" class="dept-limit" theme="warning" :message="limitMessage" />
-    <t-form ref="formRef" :data="form" :rules="rules" label-width="88px">
-      <t-form-item :label="t('users.departments.form.parent')">
-        <t-input :value="parentLabel" disabled />
-      </t-form-item>
-      <t-form-item :label="t('users.departments.form.name')" name="name">
-        <t-input
-          v-model="form.name"
-          :maxlength="128"
-          :placeholder="t('users.departments.form.namePlaceholder')"
-        />
-      </t-form-item>
-      <t-form-item :label="t('users.departments.form.description')" name="description">
-        <t-textarea
-          v-model="form.description"
-          :maxlength="2048"
-          :autosize="{ minRows: 3, maxRows: 5 }"
-          :tips="`${form.description.length}/2048`"
-          :placeholder="t('users.departments.form.descriptionPlaceholder')"
-        />
-      </t-form-item>
-    </t-form>
+    <LoadingState :loading="loading" preserve-content :failed="loadFailed">
+      <t-alert v-if="limitMessage" class="dept-limit" theme="warning" :message="limitMessage" />
+      <t-form
+        :disabled="submitting || validating"
+        ref="formRef"
+        :data="form"
+        :rules="rules"
+        label-width="88px"
+      >
+        <t-form-item :label="t('users.departments.form.parent')">
+          <t-input :value="parentLabel" disabled />
+        </t-form-item>
+        <t-form-item :label="t('users.departments.form.name')" name="name">
+          <t-input
+            v-model="form.name"
+            :maxlength="128"
+            :placeholder="t('users.departments.form.namePlaceholder')"
+          />
+        </t-form-item>
+        <t-form-item :label="t('users.departments.form.description')" name="description">
+          <t-textarea
+            v-model="form.description"
+            :maxlength="2048"
+            :autosize="{ minRows: 3, maxRows: 5 }"
+            :tips="`${form.description.length}/2048`"
+            :placeholder="t('users.departments.form.descriptionPlaceholder')"
+          />
+        </t-form-item>
+      </t-form>
+    </LoadingState>
   </t-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import LoadingState from '@/components/LoadingState.vue'
 import type { FormInstanceFunctions, FormRules } from 'tdesign-vue-next'
 
 import {
@@ -85,8 +96,10 @@ const { t } = useI18n()
 
 const isEdit = computed(() => props.mode === 'edit')
 
+const validating = ref(false)
 const formRef = ref<FormInstanceFunctions | null>(null)
 const loading = ref(false)
+const loadFailed = ref(false)
 const translations = ref<Record<string, DepartmentTranslation>>({})
 const sortOrder = ref(0)
 
@@ -132,10 +145,16 @@ const rules = computed<FormRules<DepartmentForm>>(() => ({
 
 watch(
   () => props.visible,
-  async (visible) => {
+  async (visible, _previous, onCleanup) => {
+    let active = true
+    onCleanup(() => {
+      active = false
+    })
     if (!visible) return
+    loading.value = false
     form.name = ''
     form.description = ''
+    loadFailed.value = false
     translations.value = {}
     sortOrder.value = 0
     loading.value = false
@@ -145,14 +164,15 @@ watch(
       try {
         // 编辑时拉取详情以带上多语言翻译，避免提交时丢失其它语言名称
         const detail = await getDepartmentDetailApi(props.department.id)
+        if (!active) return
         form.name = detail.name
         form.description = detail.description
         translations.value = detail.translations ?? {}
         sortOrder.value = detail.sort_order
       } catch {
-        // 错误已由请求拦截器统一提示
+        if (active) loadFailed.value = true
       } finally {
-        loading.value = false
+        if (active) loading.value = false
       }
     }
     nextTick(() => formRef.value?.clearValidate())
@@ -161,34 +181,41 @@ watch(
 )
 
 function onClose() {
-  if (props.submitting) return
+  if (props.submitting || validating.value) return
   emit('update:visible', false)
 }
 
 async function handleSubmit() {
-  const result = await formRef.value?.validate()
-  if (result !== true) return
+  if (validating.value || props.submitting) return
+  validating.value = true
+  try {
+    if (loading.value || loadFailed.value) return
+    const result = await formRef.value?.validate()
+    if (result !== true) return
 
-  const name = form.name.trim()
-  const description = form.description.trim()
+    const name = form.name.trim()
+    const description = form.description.trim()
 
-  if (isEdit.value) {
+    if (isEdit.value) {
+      emit('submit', {
+        name,
+        description,
+        sort_order: sortOrder.value,
+        translations: translations.value,
+      })
+      return
+    }
+
     emit('submit', {
       name,
       description,
-      sort_order: sortOrder.value,
-      translations: translations.value,
+      parent_id: props.parent?.id ?? '',
+      sort_order: props.siblings.length + 1,
+      translations: {},
     })
-    return
+  } finally {
+    validating.value = false
   }
-
-  emit('submit', {
-    name,
-    description,
-    parent_id: props.parent?.id ?? '',
-    sort_order: props.siblings.length + 1,
-    translations: {},
-  })
 }
 </script>
 

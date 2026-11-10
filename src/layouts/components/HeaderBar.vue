@@ -104,19 +104,26 @@ async function loadLocales() {
   }
 }
 
+let preferenceUpdate = Promise.resolve()
 async function onLanguageChange(value: unknown) {
   const locale = normalizeLocale(String(value ?? ''))
+  if (locale === getCurrentLocale()) return
   const apiCode = remoteLocales.value.find((option) => option.value === locale)?.code ?? locale
   currentLocale.value = locale
   setLocale(locale)
   setApiLocale(apiCode)
   const refresh = userStore.fetchUserInfo().catch(() => undefined)
   setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
-  try {
-    await updateMyPreferencesApi({ preferred_locale: apiCode, time_zone: getTimeZone() })
-  } catch {
-    // 偏好同步失败不影响本次切换
-  }
+  const userId = userStore.context.session?.user_id
+  // Serialize writes so a slower earlier selection cannot overwrite the final preference.
+  preferenceUpdate = preferenceUpdate
+    .then(() => {
+      if (userId && userStore.context.session?.user_id === userId)
+        return updateMyPreferencesApi({ preferred_locale: apiCode, time_zone: getTimeZone() })
+    })
+    .then(() => undefined)
+    .catch(() => {})
+  await preferenceUpdate
   try {
     await refresh
     setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)

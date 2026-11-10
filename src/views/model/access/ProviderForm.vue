@@ -1,21 +1,27 @@
 <template>
   <t-dialog
     dialog-class-name="model-access-dialog"
-    :close-btn="true"
+    :close-btn="!saving"
     :visible="true"
     :header="t(provider.id ? 'ma.editProvider' : 'ma.createProvider')"
     width="var(--provider-model-dialog-width)"
     :close-on-overlay-click="false"
     :confirm-btn="{ theme: 'primary', content: t('ma.confirm'), loading: saving }"
-    :cancel-btn="t('ma.cancel')"
-    @close="emit('close')"
+    :cancel-btn="{ content: t('ma.cancel'), disabled: saving }"
+    :close-on-esc-keydown="!saving"
+    @close="!saving && emit('close')"
     @confirm="save"
   >
-    <t-form class="ma-form provider-form-grid" label-align="top" required-mark-position="right">
+    <t-form
+      :disabled="saving"
+      class="ma-form provider-form-grid"
+      label-align="top"
+      required-mark-position="right"
+    >
       <t-form-item :label="t('ma.providerName')" required-mark
-        ><t-input v-model="provider.name"
+        ><t-input v-model="provider.name" :placeholder="t('providers.namePlaceholder')"
       /></t-form-item>
-      <t-form-item :label="t('ma.template')" required-mark
+      <t-form-item :label="t('ma.template')" :help="t('ma.providerTemplateHelp')" required-mark
         ><t-select
           v-model="provider.template_key"
           filterable
@@ -28,8 +34,8 @@
         theme="warning"
         :message="t('ma.templateChange')"
       />
-      <t-form-item :label="t('ma.baseUrl')" required-mark
-        ><t-input v-model="provider.base_url"
+      <t-form-item :label="t('ma.baseUrl')" :help="baseUrlHelp" required-mark
+        ><t-input v-model="provider.base_url" placeholder="https://api.example.com/v1"
       /></t-form-item>
       <div class="ma-stack provider-auth">
         <h3>{{ t('ma.auth') }}</h3>
@@ -48,7 +54,7 @@
         <t-form-item
           v-for="field in fields"
           :key="field.key"
-          :label="authFieldLabel(field)"
+          :label="providerAuthFieldLabel(field)"
           :required-mark="field.required"
           ><t-textarea
             v-if="field.key === 'service_account_json'"
@@ -71,6 +77,9 @@
           }}</t-radio
           ><t-radio value="CUSTOM">{{ t('ma.CUSTOM_QUERY') }}</t-radio></t-radio-group
         >
+        <p v-if="provider.balance_query_mode === 'TEMPLATE'" class="ma-muted">
+          {{ t('ma.templateBalanceHelp', { name: selectedTemplate?.name ?? '' }) }}
+        </p>
         <template v-if="provider.balance_query_mode === 'CUSTOM'">
           <t-form-item :label="t('ma.method')" required-mark
             ><t-select
@@ -93,7 +102,9 @@
             v-if="provider.balance_query_config.auth === 'HEADER'"
             :label="t('ma.header')"
             required-mark
-            ><t-input v-model="provider.balance_query_config.header"
+            ><t-input
+              v-model="provider.balance_query_config.header"
+              :placeholder="t('ma.balanceHeaderPlaceholder')"
           /></t-form-item>
           <t-form-item
             v-if="provider.balance_query_config.auth !== 'NONE'"
@@ -105,7 +116,9 @@
               :placeholder="configured('balance_query_secret') ? t('ma.keepSecret') : ''"
           /></t-form-item>
           <t-form-item :label="t('ma.unit')" required-mark
-            ><t-input v-model="provider.balance_query_config.unit"
+            ><t-input
+              v-model="provider.balance_query_config.unit"
+              :placeholder="t('ma.balanceUnitPlaceholder')"
           /></t-form-item>
           <t-form-item :label="t('ma.mapping')" required-mark
             ><t-select
@@ -116,16 +129,28 @@
             v-if="provider.balance_query_config.mapping === 'AVAILABLE'"
             :label="t('ma.availablePath')"
             required-mark
-            ><t-input v-model="provider.balance_query_config.available_path"
+            ><t-input
+              v-model="provider.balance_query_config.available_path"
+              :placeholder="t('ma.balanceAvailablePathPlaceholder')"
           /></t-form-item>
           <template v-else
             ><t-form-item :label="t('ma.totalPath')" required-mark
-              ><t-input v-model="provider.balance_query_config.total_path" /></t-form-item
+              ><t-input
+                v-model="provider.balance_query_config.total_path"
+                :placeholder="t('ma.balanceTotalPathPlaceholder')" /></t-form-item
             ><t-form-item :label="t('ma.usedPath')" required-mark
-              ><t-input v-model="provider.balance_query_config.used_path" /></t-form-item
+              ><t-input
+                v-model="provider.balance_query_config.used_path"
+                :placeholder="t('ma.balanceUsedPathPlaceholder')" /></t-form-item
           ></template>
           <t-form-item v-if="provider.balance_query_config.method === 'POST'" :label="t('ma.body')"
-            ><t-textarea v-model="provider.balance_query_config.body"
+            ><t-textarea
+              v-model="provider.balance_query_config.body"
+              :placeholder="
+                t('ma.balanceBodyPlaceholder', {
+                  example: '{ &quot;account_id&quot;: &quot;xxx&quot; }',
+                })
+              "
           /></t-form-item>
           <p class="ma-muted">{{ t('ma.pathHelp') }}</p>
         </template>
@@ -155,7 +180,10 @@
                 :options="['IN_APP', 'EMAIL'].map((v) => ({ value: v, label: t('ma.' + v) }))"
                 @change="channelError = false"
               />
-              <t-form-item :label="t('ma.recipients')" required-mark
+              <t-form-item
+                :label="t('ma.recipients')"
+                :help="t('ma.balanceRecipientsHelp')"
+                required-mark
                 ><SubjectSelect
                   v-model="provider.balance_alert_recipients"
                   type="USER"
@@ -166,6 +194,7 @@
                   "
                   @records="cacheUsers"
               /></t-form-item>
+              <p class="ma-muted">{{ t('ma.balanceEmailHelp') }}</p>
               <p v-if="channelError" class="provider-alert-channel-error ma-error">
                 {{ t('ma.channelsRequired') }}
               </p>
@@ -181,7 +210,9 @@
             ['INTERNET', 'TRUSTED_CLOUD', 'PRIVATE'].map((v) => ({ value: v, label: t('ma.' + v) }))
           "
       /></t-form-item>
-      <t-form-item :label="t('ma.notes')"><t-textarea v-model="provider.notes" /></t-form-item>
+      <t-form-item :label="t('ma.notes')"
+        ><t-textarea v-model="provider.notes" :placeholder="t('providers.notesPlaceholder')"
+      /></t-form-item>
     </t-form>
     <t-alert v-if="error" theme="error" :message="error" />
   </t-dialog>
@@ -207,6 +238,26 @@ const saving = ref(false),
 const users = ref<{ id: string; name: string; email: string | null }[]>([])
 const resolvingRecipients = ref(true)
 const channelError = ref(false)
+const selectedTemplate = computed(() =>
+  props.templates.find((template) => template.template_key === provider.value.template_key),
+)
+const baseUrlHelp = computed(() => {
+  const { template_key, base_url } = provider.value
+  if (template_key === 'bailian') return t('ma.bailianBaseUrlHelp')
+  if (template_key === 'bedrock') return t('ma.bedrockBaseUrlHelp')
+  if (template_key === 'qianwen')
+    return t(
+      base_url.includes('aliyuncs.com') ? 'ma.qianwenMigrationHelp' : 'ma.qianwenBaseUrlHelp',
+    )
+  return ''
+})
+function providerAuthFieldLabel(field: Template['fields'][number]) {
+  if (provider.value.template_key === 'openrouter') {
+    if (field.key === 'api_key') return t('ma.openRouterApiKey')
+    if (field.key === 'management_api_key') return t('ma.openRouterManagementKey')
+  }
+  return authFieldLabel(field)
+}
 const fields = computed(() => {
   const list =
     props.templates.find((x) => x.template_key === provider.value.template_key)?.fields ?? []
@@ -242,84 +293,87 @@ function validUrl(v: string) {
   }
 }
 async function save() {
-  error.value = ''
-  const p = provider.value,
-    b = p.balance_query_config
-  channelError.value =
-    p.balance_query_mode !== 'NONE' && p.balance_alert_enabled && !p.balance_alert_channels.length
-  if (channelError.value) return
-  let valid =
-    !!p.name.trim() &&
-    validUrl(p.base_url) &&
-    fields.value.every(
-      (f) => !f.required || p.provider_config[f.key]?.trim() || (f.secret && configured(f.key)),
-    )
-  if (p.provider_config.service_account_json) {
-    try {
-      JSON.parse(p.provider_config.service_account_json)
-    } catch {
-      valid = false
-    }
-  }
-  if (p.balance_query_mode === 'CUSTOM') {
-    const paths = b.mapping === 'AVAILABLE' ? [b.available_path] : [b.total_path, b.used_path]
-    valid =
-      valid &&
-      validUrl(b.url) &&
-      !!b.unit.trim() &&
-      paths.every((s) => /^[A-Za-z_$][\w$]*(\.[\w$]+)*$/.test(s)) &&
-      (b.auth === 'NONE' || !!b.secret || configured('balance_query_secret')) &&
-      (b.auth !== 'HEADER' || !!b.header)
-    if (b.method === 'POST' && b.body) {
+  if (saving.value) return
+  saving.value = true
+  try {
+    error.value = ''
+    const p = provider.value,
+      b = p.balance_query_config
+    channelError.value =
+      p.balance_query_mode !== 'NONE' && p.balance_alert_enabled && !p.balance_alert_channels.length
+    if (channelError.value) return
+    let valid =
+      !!p.name.trim() &&
+      validUrl(p.base_url) &&
+      fields.value.every(
+        (f) => !f.required || p.provider_config[f.key]?.trim() || (f.secret && configured(f.key)),
+      )
+    if (p.provider_config.service_account_json) {
       try {
-        JSON.parse(b.body)
+        JSON.parse(p.provider_config.service_account_json)
       } catch {
         valid = false
       }
     }
-  }
-  if (p.balance_query_mode !== 'NONE' && p.balance_alert_enabled) {
-    valid =
-      valid &&
-      p.balance_alert_threshold > 0 &&
-      p.balance_alert_recipients.length > 0 &&
-      p.balance_alert_channels.length > 0
-    if (p.balance_alert_channels.includes('EMAIL')) {
-      for (const id of p.balance_alert_recipients)
-        if (!users.value.find((u) => u.id === id)?.email) {
-          try {
-            const result = await getUserDetailApi(id)
-            cacheUsers([
-              {
-                id,
-                name: result.user.display_name || result.user.username,
-                email: result.user.email,
-              },
-            ])
-          } catch {
-            valid = false
-          }
-        }
-    }
-    if (p.balance_alert_channels.includes('EMAIL'))
+    if (p.balance_query_mode === 'CUSTOM') {
+      const paths = b.mapping === 'AVAILABLE' ? [b.available_path] : [b.total_path, b.used_path]
       valid =
         valid &&
-        p.balance_alert_recipients.every((id) =>
-          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(users.value.find((u) => u.id === id)?.email ?? ''),
-        )
-  }
-  if (!valid) {
-    error.value = t('ma.required')
-    return
-  }
-  p.balance_alert_unit = p.balance_query_mode === 'TEMPLATE' ? 'USD' : b.unit
-  saving.value = true
-  try {
-    const result = await accessApi.saveProvider(p)
-    emit('saved', result, !p.id)
-    emit('close')
-  } catch {
-    error.value = t('ma.required')
+        validUrl(b.url) &&
+        !!b.unit.trim() &&
+        paths.every((s) => /^[A-Za-z_$][\w$]*(\.[\w$]+)*$/.test(s)) &&
+        (b.auth === 'NONE' || !!b.secret || configured('balance_query_secret')) &&
+        (b.auth !== 'HEADER' || !!b.header)
+      if (b.method === 'POST' && b.body) {
+        try {
+          JSON.parse(b.body)
+        } catch {
+          valid = false
+        }
+      }
+    }
+    if (p.balance_query_mode !== 'NONE' && p.balance_alert_enabled) {
+      valid =
+        valid &&
+        p.balance_alert_threshold > 0 &&
+        p.balance_alert_recipients.length > 0 &&
+        p.balance_alert_channels.length > 0
+      if (p.balance_alert_channels.includes('EMAIL')) {
+        for (const id of p.balance_alert_recipients)
+          if (!users.value.find((u) => u.id === id)?.email) {
+            try {
+              const result = await getUserDetailApi(id)
+              cacheUsers([
+                {
+                  id,
+                  name: result.user.display_name || result.user.username,
+                  email: result.user.email,
+                },
+              ])
+            } catch {
+              valid = false
+            }
+          }
+      }
+      if (p.balance_alert_channels.includes('EMAIL'))
+        valid =
+          valid &&
+          p.balance_alert_recipients.every((id) =>
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(users.value.find((u) => u.id === id)?.email ?? ''),
+          )
+    }
+    if (!valid) {
+      error.value = t('ma.required')
+      return
+    }
+    p.balance_alert_unit = p.balance_query_mode === 'TEMPLATE' ? 'USD' : b.unit
+    try {
+      const result = await accessApi.saveProvider(p)
+      emit('saved', result, !p.id)
+      emit('close')
+    } catch {
+      error.value = t('ma.required')
+    }
   } finally {
     saving.value = false
   }

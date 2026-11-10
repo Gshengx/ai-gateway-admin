@@ -64,8 +64,12 @@ export interface RolePayload {
 
 export type RoleGrant = Pick<RolePermission, 'resource_code' | 'can_read' | 'can_write'>
 
-export function getRolesApi(params: OffsetPageQuery & { search?: string; builtin?: boolean }) {
+export function getRolesApi(
+  params: OffsetPageQuery & { search?: string; builtin?: boolean },
+  config?: RequestConfig,
+) {
   return request.get<OffsetPageResult<RoleItem>>('/roles', {
+    ...config,
     params,
   })
 }
@@ -84,16 +88,16 @@ export function getPermissionResourcesApi(
   return request.get<OffsetPageResult<PermissionResource>>('/permission-resources', { params })
 }
 
-export function createRoleApi(payload: RolePayload) {
-  return request.post<RoleMutationResult>('/roles', payload)
+export function createRoleApi(payload: RolePayload, idempotencyKey?: string) {
+  return request.post<RoleMutationResult>('/roles', payload, { idempotencyKey })
 }
 
 export function updateRoleApi(id: string, payload: Partial<RolePayload>) {
   return request.patch<RoleMutationResult>(`/roles/${id}`, payload)
 }
 
-export function copyRoleApi(id: string, payload: RolePayload) {
-  return request.post<RoleMutationResult>(`/roles/${id}/copy`, payload)
+export function copyRoleApi(id: string, payload: RolePayload, idempotencyKey?: string) {
+  return request.post<RoleMutationResult>(`/roles/${id}/copy`, payload, { idempotencyKey })
 }
 
 export function saveRolePermissionsApi(
@@ -479,8 +483,8 @@ export interface MockImportRow {
 }
 
 /** 页码模式：返回 items/page/page_size/total/total_pages */
-export function getUserListApi(params: UserQuery) {
-  return request.get<OffsetPageResult<UserItem>>('/users', { params })
+export function getUserListApi(params: UserQuery, config?: RequestConfig) {
+  return request.get<OffsetPageResult<UserItem>>('/users', { ...config, params })
 }
 
 export interface UserTermsCurrent {
@@ -616,8 +620,8 @@ export function getLogicalModelOptionsApi(
   return request.get<OffsetPageResult<LogicalModelOption>>('/logical-models/options', { params })
 }
 
-export function getUserApiKeysApi(params: UserApiKeyQuery) {
-  return getManagedKeysApi(params)
+export function getUserApiKeysApi(params: UserApiKeyQuery, config?: RequestConfig) {
+  return getManagedKeysApi(params, config)
 }
 
 export function getDepartmentListApi(params: DepartmentQuery = {}) {
@@ -1010,8 +1014,8 @@ export interface UserGroupMemberPayload {
   user_ids: string[]
 }
 
-export function getUserGroupListApi(params: UserGroupQuery) {
-  return request.get<OffsetPageResult<UserGroupItem>>('/groups', { params })
+export function getUserGroupListApi(params: UserGroupQuery, config?: RequestConfig) {
+  return request.get<OffsetPageResult<UserGroupItem>>('/groups', { ...config, params })
 }
 
 export function createUserGroupApi(payload: CreateUserGroupPayload) {

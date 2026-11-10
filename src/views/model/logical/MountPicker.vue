@@ -67,7 +67,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { PageInfo, PrimaryTableCol } from 'tdesign-vue-next'
+import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
 import FilterBar from '@/components/FilterBar.vue'
 import { canReadResource, useUserStore } from '@/stores/modules/user'
 import { getModelsApi, type PhysicalModelItem, type ModelStatus } from '@/api/modules/models'
@@ -171,6 +171,7 @@ async function submit() {
       })
       completed.push(id)
     }
+    MessagePlugin.success(t('ma.success'))
     emit('update:visible', false)
   } catch {
     /* 保留失败项供重试 */

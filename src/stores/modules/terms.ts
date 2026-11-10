@@ -26,7 +26,7 @@ export const useTermsStore = defineStore('terms', {
       this.visible =
         this.requireConfirmation || (this.status.login_popup_enabled && !this.status.accepted)
     },
-    async accept() {
+    async accept(afterAccept?: () => Promise<void>) {
       if (!this.status || this.accepting) return
       this.accepting = true
       try {
@@ -37,6 +37,7 @@ export const useTermsStore = defineStore('terms', {
         })
         await useUserStore().refreshContext()
         await this.loadStatus()
+        await afterAccept?.()
       } catch (error) {
         const err = error as NotifiedError
         if (err.code === 'TERMS_VERSION_CHANGED' || !err.status) {
@@ -49,7 +50,7 @@ export const useTermsStore = defineStore('terms', {
       }
     },
     skip() {
-      if (!this.requireConfirmation) this.visible = false
+      if (!this.accepting && !this.requireConfirmation) this.visible = false
     },
     reset() {
       this.$reset()

@@ -302,6 +302,21 @@ function normalizeProvider(
   }
 }
 
+export async function isModelNameAvailable(name: string, excludeId?: string): Promise<boolean> {
+  for (let page = 1; ; page++) {
+    const result = await accessApi.models({ page, page_size: 100 })
+    if (result.items.some((item) => typeof item.model_id_at_gateway !== 'string'))
+      throw new Error('Model name is unavailable in the current API contract')
+    if (
+      result.items.some(
+        (item) => item.id !== excludeId && item.model_id_at_gateway.trim() === name.trim(),
+      )
+    )
+      return false
+    if (page >= result.total_pages) return true
+  }
+}
+
 export const accessApi = {
   metadata: (provider_id: string, model_id_at_provider: string) =>
     request.get<
@@ -367,19 +382,26 @@ export const accessApi = {
     request.delete(`/models/${id}`, { data: { reason } }),
   status: (id: string, status: Status, reason: string) =>
     request.put<Model>(`/models/${id}/status`, { status, reason }),
-  startTest: (id: string, purpose: 'ADMISSION' | 'HEALTH', selected_checks: string[]) =>
+  startTest: (
+    id: string,
+    purpose: 'ADMISSION' | 'HEALTH',
+    selected_checks: string[],
+    idempotencyKey?: string,
+  ) =>
     request.post<TestRun>(
       `/models/${id}/${purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'}`,
       { selected_checks },
+      { idempotencyKey },
     ),
-  test: (id: string, purpose: 'ADMISSION' | 'HEALTH', run: string) =>
+  test: (id: string, purpose: 'ADMISSION' | 'HEALTH', run: string, signal?: AbortSignal) =>
     request.get<TestRun>(
       `/models/${id}/${purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'}/${run}`,
+      { signal },
     ),
-  history: (id: string, purpose: 'ADMISSION' | 'HEALTH', page = 1) =>
+  history: (id: string, purpose: 'ADMISSION' | 'HEALTH', page = 1, page_size = 20) =>
     request.get<OffsetPageResult<TestRun>>(
       `/models/${id}/${purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'}`,
-      { params: { page, page_size: 20 } },
+      { params: { page, page_size } },
     ),
   permissions: (id: string, page = 1, subject_type?: Subject) =>
     request.get<OffsetPageResult<Permission>>(`/models/${id}/permissions`, {
@@ -390,9 +412,9 @@ export const accessApi = {
   revoke: (id: string, ids: string[], reason: string) =>
     request.delete(`/models/${id}/permissions`, { data: { ids, reason } }),
   pricing: (id: string) => request.get<Pricing>(`/models/${id}/pricing/current`),
-  prices: (id: string, page = 1) =>
+  prices: (id: string, page = 1, page_size = 20) =>
     request.get<OffsetPageResult<Pricing>>(`/models/${id}/pricing`, {
-      params: { page, page_size: 20 },
+      params: { page, page_size },
     }),
   savePrice: (id: string, data: Pricing) => request.post<Pricing>(`/models/${id}/pricing`, data),
   syncPrice: (id: string) => request.post<Pricing>(`/models/${id}/pricing/sync`, {}),

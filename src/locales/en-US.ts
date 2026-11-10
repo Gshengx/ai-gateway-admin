@@ -761,6 +761,9 @@ export default {
     notFound: 'Not Found',
   },
   common: {
+    loading: 'Loading, please wait…',
+    loadFailed: 'Unable to load data. Please retry or reopen.',
+    retry: 'Retry',
     collapseSidebar: 'Collapse left panel',
     expandSidebar: 'Expand left panel',
     clearSelection: 'Clear Selection',
@@ -1168,6 +1171,8 @@ export default {
       tip: 'Supports CSV / Excel (.xlsx), up to 1,000 rows and 5 MB. Use standard fields; department paths must already exist. Initial passwords for new users are checked against the current password policy.',
       modeSkip: 'Skip existing users',
       modeOverwrite: 'Overwrite existing users',
+      overwriteHelp:
+        'Overwriting updates user profiles while preserving passwords, password status, account status, API Keys and history.',
       preview: 'Parse preview',
     },
   },

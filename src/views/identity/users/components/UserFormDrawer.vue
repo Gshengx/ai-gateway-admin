@@ -5,9 +5,17 @@
     size="520px"
     :close-on-overlay-click="false"
     destroy-on-close
+    :close-on-esc-keydown="!submitting && !validating"
     @close="onClose"
   >
-    <t-form ref="formRef" :data="form" :rules="rules" label-width="96px" :show-error-message="true">
+    <t-form
+      :disabled="submitting || validating"
+      ref="formRef"
+      :data="form"
+      :rules="rules"
+      label-width="96px"
+      :show-error-message="true"
+    >
       <t-form-item :label="t('users.form.username')" name="username">
         <t-input
           v-model="form.username"
@@ -78,8 +86,10 @@
 
     <template #footer>
       <t-space>
-        <t-button variant="outline" @click="onClose">{{ t('common.cancel') }}</t-button>
-        <t-button theme="primary" :loading="submitting" @click="handleSubmit">
+        <t-button variant="outline" :disabled="submitting || validating" @click="onClose">{{
+          t('common.cancel')
+        }}</t-button>
+        <t-button theme="primary" :loading="submitting || validating" @click="handleSubmit">
           {{ t('common.save') }}
         </t-button>
       </t-space>
@@ -133,6 +143,7 @@ const USERNAME_RE = /^[A-Za-z0-9._-]{2,128}$/
 
 const isCreate = computed(() => props.mode === 'create')
 
+const validating = ref(false)
 const formRef = ref<FormInstanceFunctions | null>(null)
 
 function emptyForm(): UserForm {
@@ -390,30 +401,36 @@ watch(
 )
 
 function onClose() {
-  if (props.submitting) return
+  if (props.submitting || validating.value) return
   emit('update:visible', false)
 }
 
 async function handleSubmit() {
-  const result = await formRef.value?.validate()
-  if (result !== true) return
+  if (validating.value || props.submitting) return
+  validating.value = true
+  try {
+    const result = await formRef.value?.validate()
+    if (result !== true) return
 
-  const base = {
-    display_name: form.display_name.trim(),
-    email: form.email.trim() || null,
-    phone: form.phone.trim() || null,
-    department_id: form.department_id,
-    role_id: form.role_id,
-  }
+    const base = {
+      display_name: form.display_name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      department_id: form.department_id,
+      role_id: form.role_id,
+    }
 
-  if (isCreate.value) {
-    emit('submit', {
-      username: form.username.trim(),
-      initial_password: form.initial_password,
-      ...base,
-    })
-    return
+    if (isCreate.value) {
+      emit('submit', {
+        username: form.username.trim(),
+        initial_password: form.initial_password,
+        ...base,
+      })
+      return
+    }
+    emit('submit', base)
+  } finally {
+    validating.value = false
   }
-  emit('submit', base)
 }
 </script>

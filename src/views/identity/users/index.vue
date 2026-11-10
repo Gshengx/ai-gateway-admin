@@ -27,59 +27,68 @@
             <template #prefix-icon><t-icon name="search" /></template>
           </t-input>
 
-          <t-tree
-            v-if="treeData.length"
-            class="dept-tree"
-            :data="treeData"
-            lazy
-            :load="loadDepartmentChildren"
-            :keys="{ value: 'id', label: 'label' }"
-            :label="true"
-            activable
-            :actived="activedKeys"
-            :expanded="treeExpandedKeys"
-            :draggable="canWriteUsers"
-            :allow-drop="allowDrop"
-            hover
-            value-mode="all"
-            @active="onTreeActive"
-            @expand="onTreeExpand"
-            @drop="onTreeDrop"
-          >
-            <template #label="{ node }">
-              <span class="dept-node">
-                <span
-                  class="dept-node__name"
-                  :title="node.data?.path"
-                  v-html="highlightName(node.data?.name ?? '')"
-                ></span>
-                <span class="dept-count">{{ node.data?.user_count }}</span>
-                <span v-if="canWriteUsers" class="dept-node__more-wrap" @click.stop>
-                  <t-dropdown
-                    trigger="click"
-                    placement="bottom-right"
-                    :options="departmentMenuOptions(node.data)"
-                    @click="onDepartmentMenu($event, node.data)"
-                  >
-                    <t-button
-                      class="dept-node__more"
-                      variant="text"
-                      shape="square"
-                      size="small"
-                      :aria-label="t('users.departments.actions')"
-                    >
-                      <t-icon name="ellipsis" />
-                    </t-button>
-                  </t-dropdown>
-                </span>
-              </span>
-            </template>
-          </t-tree>
-          <p v-else class="dept-empty">
-            {{
-              departmentKeyword ? t('users.departments.searchEmpty') : t('users.departments.empty')
-            }}
-          </p>
+          <div class="dept-tree-region">
+            <LoadingState
+              :loading="departmentLoading || departmentSearching"
+              :failed="departmentFailed"
+            >
+              <t-tree
+                v-if="treeData.length"
+                class="dept-tree"
+                :data="treeData"
+                lazy
+                :load="loadDepartmentChildren"
+                :keys="{ value: 'id', label: 'label' }"
+                :label="true"
+                activable
+                :actived="activedKeys"
+                :expanded="treeExpandedKeys"
+                :draggable="canWriteUsers"
+                :allow-drop="allowDrop"
+                hover
+                value-mode="all"
+                @active="onTreeActive"
+                @expand="onTreeExpand"
+                @drop="onTreeDrop"
+              >
+                <template #label="{ node }">
+                  <span class="dept-node">
+                    <span
+                      class="dept-node__name"
+                      :title="node.data?.path"
+                      v-html="highlightName(node.data?.name ?? '')"
+                    ></span>
+                    <span class="dept-count">{{ node.data?.user_count }}</span>
+                    <span v-if="canWriteUsers" class="dept-node__more-wrap" @click.stop>
+                      <t-dropdown
+                        trigger="click"
+                        placement="bottom-right"
+                        :options="departmentMenuOptions(node.data)"
+                        @click="onDepartmentMenu($event, node.data)"
+                      >
+                        <t-button
+                          class="dept-node__more"
+                          variant="text"
+                          shape="square"
+                          size="small"
+                          :aria-label="t('users.departments.actions')"
+                        >
+                          <t-icon name="ellipsis" />
+                        </t-button>
+                      </t-dropdown>
+                    </span>
+                  </span>
+                </template>
+              </t-tree>
+              <p v-else class="dept-empty">
+                {{
+                  departmentKeyword
+                    ? t('users.departments.searchEmpty')
+                    : t('users.departments.empty')
+                }}
+              </p>
+            </LoadingState>
+          </div>
         </div>
       </CollapsibleSidebar>
 
@@ -169,17 +178,22 @@
           </div>
 
           <t-table
+            height="var(--stable-table-height)"
             row-key="id"
             :data="tableData"
             :columns="columns"
             :loading="loading"
             :selected-row-keys="selectedKeys"
             :pagination="pagination"
+            :class="{
+              'stable-table--pending-footer': (loading || listFailed) && !tableData.length,
+            }"
             :scroll="{ x: 1598 }"
             hover
             @select-change="onSelectChange"
             @page-change="onPageChange"
           >
+            <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
             <template #username="{ row }">
               <t-link theme="primary" hover="color" @click="onView(row)">
                 {{ row.username }}
@@ -255,6 +269,7 @@
       </div>
     </div>
 
+    <t-loading v-if="formRolesLoading" fullscreen :text="t('common.loading')" />
     <user-form-drawer
       v-model:visible="drawerVisible"
       :mode="drawerMode"
@@ -291,7 +306,9 @@
         content: t('common.confirm'),
         loading: confirmDialog.loading,
       }"
-      :cancel-btn="{ content: t('common.cancel') }"
+      :cancel-btn="{ content: t('common.cancel'), disabled: confirmDialog.loading }"
+      :close-btn="!confirmDialog.loading"
+      :close-on-esc-keydown="!confirmDialog.loading"
       @confirm="onConfirm"
       @close="onConfirmClose"
     >
@@ -370,6 +387,8 @@
 import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
 import { copyText } from '@/utils/clipboard'
 import { usePageSelection } from '@/utils/usePageSelection'
+import { useLatestRequest } from '@/utils/useLatestRequest'
+import LoadingState from '@/components/LoadingState.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -590,12 +609,17 @@ function loadDepartmentChildren(node: Pick<TreeNodeModel, 'value'>): Promise<Tre
   return request
 }
 
+const departmentSearching = ref(false)
+const departmentLoading = ref(true),
+  departmentFailed = ref(false)
 function searchDepartments() {
   clearTimeout(searchTimer)
   const version = ++searchVersion
   const session = departmentSession
   const keyword = departmentKeyword.value.trim()
   searchTree.value = []
+  departmentFailed.value = false
+  departmentSearching.value = Boolean(keyword)
   if (!keyword) return
   searchTimer = setTimeout(async () => {
     try {
@@ -604,7 +628,10 @@ function searchDepartments() {
       mergeDepartments(result.items)
       searchTree.value = buildTree(result.items)
     } catch {
-      // Request errors are reported by the interceptor.
+      if (version === searchVersion && session === departmentSession) departmentFailed.value = true
+    } finally {
+      if (version === searchVersion && session === departmentSession)
+        departmentSearching.value = false
     }
   }, 300)
 }
@@ -704,7 +731,8 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
  */
 const BATCH_LIMIT = 100
 
-const loading = ref(false)
+const loading = ref(true)
+const listFailed = ref(false)
 const pagination = reactive<PaginationProps>({
   current: 1,
   pageSize: 20,
@@ -725,7 +753,9 @@ watch(
 
 const defaultDepartmentId = ref('')
 
-async function fetchDepartments() {
+async function fetchDepartments(options: { loadUsers?: boolean } = {}) {
+  departmentLoading.value = true
+  departmentFailed.value = false
   const session = ++departmentSession
   departmentChildrenInFlight.clear()
   clearTimeout(searchTimer)
@@ -744,14 +774,22 @@ async function fetchDepartments() {
       selectedDepartmentId.value = defaultDepartmentId.value
     }
     resetExpandedKeys()
-    await Promise.all(
-      lazyTree.value
+    await Promise.all([
+      options.loadUsers ? fetchUsers({ resetPage: true }) : Promise.resolve(),
+      ...lazyTree.value
         .filter((node) => expandedKeys.value.includes(node.id) && !Array.isArray(node.children))
         .map((node) => loadDepartmentChildren({ value: node.id })),
-    )
+    ])
   } catch {
-    // Request errors are reported by the interceptor.
+    if (session === departmentSession) {
+      departmentFailed.value = true
+      if (options.loadUsers) {
+        loading.value = false
+        listFailed.value = true
+      }
+    }
   } finally {
+    if (session === departmentSession) departmentLoading.value = false
     if (session === departmentSession && isDepartmentSearching.value) searchDepartments()
   }
 }
@@ -781,27 +819,44 @@ async function fetchRoles() {
   }
 }
 
+let formRolesLoaded = false
+const formRolesLoading = ref(false)
 async function fetchFormRoles() {
+  if (formRolesLoaded) return true
+  if (formRolesLoading.value) return false
+  formRolesLoading.value = true
   try {
     formRoleOptions.value = (await getRoleOptionsApi()).items
+    formRolesLoaded = true
+    return true
   } catch {
     formRoleOptions.value = []
+    return false
+  } finally {
+    formRolesLoading.value = false
   }
 }
 
+const userRequest = useLatestRequest()
 async function fetchUsers(options: { resetPage?: boolean } = {}) {
+  const current = userRequest.begin()
   if (options.resetPage) pagination.current = 1
   loading.value = true
+  listFailed.value = false
   try {
     const page = pagination.current ?? 1
-    const res = await getUserListApi({
-      page,
-      page_size: Math.min(100, Math.max(1, pagination.pageSize ?? 20)),
-      search: query.search.trim() || undefined,
-      status: query.status || undefined,
-      department_id: selectedDepartmentId.value || undefined,
-      role_id: query.role_id || undefined,
-    })
+    const res = await getUserListApi(
+      {
+        page,
+        page_size: Math.min(100, Math.max(1, pagination.pageSize ?? 20)),
+        search: query.search.trim() || undefined,
+        status: query.status || undefined,
+        department_id: selectedDepartmentId.value || undefined,
+        role_id: query.role_id || undefined,
+      },
+      { signal: current.signal },
+    )
+    if (!current.isCurrent()) return
     tableData.value = res.items ?? []
     pagination.total = res.total ?? 0
     // 当前页超出总页数（例如删除末页数据后）时回退到最后一页
@@ -811,10 +866,12 @@ async function fetchUsers(options: { resetPage?: boolean } = {}) {
       await fetchUsers()
     }
   } catch {
+    if (!current.isCurrent()) return
+    listFailed.value = true
     tableData.value = []
     pagination.total = 0
   } finally {
-    loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
 }
 
@@ -1046,6 +1103,7 @@ async function onDeleteDepartment(node: TreeDataNode) {
 }
 
 async function onDepartmentSubmit(payload: CreateDepartmentPayload | UpdateDepartmentPayload) {
+  if (deptSubmitting.value) return
   deptSubmitting.value = true
   try {
     if (deptDialog.mode === 'create') {
@@ -1071,13 +1129,15 @@ const drawerMode = ref<'create' | 'edit'>('create')
 const editingUser = ref<UserItem | null>(null)
 const submitting = ref(false)
 
-function onCreate() {
+async function onCreate() {
+  if (!(await fetchFormRoles())) return
   drawerMode.value = 'create'
   editingUser.value = null
   drawerVisible.value = true
 }
 
-function onEdit(row: UserItem) {
+async function onEdit(row: UserItem) {
+  if (!(await fetchFormRoles())) return
   drawerMode.value = 'edit'
   editingUser.value = row
   drawerVisible.value = true
@@ -1120,6 +1180,7 @@ watch(detailVisible, (visible) => {
 })
 
 async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
+  if (submitting.value) return
   submitting.value = true
   try {
     if (drawerMode.value === 'create') {
@@ -1166,7 +1227,7 @@ function openConfirmDialog(options: {
 }
 
 async function onConfirm() {
-  if (!pendingAction) return
+  if (confirmDialog.loading || !pendingAction) return
   confirmDialog.loading = true
   try {
     await pendingAction()
@@ -1194,7 +1255,7 @@ function chunk<T>(list: T[], size: number): T[][] {
 }
 
 function onBatchStatus(status: UserStatus) {
-  const ids = [...selectedKeys.value]
+  let ids = [...selectedKeys.value]
   if (!ids.length) return
   openConfirmDialog({
     title: status === 'ACTIVE' ? t('users.confirm.enableTitle') : t('users.confirm.disableTitle'),
@@ -1214,7 +1275,8 @@ function onBatchStatus(status: UserStatus) {
       const succeeded = new Set(
         groups.flatMap((group, index) => (results[index]?.status === 'fulfilled' ? group : [])),
       )
-      selectedKeys.value = selectedKeys.value.filter((id) => !succeeded.has(id))
+      ids = ids.filter((id) => !succeeded.has(id))
+      selectedKeys.value = [...ids]
       const failed = results.filter((item) => item.status === 'rejected').length
       if (failed) {
         MessagePlugin.warning(t('users.partialFailed', { n: failed }))
@@ -1224,6 +1286,13 @@ function onBatchStatus(status: UserStatus) {
         )
       }
       await refreshAll()
+      if (failed) {
+        confirmDialog.content = t(
+          status === 'ACTIVE' ? 'users.confirm.enableBatch' : 'users.confirm.disableBatch',
+          { n: ids.length },
+        )
+        throw new Error(t('users.partialFailed', { n: failed }))
+      }
     },
   })
 }
@@ -1272,6 +1341,7 @@ async function openBatchDeleteDialog(ids: string[]) {
     )
     return
   }
+  const deleteKey = createIdempotencyKey()
   openConfirmDialog({
     title: t('users.confirm.deleteBatchTitle'),
     content: '',
@@ -1279,7 +1349,7 @@ async function openBatchDeleteDialog(ids: string[]) {
     action: async () => {
       await batchDeleteUsersApi(
         { preview_digest: preview.preview_digest, user_ids: ids },
-        createIdempotencyKey(),
+        deleteKey,
       ).catch((error: unknown) => {
         if ((error as NotifiedError).code === 'EXTERNAL_REFERENCE_BLOCKED') {
           MessagePlugin.warning(t('users.confirm.deleteExternalBlocked'))
@@ -1329,9 +1399,9 @@ async function copyPassword() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([fetchDepartments(), fetchRoles(), fetchFormRoles()])
-  await fetchUsers({ resetPage: true })
+onMounted(() => {
+  void fetchRoles()
+  void fetchDepartments({ loadUsers: true })
 })
 </script>
 
@@ -1345,6 +1415,8 @@ onMounted(async () => {
 }
 
 .users-dept {
+  display: flex;
+  flex-direction: column;
   flex: none;
   width: var(--users-sidebar-width);
   border-right: 1px solid var(--td-component-stroke);
@@ -1353,6 +1425,29 @@ onMounted(async () => {
 .users-dept-content,
 .users-main {
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
+}
+
+.users-dept :deep(.sidebar-content),
+.users-dept-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.users-dept-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.dept-tree-region {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dept-tree-region :deep(.loading-state) {
+  flex: 1;
+  align-items: center;
 }
 
 .users-main {
@@ -1566,9 +1661,16 @@ onMounted(async () => {
     width: 100%;
   }
 
+  .dept-tree-region {
+    flex: none;
+    height: var(--users-department-tree-height);
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+
   .dept-tree {
-    max-height: 260px;
-    overflow-y: auto;
+    max-height: none;
+    overflow: visible;
   }
 }
 </style>

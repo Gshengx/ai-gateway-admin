@@ -125,7 +125,7 @@ import AuthorizationSummary from '../AuthorizationSummary.vue'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import type { PageInfo, PrimaryTableCol } from 'tdesign-vue-next'
+import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
 import {
   getLogicalModelsApi,
   deleteLogicalModelApi,
@@ -337,6 +337,7 @@ async function remove() {
   saving.value = true
   try {
     await deleteLogicalModelApi(current.value.id, { reason: reason.value.trim() })
+    MessagePlugin.success(t('ma.success'))
     activeCache.delete(current.value.id)
     deleteVisible.value = false
     await load()
@@ -364,6 +365,7 @@ async function grant() {
       reason: 'admin-console',
     })
     grantVisible.value = false
+    MessagePlugin.success(t('ma.success'))
     selected.value = []
     await load()
   } catch {

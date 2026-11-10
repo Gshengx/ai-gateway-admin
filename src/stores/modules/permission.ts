@@ -86,7 +86,15 @@ export const usePermissionStore = defineStore('permission', {
           .map((item) => (item.children ? { ...item, children: sort(item.children) } : item))
           .filter((item) => !item.children || item.children.length > 0)
           .sort((a, b) => a.sortOrder - b.sortOrder || a.path.localeCompare(b.path))
-      this.routes = routes
+      // Translated titles do not change route matching. Keep registered records and page instances.
+      const sameRoutes =
+        this.routes.length === routes.length &&
+        routes.every((route, index) => this.routes[index]?.name === route.name)
+      if (sameRoutes) {
+        routes.forEach((route, index) => Object.assign(this.routes[index]!.meta!, route.meta))
+      } else {
+        this.routes = routes
+      }
       this.navigationMenus = sort(menus)
       const sidebar = (items: MenuItem[]): MenuItem[] =>
         items

@@ -734,6 +734,9 @@ export default {
     notFound: '页面不存在',
   },
   common: {
+    loading: '正在加载，请稍候…',
+    loadFailed: '加载失败，请重试或重新打开。',
+    retry: '重试',
     collapseSidebar: '收起左侧面板',
     expandSidebar: '展开左侧面板',
     clearSelection: '清空选择',
@@ -1124,6 +1127,7 @@ export default {
       tip: '支持 CSV / Excel (.xlsx)，最多 1000 条、5 MB，请使用标准字段，部门路径必须已存在。新建用户的初始密码按当前密码策略校验。',
       modeSkip: '跳过已有用户',
       modeOverwrite: '覆盖已有用户',
+      overwriteHelp: '覆盖会更新用户资料，保留原密码、密码状态、账号状态、API Key 和历史记录。',
       preview: '解析预览',
       previewFooterTip: '新建用户首次登录时需修改密码；覆盖用户的原密码及密码状态保持不变。',
     },

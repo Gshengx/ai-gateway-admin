@@ -62,6 +62,8 @@
       </div>
 
       <t-table
+        :height="loading ? 'var(--stable-detail-table-height)' : undefined"
+        max-height="var(--stable-detail-table-height)"
         row-key="id"
         :data="members"
         :columns="columns"
@@ -70,6 +72,7 @@
         hover
         @select-change="onSelectChange"
       >
+        <template v-if="failed" #empty>{{ t('common.loadFailed') }}</template>
         <template #department="{ row }">
           <span :class="{ 'cell-empty': !row.department }">
             {{ row.department?.display_name ?? '—' }}
@@ -88,7 +91,10 @@
         </template>
       </t-table>
 
-      <div class="members__footer">
+      <div
+        :class="{ 'stable-pagination--pending': (loading || failed) && !members.length }"
+        class="members__footer"
+      >
         <t-pagination
           class="members__pagination"
           :current="pagination.current"
@@ -114,9 +120,11 @@
         loading: removeDialog.loading,
         disabled: !canWrite,
       }"
-      :cancel-btn="{ content: t('common.cancel') }"
+      :cancel-btn="{ content: t('common.cancel'), disabled: removeDialog.loading }"
+      :close-btn="!removeDialog.loading"
+      :close-on-esc-keydown="!removeDialog.loading"
       @confirm="confirmRemove"
-      @close="removeDialog.visible = false"
+      @close="!removeDialog.loading && (removeDialog.visible = false)"
     >
       <p class="confirm-content">{{ removeContent }}</p>
     </t-dialog>
@@ -163,6 +171,7 @@ const userStore = useUserStore()
 let memberRequest = 0
 
 const loading = ref(false)
+const failed = ref(false)
 const members = ref<UserGroupMember[]>([])
 const search = ref('')
 const departmentId = ref('')
@@ -214,6 +223,7 @@ async function fetchMembers(): Promise<void> {
   if (!props.group) return
   const requestId = ++memberRequest
   loading.value = true
+  failed.value = false
   try {
     const result = await getUserGroupMembersApi(props.group.id, {
       page: pagination.current ?? 1,
@@ -234,6 +244,7 @@ async function fetchMembers(): Promise<void> {
     members.value = result.items
   } catch {
     if (requestId !== memberRequest) return
+    failed.value = true
     members.value = []
     pagination.total = 0
   } finally {
@@ -275,6 +286,7 @@ function onPageSizeChange(pageSize: number) {
 }
 
 function onClose() {
+  if (addVisible.value || removeDialog.visible) return
   emit('update:visible', false)
 }
 
@@ -301,7 +313,7 @@ function openRemove(ids: string[]) {
 }
 
 async function confirmRemove() {
-  if (!canWrite.value || !props.group || !removeTargets.value.length) return
+  if (removeDialog.loading || !canWrite.value || !props.group || !removeTargets.value.length) return
   removeDialog.loading = true
   try {
     await removeUserGroupMembersApi(props.group.id, {

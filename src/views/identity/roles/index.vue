@@ -14,7 +14,15 @@
         clearable
       />
     </div>
-    <t-table row-key="id" :data="items" :columns="columns" :loading="loading" hover>
+    <t-table
+      height="var(--stable-table-height)"
+      row-key="id"
+      :data="items"
+      :columns="columns"
+      :loading="loading"
+      hover
+    >
+      <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
       <template #name="{ row }">{{ row.display_name || row.name }}</template>
       <template #type="{ row }"
         ><t-tag :theme="row.is_builtin ? 'primary' : 'default'">{{
@@ -47,6 +55,7 @@
       </template>
     </t-table>
     <t-pagination
+      :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
       class="role-pagination"
       :current="page"
       :page-size="pageSize"
@@ -69,7 +78,7 @@
     :close-btn="!saving"
     @close="close"
   >
-    <t-loading class="permission-loading" :loading="formLoading">
+    <LoadingState :loading="formLoading">
       <t-form
         class="permission-form"
         :data="form"
@@ -142,7 +151,7 @@
           <t-empty v-if="!menuGroups.length && !formLoading" :description="t('roles.empty')" />
         </section>
       </t-form>
-    </t-loading>
+    </LoadingState>
     <template #footer>
       <div class="permission-actions">
         <t-button
@@ -168,6 +177,9 @@
       loading: deleting,
     }"
     :close-on-overlay-click="false"
+    :close-btn="!deleting"
+    :close-on-esc-keydown="!deleting"
+    :cancel-btn="{ content: t('common.cancel'), disabled: deleting }"
     @confirm="remove()"
     @close="!deleting && (deleteVisible = false)"
   >
@@ -176,7 +188,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import LoadingState from '@/components/LoadingState.vue'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
 import { businessRoutes } from '@/router/routes'
@@ -203,11 +217,12 @@ const { t, locale } = useI18n()
 const userStore = useUserStore()
 const items = ref<RoleItem[]>([])
 const search = ref('')
-const loading = ref(false)
+const loading = ref(true)
+const listFailed = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const paginationTotal = ref(0)
-let listRequest = 0
+const listRequest = useLatestRequest()
 const columns = computed<PrimaryTableCol<RoleItem>[]>(() => [
   { colKey: 'name', title: t('roles.name') },
   { colKey: 'type', title: t('roles.type') },
@@ -220,15 +235,19 @@ function resetPage() {
   page.value = 1
 }
 async function fetchList(): Promise<void> {
-  const requestId = ++listRequest
+  const current = listRequest.begin()
   loading.value = true
+  listFailed.value = false
   try {
-    const result = await getRolesApi({
-      search: search.value.trim() || undefined,
-      page: page.value,
-      page_size: pageSize.value,
-    })
-    if (requestId !== listRequest) return
+    const result = await getRolesApi(
+      {
+        search: search.value.trim() || undefined,
+        page: page.value,
+        page_size: pageSize.value,
+      },
+      { signal: current.signal },
+    )
+    if (!current.isCurrent()) return
     paginationTotal.value = result.total
     pageSize.value = Math.min(100, Math.max(1, result.page_size))
     const lastPage = Math.max(1, result.total_pages)
@@ -240,11 +259,12 @@ async function fetchList(): Promise<void> {
     page.value = result.page
     items.value = result.items
   } catch {
-    if (requestId !== listRequest) return
+    if (!current.isCurrent()) return
+    listFailed.value = true
     items.value = []
     paginationTotal.value = 0
   } finally {
-    if (requestId === listRequest) loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
 }
 function changePage(info: PageInfo) {
@@ -258,7 +278,12 @@ function changePage(info: PageInfo) {
   }
   void fetchList()
 }
-watch([search, locale], () => {
+watch(search, () => {
+  resetPage()
+  loading.value = true
+  listRequest.schedule(() => void fetchList())
+})
+watch(locale, () => {
   resetPage()
   void fetchList()
 })
@@ -370,7 +395,12 @@ const selected = ref<RoleItem | null>(null)
 const form = reactive({ name: '', description: '' })
 const saving = ref(false)
 const formLoading = ref(false)
+let roleAttempt: { signature: string; key: string } | undefined
+let stagedRoleId = ''
 let formRequest = 0
+onBeforeUnmount(() => {
+  ++formRequest
+})
 function close() {
   if (!saving.value) {
     visible.value = false
@@ -380,6 +410,8 @@ function close() {
 async function open(nextMode: typeof mode.value, row?: RoleItem) {
   if (saving.value) return
   if (nextMode === 'edit' && row?.is_builtin) return
+  stagedRoleId = ''
+  roleAttempt = undefined
   const requestId = ++formRequest
   mode.value = nextMode
   selected.value = row || null
@@ -453,25 +485,35 @@ function save() {
   const payload = { name: form.name.trim(), description: form.description.trim() }
   const currentMode = mode.value
   const role = selected.value
+  const signature = JSON.stringify({ currentMode, id: role?.id, payload })
+  if (roleAttempt?.signature !== signature) roleAttempt = { signature, key: createIdempotencyKey() }
+  const commandKey = roleAttempt.key
   const action = async () => {
     saving.value = true
     let metadataSaved = false
     let permissionsSaved = false
     try {
       const idempotencyKey = createIdempotencyKey()
-      let id = role?.id || ''
-      if (currentMode === 'copy' && role) {
-        const result = await copyRoleApi(role.id, payload)
+      let id = stagedRoleId || role?.id || ''
+      if (!stagedRoleId && currentMode === 'copy' && role) {
+        const result = await copyRoleApi(role.id, payload, commandKey)
         id = result.role_id
         metadataSaved = true
-      } else if (currentMode === 'create') {
-        const result = await createRoleApi(payload)
+      } else if (!stagedRoleId && currentMode === 'create') {
+        const result = await createRoleApi(payload, commandKey)
         id = result.role_id
         metadataSaved = true
       } else if (role && (payload.name !== role.name || payload.description !== role.description)) {
         await updateRoleApi(role.id, payload)
         metadataSaved = true
         selected.value = { ...role, ...payload }
+      }
+      if (currentMode === 'create' || currentMode === 'copy') {
+        if (stagedRoleId) {
+          await updateRoleApi(id, payload)
+          metadataSaved = true
+        }
+        stagedRoleId = id
       }
       if (needsPermissions) {
         const roleId = id
@@ -500,7 +542,7 @@ function save() {
     } catch (error) {
       if (metadataSaved && needsPermissions && !permissionsSaved) {
         MessagePlugin.warning(t(currentMode === 'edit' ? 'roles.partialEdit' : 'roles.partial'))
-        if (currentMode === 'create' || currentMode === 'copy') visible.value = false
+        // Keep the created role ID and form so retry only completes the remaining work.
       }
       throw error
     } finally {

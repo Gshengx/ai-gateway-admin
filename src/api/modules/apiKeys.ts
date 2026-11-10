@@ -1,4 +1,5 @@
 import request from '@/api/request'
+import type { RequestConfig } from '@/api/request'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 
 export interface ApiKeyItem {
@@ -57,8 +58,9 @@ export interface ManagedKeysBatchResult {
   replayed: boolean
 }
 
-export function getManagedKeysApi(params: ManagedKeysQuery) {
+export function getManagedKeysApi(params: ManagedKeysQuery, config?: RequestConfig) {
   return request.get<OffsetPageResult<ManagedKeyItem>>('/api-keys', {
+    ...config,
     params,
   })
 }

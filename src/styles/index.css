@@ -4,8 +4,9 @@
   /* 图 7 计费单元的最小可读宽度，窄抽屉自动排为一列，TDesign 无对应业务尺寸。 */
   --model-price-cell-min-width: 300px;
   --model-access-table-width: 1400px;
-  /* 原型弹窗将长表单限制在视口内，内容滚动且确认按钮始终可见；无对应 TDesign 业务高度 token。 */
-  --model-access-dialog-body-height: 65vh;
+  /* 长弹窗正文最多占视口六成，保留标题、操作区及上下留白；无对应 TDesign 业务高度 token。 */
+  --dialog-body-max-height: 60dvh;
+  --model-access-dialog-body-height: var(--dialog-body-max-height);
   /* 品牌色：与 TDesign Token 对齐，统一在此覆盖 */
   --brand-primary: var(--td-brand-color);
 
@@ -109,9 +110,36 @@ body {
   --provider-dialog-width: 575px;
 }
 
-/* 获取模型弹窗业务宽度为 900px；TDesign 无对应业务宽度 token。 */
+/* 获取模型六列需 1200px 桌面宽度；窄屏保留边距并在表格内横向滚动。 */
 :root {
-  --provider-model-dialog-width: 900px;
+  --provider-model-dialog-width: min(1200px, calc(100vw - 2 * var(--td-comp-margin-l)));
+  --provider-model-table-width: 1100px;
+  /* 获取模型弹窗在矮屏仍保留上下留白，正文使用弹性空间滚动。 */
+  --provider-model-dialog-height: calc(100dvh - 2 * var(--td-comp-margin-l));
+}
+
+.onboarding-guide {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--provider-model-dialog-height);
+}
+.onboarding-guide > .t-dialog__header,
+.onboarding-guide > .t-dialog__footer {
+  flex-shrink: 0;
+}
+.onboarding-guide > .t-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+}
+.onboarding-steps {
+  position: sticky;
+  top: 0;
+  z-index: var(--td-z-index-affix, 1);
+  background: var(--td-bg-color-container);
+  box-shadow: 0 calc(-1 * var(--td-comp-paddingTB-l)) 0 var(--td-bg-color-container);
+  padding-block: var(--td-comp-paddingTB-s);
 }
 
 /* 模型管理截图按常规桌面比例：侧栏 240px，搜索框 280px，筛选框 144px；无对应 TDesign 宽度 token。 */
@@ -134,6 +162,8 @@ body {
 /* 用户管理部门侧栏沿用页面原有 260px 宽度，无对应 TDesign 业务宽度 token。 */
 :root {
   --users-sidebar-width: 260px;
+  /* 沿用窄屏部门树原有 260px 高度上限，首屏和刷新均预留同一内容区。 */
+  --users-department-tree-height: 260px;
 }
 
 /* 系统日志原型：内容宽 1888px、筛选宽 144px、搜索宽 164px、详情抽屉 640px、配置弹窗 480px；TDesign 无对应业务尺寸 token。 */
@@ -153,4 +183,157 @@ body {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+}
+
+/* Only loading states fill the existing drawer body. Loaded content keeps its original layout. */
+.t-drawer__body:has(> .loading-boundary > .loading-state),
+.t-drawer__body:has(> .t-loading__parent > .t-loading--full) {
+  display: flex;
+  flex-direction: column;
+}
+
+.t-drawer__body > .loading-boundary:has(> .loading-state),
+.t-drawer__body > .t-loading__parent:has(> .t-loading--full) {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Empty picker content must still reserve space for its overlay; existing larger minima win. */
+:where(.t-loading__parent):has(> .t-loading--full) {
+  min-height: var(--td-comp-size-xxxl);
+}
+
+/* 用户确认首屏预留高度：尺寸随视口和 TDesign token 变化，短列表留白，长内容内部滚动。 */
+:root {
+  --stable-table-height: clamp(
+    calc(var(--td-comp-size-xxxl) * 4),
+    calc(
+      100dvh - var(--layout-header-height) - var(--td-comp-size-xxxl) * 5 -
+        var(--td-comp-margin-l) * 4
+    ),
+    calc(var(--td-comp-size-xxxl) * 12)
+  );
+  --stable-detail-table-height: clamp(
+    calc(var(--td-comp-size-xxxl) * 3),
+    35dvh,
+    calc(var(--td-comp-size-xxxl) * 7)
+  );
+  --stable-dialog-body-height: clamp(
+    calc(var(--td-comp-size-xxxl) * 4),
+    55dvh,
+    calc(var(--td-comp-size-xxxl) * 9)
+  );
+  --stable-settings-height: max(
+    calc(var(--td-comp-size-xxxl) * 4),
+    calc(
+      100dvh - var(--layout-header-height) - var(--td-comp-size-xxxl) - var(--td-comp-paddingTB-l) *
+        2
+    )
+  );
+  --stable-detail-section-height: calc(
+    var(--stable-detail-table-height) + var(--td-comp-size-xxxl) * 2
+  );
+  --stable-permission-height: calc(
+    var(--stable-detail-table-height) + var(--td-comp-size-xxxl) * 3
+  );
+}
+.settings-panel:has(.loading-boundary) {
+  height: var(--stable-settings-height);
+}
+/* TDesign Card 在 body 外还有 loading 包装层，二者均须传递预留高度。 */
+.settings-panel:has(.loading-boundary) > .t-loading__parent {
+  height: 100%;
+  min-height: 0;
+}
+.settings-panel:has(.loading-boundary) > .t-loading__parent > .t-card__body {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.t-drawer__body {
+  scrollbar-gutter: stable;
+}
+.t-drawer__body .loading-boundary--sized.loading-boundary--resolved {
+  height: auto;
+  overflow: visible;
+}
+.stable-pagination--pending,
+.stable-table--pending-footer .t-table__pagination {
+  visibility: hidden;
+  pointer-events: none;
+}
+.subject-picker > .t-loading__parent,
+.model-grant-picker > .t-loading__parent {
+  max-height: min(35dvh, calc(var(--td-comp-size-xxxl) * 5));
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.subject-picker > .t-loading__parent:has(> .t-loading--full),
+.model-grant-picker > .t-loading__parent:has(> .t-loading--full) {
+  height: min(35dvh, calc(var(--td-comp-size-xxxl) * 5));
+}
+/* 反馈独占预留内容区，表单默认值在等待期间保持不可见且不可交互。 */
+.t-dialog__body > .loading-boundary > .loading-state,
+.t-dialog__body > .loading-boundary > .loading-region--pending,
+.settings-panel .loading-boundary > .loading-region--pending {
+  height: 100%;
+}
+
+.t-drawer__body > .loading-boundary:has(> .loading-state) {
+  display: flex;
+  flex-direction: column;
+}
+.t-dialog__body > .loading-boundary:has(> .loading-state, > .t-alert) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+}
+/* 全局弹窗正文随内容自适应，长内容在视口允许的最大高度内滚动。 */
+.t-dialog > .t-dialog__body {
+  height: auto;
+  min-height: 0;
+  flex-shrink: 1;
+  max-height: min(var(--dialog-body-max-height), calc(100dvh - var(--td-comp-size-xxxl) * 3));
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* 窄窗口沿用业务宽度并以视口为上限；低高度窗口优先保留标题和底部操作区。 */
+.t-drawer__content-wrapper {
+  max-width: 100vw;
+}
+.t-dialog__ctx .t-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - var(--td-comp-margin-l) * 2);
+  max-height: calc(100dvh - var(--td-comp-margin-l) * 2);
+}
+.t-dialog > .t-dialog__header,
+.t-dialog > .t-dialog__footer {
+  flex-shrink: 0;
+}
+
+/* 抽屉页签共用：正文滚动，页签固定；独立维度页签固定整个组件。 */
+.t-drawer__body:has(.drawer-tabs) {
+  padding-top: 0;
+}
+.drawer-tabs {
+  overflow: visible;
+}
+.drawer-tabs > .t-tabs__header,
+.drawer-tabs--standalone {
+  position: sticky;
+  top: 0;
+  z-index: var(--td-z-index-affix, 1);
+  background: var(--td-bg-color-container);
+}
+.drawer-tabs .t-tabs__nav {
+  background: var(--td-bg-color-container);
+}
+
+/* 居中定位层统一使用 token 留白，避免低窗口挤出弹窗操作区。 */
+.t-dialog__ctx .t-dialog__wrap > .t-dialog__position {
+  padding-block: var(--td-comp-margin-l);
 }

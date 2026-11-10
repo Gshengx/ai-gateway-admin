@@ -1,9 +1,12 @@
 <template>
   <t-dialog
+    dialog-class-name="stable-async-dialog"
     :visible="true"
     :header="t('providerModels.title', { name: provider.name })"
     width="var(--provider-model-dialog-width)"
     :close-on-overlay-click="false"
+    :close-btn="!submitting"
+    :close-on-esc-keydown="!submitting"
     @close="close"
   >
     <div class="content">
@@ -37,6 +40,7 @@
           {{ t('providerModels.selectAll') }}
         </t-checkbox>
         <t-table
+          height="var(--stable-detail-table-height)"
           row-key="candidate_id"
           :data="candidates"
           :columns="columns"
@@ -121,6 +125,7 @@
         <div class="secondary">{{ t('providerModels.footerHint') }}</div>
       </template>
       <t-table
+        height="var(--stable-detail-table-height)"
         v-else
         row-key="index"
         :data="result?.items ?? []"
@@ -135,11 +140,16 @@
       </t-table>
     </div>
     <template #footer>
-      <t-button v-if="resultOnly" theme="default" @click="close">{{
+      <t-button v-if="queryFailed" :loading="submitting" @click="resumeImport">{{
+        t('common.retry')
+      }}</t-button>
+      <t-button v-if="resultOnly" :disabled="submitting" theme="default" @click="close">{{
         t('providerModels.close')
       }}</t-button>
       <t-space v-else>
-        <t-button theme="default" @click="close">{{ t('providerModels.later') }}</t-button>
+        <t-button theme="default" :disabled="submitting" @click="close">{{
+          t('providerModels.later')
+        }}</t-button>
         <t-button :loading="submitting" :disabled="busy || templateError || !count" @click="submit">
           {{ t('providerModels.continue', { n: count }) }}
         </t-button>
@@ -150,6 +160,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { createIdempotencyKey } from '@/api/request'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PrimaryTableCol } from 'tdesign-vue-next'
 import {
@@ -194,6 +205,9 @@ const invocationOptions = computed(() =>
 )
 const result = ref<ModelImportBatch>()
 const resultOnly = ref(false)
+const queryFailed = ref(false)
+let batchId: string | undefined
+let importAttempt: { signature: string; key: string } | undefined
 let lastBatch: ModelImportBatch | undefined
 const submittedIds = ref<string[]>([])
 const controller = new AbortController()
@@ -280,6 +294,10 @@ function stop() {
   resumeWait?.()
 }
 function close() {
+  if (submitting.value) return
+  finishClose()
+}
+function finishClose() {
   stop()
   emit('close')
 }
@@ -380,7 +398,9 @@ async function submit() {
   }
   submittedIds.value = rows.map((row) => row.id)
   submitting.value = true
-  let batchId: string | undefined
+  const signature = JSON.stringify({ discovery: discoveryId.value, items })
+  if (importAttempt?.signature !== signature)
+    importAttempt = { signature, key: createIdempotencyKey() }
   try {
     const accepted = await importProviderModelsApi(
       props.provider.id,
@@ -390,48 +410,73 @@ async function submit() {
         reason: t('providerModels.importReason'),
       },
       controller.signal,
+      importAttempt.key,
     )
     if (stopped) return
     batchId = accepted.batch_id
-    const deadline = Date.now() + 120000
-    while (!stopped && Date.now() < deadline) {
-      const batch = await getModelImportBatchApi(
-        batchId,
-        controller.signal,
-        Math.max(1, Math.min(20000, deadline - Date.now())),
-      )
-      if (stopped) return
-      lastBatch = batch
-      if (batch.status === 'SUCCEEDED') {
-        MessagePlugin.success(t('providerModels.imported'))
-        emit('imported')
-        close()
-        return
-      }
-      if (['PARTIAL', 'FAILED', 'CANCELLED'].includes(batch.status)) {
-        if (batch.items.some((item) => item.status === 'SUCCEEDED')) emit('imported')
-        result.value = batch
-        resultOnly.value = true
-        return
-      }
-      result.value = undefined
-      await wait(deadline)
-    }
-    if (!stopped) {
-      notice.value = t('providerModels.importTimeout')
-      result.value = lastBatch
-      resultOnly.value = true
-    }
+    await pollImportBatch()
   } catch {
     if (!stopped) {
       notice.value = t('providerModels.importFailed')
-      result.value = lastBatch
-      resultOnly.value = true
+      if (batchId) {
+        queryFailed.value = true
+        resultOnly.value = true
+        result.value = lastBatch
+      }
     }
   } finally {
     if (!stopped) submitting.value = false
   }
 }
+async function pollImportBatch() {
+  if (!batchId) return
+  const deadline = Date.now() + 120000
+  while (!stopped && Date.now() < deadline) {
+    const batch = await getModelImportBatchApi(
+      batchId,
+      controller.signal,
+      Math.max(1, Math.min(20000, deadline - Date.now())),
+    )
+    if (stopped) return
+    lastBatch = batch
+    if (batch.status === 'SUCCEEDED') {
+      MessagePlugin.success(t('providerModels.imported'))
+      emit('imported')
+      finishClose()
+      return
+    }
+    if (['PARTIAL', 'FAILED', 'CANCELLED'].includes(batch.status)) {
+      if (batch.items.some((item) => item.status === 'SUCCEEDED')) emit('imported')
+      result.value = batch
+      resultOnly.value = true
+      return
+    }
+    result.value = undefined
+    await wait(deadline)
+  }
+  if (!stopped) {
+    notice.value = t('providerModels.importTimeout')
+    result.value = lastBatch
+    resultOnly.value = true
+    queryFailed.value = true
+  }
+}
+async function resumeImport() {
+  if (submitting.value || stopped || !batchId) return
+  submitting.value = true
+  queryFailed.value = false
+  try {
+    await pollImportBatch()
+  } catch {
+    if (!stopped) {
+      queryFailed.value = true
+      notice.value = t('providerModels.importFailed')
+    }
+  } finally {
+    if (!stopped) submitting.value = false
+  }
+}
+
 onMounted(() => {
   void discover()
 })

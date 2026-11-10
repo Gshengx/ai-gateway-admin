@@ -20,6 +20,7 @@
       />
     </div>
     <t-table
+      height="var(--stable-table-height)"
       row-key="id"
       table-layout="fixed"
       table-content-width="max(100%, var(--personal-key-table-width))"
@@ -27,7 +28,7 @@
       :data="items"
       :columns="columns"
       :loading="loading"
-      :empty="t('myKeys.empty')"
+      :empty="listFailed ? t('common.loadFailed') : t('myKeys.empty')"
     >
       <template #id="{ row }"
         ><code>{{ row.id }}</code></template
@@ -64,6 +65,7 @@
     </t-table>
     <div class="key-pagination">
       <t-pagination
+        :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
         :current="page"
         :page-size="pageSize"
         :total="paginationTotal"
@@ -157,7 +159,8 @@ import { formatDateTime } from '@/utils/datetime'
 const { t, locale } = useI18n()
 const items = ref<ApiKeyItem[]>([])
 const search = ref('')
-const loading = ref(false)
+const loading = ref(true)
+const listFailed = ref(false)
 const statsReady = ref(false)
 const activeCount = ref(0)
 const activeLimit = ref(0)
@@ -193,6 +196,7 @@ async function fetchList(): Promise<void> {
   if (disposed) return
   const requestId = ++listRequest
   loading.value = true
+  listFailed.value = false
   try {
     const result = await getMyKeysApi({
       search: search.value.trim() || undefined,
@@ -215,6 +219,7 @@ async function fetchList(): Promise<void> {
     statsReady.value = true
   } catch (error) {
     if (disposed || requestId !== listRequest) return
+    listFailed.value = true
     items.value = []
     paginationTotal.value = 0
     showError(error)
@@ -304,9 +309,11 @@ async function saveName() {
 const selected = ref<ApiKeyItem | null>(null)
 const deleteVisible = ref(false)
 const deleting = ref(false)
+let deleteAttemptKey = ''
 function openDelete(row: ApiKeyItem) {
   if (disposed || deleting.value) return
   selected.value = row
+  deleteAttemptKey = idempotencyKey()
   deleteVisible.value = true
 }
 function closeDelete() {
@@ -317,7 +324,7 @@ function closeDelete() {
 async function remove() {
   if (disposed || deleting.value || !selected.value) return
   const id = selected.value.id
-  const key = idempotencyKey()
+  const key = deleteAttemptKey || (deleteAttemptKey = idempotencyKey())
   deleting.value = true
   try {
     await deleteMyKeyApi(id, {}, key)

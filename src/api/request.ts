@@ -91,9 +91,8 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
   ) {
     const { useUserStore } = await import('@/stores/modules/user')
     const user = useUserStore()
-    user.invalidatePermissions()
     try {
-      await user.fetchUserInfo()
+      await user.recoverPermissions()
     } catch {
       /* Preserve the original forbidden response. */
     }

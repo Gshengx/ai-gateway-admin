@@ -6,20 +6,6 @@
     </div>
     <t-alert theme="info" :message="t('ma.priceConfigNotice')" />
     <t-form class="ma-form pricing-form" label-align="top" required-mark-position="right">
-      <t-form-item :label="t('ma.source')" required-mark>
-        <t-radio-group v-model="value.source_type" variant="outline" @change="sourceChanged">
-          <t-radio-button value="BUILT_IN">{{ t('ma.BUILT_IN') }}</t-radio-button>
-          <t-radio-button value="ENTERPRISE_CUSTOM">{{ t('ma.ENTERPRISE_CUSTOM') }}</t-radio-button>
-        </t-radio-group>
-      </t-form-item>
-      <p class="ma-muted">
-        {{ t(value.source_type === 'BUILT_IN' ? 'ma.builtInPriceHelp' : 'ma.priceSourceHelp') }}
-      </p>
-      <t-alert
-        v-if="value.source_type === 'BUILT_IN' && missingBuiltInPrice"
-        theme="warning"
-        :message="t('ma.missingBuiltInPrice')"
-      />
       <t-form-item :label="t('ma.mode')" required-mark
         ><t-radio-group v-model="value.pricing_mode" variant="outline" @change="modeChanged"
           ><t-radio-button value="FIXED">{{ t('ma.FIXED') }}</t-radio-button
@@ -39,6 +25,7 @@
           }}</t-button>
         </div>
         <p class="ma-muted">{{ t('ma.timezone') }}</p>
+        <p v-if="!namedPeriods.length" class="ma-muted">{{ t('ma.emptyNamedPeriodsHelp') }}</p>
         <div v-for="period in namedPeriods" :key="period.id" class="ma-box ma-stack pricing-period">
           <div class="pricing-period__heading">
             <t-input v-model="period.name" @change="markCustom" :placeholder="t('ma.periodName')" />
@@ -156,19 +143,22 @@
             :decimal-places="2"
           />
         </t-form-item>
-        <div v-else class="pricing-rate__grid">
-          <div v-for="period in orderedPeriods" :key="period.id" class="pricing-cell">
-            <span>{{
-              period.is_fallback ? t('ma.fallback') : period.name || t('ma.periodName')
-            }}</span
-            ><t-input-number
-              v-model="rate.period_prices[period.id]"
-              @change="markCustom"
-              :min="0"
-              :decimal-places="2"
-            />
+        <template v-else>
+          <p v-if="!namedPeriods.length" class="ma-muted">{{ t('ma.emptyPeriodPricesHelp') }}</p>
+          <div class="pricing-rate__grid">
+            <div v-for="period in orderedPeriods" :key="period.id" class="pricing-cell">
+              <span>{{
+                period.is_fallback ? t('ma.fallback') : period.name || t('ma.periodName')
+              }}</span
+              ><t-input-number
+                v-model="rate.period_prices[period.id]"
+                @change="markCustom"
+                :min="0"
+                :decimal-places="2"
+              />
+            </div>
           </div>
-        </div>
+        </template>
       </section>
     </t-form>
     <t-alert v-if="error" theme="error" :message="error" />
@@ -181,15 +171,9 @@ import { type Pricing, type Period } from '@/api/modules/modelAccess'
 import { pricingError, periodsError, validatePeriods } from '@/utils/modelPricing'
 import { metricLabel, unitLabel } from './helpers'
 const value = defineModel<Pricing>({ required: true })
-const props = defineProps<{ defaults: Pricing }>()
 const { t, locale } = useI18n(),
   error = ref('')
 const validationAttempted = ref(false)
-const missingBuiltInPrice = computed(
-  () =>
-    !props.defaults.metric_rates.length ||
-    props.defaults.metric_rates.some((rate) => rate.unit_price === null),
-)
 let sequence = 0
 const dayOptions = computed(() =>
   Array.from({ length: 7 }, (_, i) => ({
@@ -276,13 +260,6 @@ function conditionMessages(period: Period, index: number) {
     return []
   return periodValidation.value.periods[period.id]?.conditions[index] ?? []
 }
-function sourceChanged() {
-  if (value.value.source_type === 'BUILT_IN') {
-    value.value = JSON.parse(JSON.stringify(props.defaults)) as Pricing
-  }
-  validationAttempted.value = false
-  error.value = ''
-}
 function removePeriod(id: string) {
   markCustom()
   value.value.time_periods = value.value.time_periods.filter((p) => p.id !== id)
@@ -299,7 +276,6 @@ function validate() {
 }
 function markCustom() {
   value.value.source_type = 'ENTERPRISE_CUSTOM'
-  value.value.currency = 'CNY'
 }
 
 defineExpose({ validate })

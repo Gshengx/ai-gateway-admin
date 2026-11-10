@@ -1,4 +1,69 @@
 const labels: Record<string, [string, string]> = {
+  duplicateName: ['名称重复', 'Duplicate Name'],
+  awaitingTest: ['待测试', 'Awaiting Test'],
+  manualModel: ['手动添加模型', 'Add Model Manually'],
+  joinList: ['加入列表', 'Add to List'],
+  capabilityModalities: ['能力与模态', 'Capabilities and Modalities'],
+  contextOutput: ['上下文 / 最大输出', 'Context / Maximum Output'],
+  providerTemplateHelp: [
+    'P0：Azure AI、DeepSeek、Google Vertex、网宿 AI、通用模板、企业自建；其余为 P1。',
+    'P0: Azure AI, DeepSeek, Google Vertex, Wangsu AI, generic templates and enterprise-hosted services; all others are P1.',
+  ],
+  bailianBaseUrlHelp: [
+    '填写百炼控制台提供的完整 API 地址，并使用对应的 API Key。',
+    'Enter the complete API URL provided by the Bailian console and use its corresponding API Key.',
+  ],
+  bedrockBaseUrlHelp: [
+    '填写 AWS 提供的完整 Bedrock Base URL；IAM 认证使用网关运行环境的 AWS 凭证。',
+    'Enter the complete Bedrock Base URL provided by AWS. IAM authentication uses the AWS credentials in the gateway runtime environment.',
+  ],
+  qianwenBaseUrlHelp: [
+    '请使用千问 AI 平台创建的 API Key。',
+    'Use an API Key created on the Qianwen AI platform.',
+  ],
+  qianwenMigrationHelp: [
+    '当前实例仍指向百炼；迁移至千问 AI 平台时，请同时更换地址和 API Key。',
+    'This instance still points to Bailian. When migrating to the Qianwen AI platform, replace both the URL and the API Key.',
+  ],
+  openRouterApiKey: ['OpenRouter API Key', 'OpenRouter API Key'],
+  openRouterManagementKey: ['管理 API Key（余额查询）', 'Management API Key (balance query)'],
+  templateBalanceHelp: [
+    '使用 {name} 模板定义的余额查询接口和认证配置。',
+    'Use the balance query endpoint and authentication settings defined by the {name} template.',
+  ],
+  balanceHeaderPlaceholder: ['例如：X-API-Key', 'For example: X-API-Key'],
+  balanceUnitPlaceholder: ['例如：USD、CNY、积分', 'For example: USD, CNY, credits'],
+  balanceAvailablePathPlaceholder: [
+    '例如：data.available_balance',
+    'For example: data.available_balance',
+  ],
+  balanceTotalPathPlaceholder: ['例如：data.total', 'For example: data.total'],
+  balanceUsedPathPlaceholder: ['例如：data.used', 'For example: data.used'],
+  balanceBodyPlaceholder: ['可留空，例如：{example}', 'Optional, for example: {example}'],
+  balanceRecipientsHelp: [
+    '新建配置默认选择当前管理员；停用用户不能作为新接收人。',
+    'New configurations select the current administrator by default. Disabled users cannot be added as new recipients.',
+  ],
+  balanceEmailHelp: [
+    '邮件渠道要求接收人已配置有效邮箱。',
+    'The email channel requires recipients to have a valid email address configured.',
+  ],
+  emptyNamedPeriodsHelp: [
+    '暂无命名时段，请添加时段并配置时间条件；兜底时段用于未命中其他时段的请求。',
+    'No named periods yet. Add a period and configure its time conditions. The fallback period applies to requests that match no other period.',
+  ],
+  emptyPeriodPricesHelp: [
+    '添加命名时段后，可在这里分别填写各时段价格；兜底价格始终可单独配置。',
+    'After adding named periods, enter their prices here. The fallback price can always be configured separately.',
+  ],
+  discoveryMetadataHelp: [
+    '输入模态、输出模态、上下文窗口、最大输出和标签优先使用研发适配预置；未预置时使用供应商模型列表返回值，两者均未提供时留空。上下文窗口和最大输出未获取时显示“未获取数据”。上架前请核对模型信息。',
+    'Input modalities, output modalities, context window, maximum output and tags use product adaptation presets first, then values returned by the provider model list. Leave them empty if neither source provides data. Missing context window and maximum output values are shown as “No data retrieved”. Verify model information before publication.',
+  ],
+  onboardingTestHelp: [
+    '研发适配预置该模型支持的接口。可多选或取消勾选支持接口，并单独填写自定义接口路径；客户端指定的接口优先透传，目标模型不支持时由系统做兼容转换。检测费用归属 system 用户并计入总部。',
+    'Product adaptation presets the interfaces supported by this model. Select or deselect supported interfaces and enter custom interface paths separately. Client-specified interfaces are passed through first; the system converts requests for compatibility when the model does not support them. Test costs are allocated to the system user and charged to Headquarters.',
+  ],
   modelPrice: ['模型价格', 'Model pricing'],
   modelPriceHelp: [
     '产品预置计费模式、已适配计费项和价格；费用按当前生效的价格计算',
@@ -115,6 +180,10 @@ const labels: Record<string, [string, string]> = {
   detectionHint: [
     '使用 {api} 检测，通过后模型进入待审核。',
     'Test using {api}. Passing models await review.',
+  ],
+  testCostNotice: [
+    '检测费用归属 system 用户并计入总部。',
+    'Test costs are attributed to the system user and charged to Headquarters.',
   ],
   more: ['更多', 'More'],
   previousProviders: ['上一组供应商', 'Previous providers'],
@@ -252,6 +321,7 @@ const labels: Record<string, [string, string]> = {
   enabled: ['已启用', 'Enabled'],
   disabled: ['未启用', 'Disabled'],
   lastCheck: ['最近检查：{time}', 'Last check: {time}'],
+  lastCheckLabel: ['最近检查', 'Last check'],
   unknown: ['—', '—'],
   required: ['请填写所有必填项并检查输入格式', 'Complete required fields and check input format'],
   success: ['操作成功', 'Operation successful'],
@@ -262,8 +332,12 @@ const labels: Record<string, [string, string]> = {
     'Delete this item and its associated configuration?',
   ],
   providerDelete: [
-    '删除供应商会解除关联模型，相关模型将不可调用。',
-    'Deleting this provider detaches its models and makes them unavailable.',
+    '供应商名下存在已上架模型时须先下架。删除为永久删除，关联模型将不可调用；历史费用与审计快照不受影响。',
+    'Unpublish active models before deleting this provider. Deletion is permanent and associated models become unavailable. Historical cost and audit snapshots are retained.',
+  ],
+  providerDeleteBlocked: [
+    '供应商名下存在已上架模型，请先下架后再删除。',
+    'Unpublish all active models before deleting this provider.',
   ],
   pause: ['暂停', 'Suspend'],
   resume: ['恢复', 'Resume'],
@@ -277,9 +351,21 @@ const labels: Record<string, [string, string]> = {
   healthHistory: ['健康检查记录', 'Health history'],
   startTest: ['开始检测', 'Start Test'],
   checks: ['检测类型', 'Check types'],
+  matrixHelp: [
+    '点击记录日期查看完整检测结果；— 表示本次未执行该项检测。',
+    'Select the record date to view full results. — indicates a check not included in this run.',
+  ],
+  historyChecks: ['检测内容', 'Checks performed'],
   testResult: ['检测结果', 'Test results'],
   duration: ['耗时', 'Duration'],
   result: ['详细结果', 'Details'],
+  failureReason: ['失败原因', 'Failure reason'],
+  failureReasonUnavailable: ['暂未提供失败原因', 'No failure reason provided'],
+  troubleshooting: ['排查建议', 'Troubleshooting'],
+  testTroubleshooting: [
+    '请核对供应商侧模型标识、调用接口和认证配置，确认供应商服务可用后重试。',
+    'Verify the upstream model ID, invocation API and credentials, confirm the provider service is available, then retry.',
+  ],
   passedCount: ['通过 {n} / {total} 项', 'Passed {n} / {total} checks'],
   checkTime: ['检测时间', 'Test time'],
   trigger: ['触发方式', 'Trigger'],
@@ -394,7 +480,7 @@ const labels: Record<string, [string, string]> = {
   retry: ['重试', 'Retry'],
   relatedModels: ['关联物理模型', 'Related physical models'],
   step1: ['获取并选择模型', 'Get and select models'],
-  step2: ['模型测试', 'Model test'],
+  step2: ['配置接口与检测', 'Configure Interfaces and Test'],
   step3: ['确认上架', 'Confirm publication'],
   step4: ['完成', 'Complete'],
   guideTitle: ['{step} · {name}', '{step} · {name}'],
@@ -412,6 +498,12 @@ const labels: Record<string, [string, string]> = {
   later: ['稍后处理', 'Handle later'],
   continue: ['添加并继续（{n}）', 'Add And Continue ({n})'],
   addManual: ['添加', 'Add'],
+  manualUpstreamRequired: ['请填写供应商侧标识。', 'Enter the provider model ID.'],
+  manualNameRequired: ['请填写模型名称。', 'Enter the model name.'],
+  manualUpstreamDuplicate: [
+    '该供应商侧标识已在列表中，请直接勾选对应模型。',
+    'This provider model ID is already in the list. Select the existing model instead.',
+  ],
   modelTestStart: ['开始模型测试', 'Start Model Tests'],
   invocationHint: [
     '请逐个确认调用接口；建议值不表示模型已通过检测。',
@@ -430,8 +522,12 @@ const labels: Record<string, [string, string]> = {
     'Authentication failed. Check provider credentials or register a model manually.',
   ],
   nameConflict: [
-    '该模型名称已被其他模型使用，请修改后添加',
+    '该模型名称已被其他模型使用，请修改后保存',
     'This model name is already in use; choose another name',
+  ],
+  nameCheckUnavailable: [
+    '暂时无法校验模型名称，请重试后保存',
+    'Unable to validate the model name. Please retry before saving.',
   ],
   permissions: ['模型权限', 'Model permissions'],
   DEPARTMENT: ['部门授权', 'Department grants'],
@@ -482,6 +578,7 @@ const labels: Record<string, [string, string]> = {
   price: ['单价', 'Unit price'],
   priceHistory: ['价格历史', 'Price history'],
   currentPrice: ['当前价格', 'Current price'],
+  historicalPrice: ['历史价格', 'Historical price'],
   version: ['版本', 'Version'],
   catalog: ['平台目录版本', 'Catalog version'],
   perMillion: ['百万 Token', 'million tokens'],
@@ -497,8 +594,8 @@ const labels: Record<string, [string, string]> = {
   end: ['结束时间', 'End time'],
   addCondition: ['添加时间条件', 'Add Time Condition'],
   timezone: [
-    '时区：Asia/Shanghai；时间条件不得重叠，跨午夜请拆分。',
-    'Time zone: Asia/Shanghai. Conditions must not overlap; split periods across midnight.',
+    '时区：Asia/Shanghai，按请求开始时间匹配。每个命名时段可添加多个时间条件，命中任一条件即按该时段计价；未命中其他时段时使用兜底时段。时间条件不得重叠，跨午夜请拆分为两个条件。',
+    'Time zone: Asia/Shanghai. Match periods using the request start time. A named period can contain multiple time conditions; matching any condition applies that period’s price. Use the fallback period if no other period matches. Conditions must not overlap; split overnight ranges into two conditions.',
   ],
   invalidPeriods: [
     '请检查时段名称、星期与时间；时段不可重叠，必须保留兜底时段。',

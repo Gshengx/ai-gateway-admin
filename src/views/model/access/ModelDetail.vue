@@ -2,12 +2,12 @@
   <t-drawer
     :close-btn="true"
     :visible="true"
-    :header="model?.model_id_at_gateway"
+    :header="model?.model_id_at_gateway || ' '"
     :footer="false"
     size="large"
     @close="emit('close')"
   >
-    <t-loading :loading="loading"
+    <LoadingState :loading="loading" :failed="failed" retryable @retry="loadDetail"
       ><div v-if="model" class="ma-stack">
         <div class="ma-row">
           <t-tag variant="light" :theme="statusTheme(model.status)">{{
@@ -25,6 +25,7 @@
           ><t-button
             v-permission.write="'model.models'"
             theme="primary"
+            v-if="model.status !== 'PENDING_REVIEW'"
             @click="emit('edit', model.id)"
             >{{ t('ma.edit') }}</t-button
           >
@@ -33,86 +34,103 @@
         <dl class="ma-definitions">
           <template v-for="row in info" :key="row[0]"
             ><dt>{{ row[0] }}</dt>
-            <dd>{{ row[1] }}</dd></template
+            <dd>
+              <PricingSummary
+                v-if="row[0] === t('ma.priceSummary') && currentPrice && !pricesFailed"
+                :price="currentPrice"
+              />
+              <template v-else>{{ row[1] }}</template>
+            </dd></template
           >
         </dl>
         <div class="ma-stack">
           <h3>{{ t('ma.priceHistory') }}</h3>
-          <div
-            v-for="(price, i) in priceHistory"
-            :key="price.id"
-            :class="['ma-box', { 'ma-current': pricePage === 1 && i === 0 }]"
+          <LoadingState
+            height="var(--stable-detail-section-height)"
+            :loading="pricesLoading"
+            :failed="pricesFailed"
+            retryable
+            @retry="loadPrices"
           >
-            <strong>{{
-              pricePage === 1 && i === 0
-                ? t('ma.currentPrice')
-                : t('ma.version') + ' ' + price.version
-            }}</strong>
-            <p class="ma-muted">
-              {{ formatDateTime(price.created_at) }} · {{ price.created_by }} ·
-              {{ t('ma.' + price.source_type) }} · {{ t('ma.' + price.pricing_mode) }}
-            </p>
-            <div v-for="rate in price.metric_rates" :key="rate.metric_key">
-              {{ metricLabel(rate.metric_key) }}:
-              {{
-                price.pricing_mode === 'FIXED'
-                  ? rate.unit_price
-                  : price.time_periods
-                      .map(
-                        (p) =>
-                          `${p.is_fallback ? t('ma.fallback') : p.name}: ${rate.period_prices[p.id]}`,
-                      )
-                      .join(' / ')
-              }}
-              {{ price.currency }} / {{ t('ma.' + unitLabel(rate.unit)) }}
+            <div v-for="(price, i) in priceHistory" :key="price.id" class="price-history-entry">
+              <strong>{{
+                pricePage === 1 && i === 0 ? t('ma.currentPrice') : t('ma.historicalPrice')
+              }}</strong>
+              <p class="ma-muted">
+                {{ formatDateTime(price.created_at) }} · {{ price.created_by }}
+              </p>
+              <PricingSummary :price="price" />
             </div>
-          </div>
-          <t-pagination
-            v-if="priceTotal > 20"
-            :current="pricePage"
-            :total="priceTotal"
-            :page-size="20"
-            :show-page-size="false"
-            @current-change="
-              (v: number) => {
-                pricePage = v
-                loadPrices()
-              }
-            "
-          />
+            <t-pagination
+              v-if="priceTotal > pricePageSize"
+              :current="pricePage"
+              :total="priceTotal"
+              :page-size="pricePageSize"
+              :show-page-size="false"
+              @current-change="
+                (v: number) => {
+                  pricePage = v
+                  loadPrices()
+                }
+              "
+            />
+          </LoadingState>
         </div>
         <div v-for="purpose in ['ADMISSION', 'HEALTH'] as const" :key="purpose" class="ma-stack">
           <h3>{{ t(purpose === 'HEALTH' ? 'ma.healthHistory' : 'ma.admissionHistory') }}</h3>
-          <p v-if="!histories[purpose].length" class="ma-muted">{{ t('ma.noHistory') }}</p>
-          <t-table
-            v-else
-            row-key="id"
-            :data="histories[purpose]"
-            :columns="historyColumns"
-            :pagination="{
-              current: historyPages[purpose],
-              pageSize: 20,
-              total: historyTotals[purpose],
-              showPageSize: false,
-            }"
-            :disable-data-page="true"
-            @page-change="
-              (page: PageInfo) => {
-                historyPages[purpose] = page.current
-                loadHistory(purpose)
-              }
-            "
-            ><template #started_at="{ row }"
-              ><t-link theme="primary" @click="emit('test', model, purpose, row)">{{
-                formatDateTime(row.started_at)
-              }}</t-link></template
-            ><template #invocation_api="{ row }">{{ runApiLabels(row) }}</template
-            ><template #status="{ row }"
-              ><t-tag variant="light" :theme="statusTheme(row.status)">{{
-                t('ma.' + row.status)
-              }}</t-tag></template
-            ><template #trigger_type="{ row }">{{ t('ma.' + row.trigger_type) }}</template></t-table
+          <LoadingState
+            height="var(--stable-detail-section-height)"
+            :loading="historyLoading[purpose]"
+            :failed="historyFailed[purpose]"
+            retryable
+            @retry="loadHistory(purpose)"
           >
+            <p v-if="!histories[purpose].length" class="ma-muted">{{ t('ma.noHistory') }}</p>
+            <template v-else>
+              <t-collapse v-model="expandedHistory[purpose]" class="test-history-list" borderless>
+                <t-collapse-panel
+                  v-for="record in histories[purpose]"
+                  :key="record.id"
+                  :value="record.id"
+                >
+                  <template #header>
+                    <div class="test-history-summary">
+                      <t-link theme="primary" @click.stop="emit('test', model, purpose, record)">{{
+                        formatDateTime(record.started_at)
+                      }}</t-link>
+                      <t-tag variant="light" :theme="statusTheme(record.status)">{{
+                        t('ma.' + record.status)
+                      }}</t-tag>
+                      <span class="test-history-meta">
+                        {{ t('ma.' + record.trigger_type) }} · {{ record.triggered_by || '—' }}
+                      </span>
+                    </div>
+                  </template>
+                  <template #headerRightContent>
+                    <span class="test-history-meta">{{
+                      t('ma.passedCount', {
+                        n: record.checks.filter((check) => check.status === 'PASSED').length,
+                        total: record.checks.length,
+                      })
+                    }}</span>
+                  </template>
+                  <TestResultMatrix :checks="record.checks" />
+                </t-collapse-panel>
+              </t-collapse>
+              <t-pagination
+                :current="historyPages[purpose]"
+                :page-size="historyPageSize"
+                :total="historyTotals[purpose]"
+                :show-page-size="false"
+                @current-change="
+                  (page: number) => {
+                    historyPages[purpose] = page
+                    loadHistory(purpose)
+                  }
+                "
+              />
+            </template>
+          </LoadingState>
         </div>
         <div class="ma-stack">
           <h3>{{ t('ma.timeline') }}</h3>
@@ -133,14 +151,17 @@
             ></t-timeline
           >
         </div>
-      </div></t-loading
+      </div></LoadingState
     >
   </t-drawer>
 </template>
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useLatestRequest } from '@/utils/useLatestRequest'
+import LoadingState from '@/components/LoadingState.vue'
+import PricingSummary from './PricingSummary.vue'
+import TestResultMatrix from './TestResultMatrix.vue'
 import { useI18n } from 'vue-i18n'
-import type { PrimaryTableCol, PageInfo } from 'tdesign-vue-next'
 import {
   accessApi,
   type Model,
@@ -149,7 +170,7 @@ import {
   type TestRun,
 } from '@/api/modules/modelAccess'
 import { formatDateTime } from '@/utils/datetime'
-import { invocationLabel, metricLabel, statusTheme, tagLabel, unitLabel } from './helpers'
+import { invocationLabel, statusTheme, tagLabel } from './helpers'
 const props = defineProps<{ id: string; providers: Provider[] }>()
 const emit = defineEmits<{
   close: []
@@ -157,18 +178,55 @@ const emit = defineEmits<{
   test: [model: Model, purpose: 'HEALTH' | 'ADMISSION', run?: TestRun]
 }>()
 const { t } = useI18n()
+const pricePageSize = 5
+const historyPageSize = 5
 const model = ref<Model>(),
+  currentPrice = ref<Pricing>(),
   loading = ref(true),
+  failed = ref(false),
   priceHistory = ref<Pricing[]>([]),
   pricePage = ref(1),
   priceTotal = ref(0)
 const histories = ref<Record<'ADMISSION' | 'HEALTH', TestRun[]>>({ ADMISSION: [], HEALTH: [] })
+const expandedHistory = ref<Record<'ADMISSION' | 'HEALTH', Array<string | number>>>({
+  ADMISSION: [],
+  HEALTH: [],
+})
 const historyPages = ref({ ADMISSION: 1, HEALTH: 1 }),
   historyTotals = ref({ ADMISSION: 0, HEALTH: 0 })
+const pricesLoading = ref(false),
+  pricesFailed = ref(false)
+const historyLoading = ref({ ADMISSION: false, HEALTH: false })
+const historyFailed = ref({ ADMISSION: false, HEALTH: false })
+const pricesRequest = useLatestRequest()
+const historyRequests = { ADMISSION: useLatestRequest(), HEALTH: useLatestRequest() }
+const modelRequest = useLatestRequest()
+const loadRequest = useLatestRequest()
 async function loadHistory(purpose: 'ADMISSION' | 'HEALTH') {
-  const data = await accessApi.history(props.id, purpose, historyPages.value[purpose])
-  histories.value[purpose] = data.items
-  historyTotals.value[purpose] = data.total
+  const current = historyRequests[purpose].begin()
+  historyLoading.value[purpose] = true
+  historyFailed.value[purpose] = false
+  try {
+    const data = await accessApi.history(
+      props.id,
+      purpose,
+      historyPages.value[purpose],
+      historyPageSize,
+    )
+    if (!current.isCurrent()) return
+    const previousIds = new Set(histories.value[purpose].map((record) => record.id))
+    const retained = expandedHistory.value[purpose].filter((id) =>
+      data.items.some((record) => record.id === id),
+    )
+    const pageChanged = !data.items.some((record) => previousIds.has(record.id))
+    expandedHistory.value[purpose] = pageChanged && data.items[0] ? [data.items[0].id] : retained
+    histories.value[purpose] = data.items
+    historyTotals.value[purpose] = data.total
+  } catch {
+    if (current.isCurrent()) historyFailed.value[purpose] = true
+  } finally {
+    if (current.isCurrent()) historyLoading.value[purpose] = false
+  }
 }
 const lifecycleEvents = computed(() => {
   const chronological = [...(model.value?.lifecycle_events ?? [])].sort(
@@ -178,21 +236,6 @@ const lifecycleEvents = computed(() => {
     .map((event, index) => ({ ...event, fromStatus: chronological[index - 1]?.status }))
     .reverse()
 })
-function runApiLabels(run: TestRun) {
-  return run.invocation_apis
-    .map(
-      (api) =>
-        run.checks.find((c) => c.invocation_api === api)?.upstream_path || invocationLabel(api),
-    )
-    .join('、')
-}
-const historyColumns = computed<PrimaryTableCol[]>(() => [
-  { colKey: 'started_at', title: t('ma.checkTime') },
-  { colKey: 'invocation_api', title: t('ma.invocation') },
-  { colKey: 'status', title: t('ma.status') },
-  { colKey: 'trigger_type', title: t('ma.trigger') },
-  { colKey: 'triggered_by', title: t('ma.actor') },
-])
 const info = computed(() => {
   if (!model.value) return []
   const m = model.value,
@@ -227,43 +270,63 @@ const info = computed(() => {
         ? t('ma.hours', { n: m.health_check_interval_minutes / 60 })
         : t('ma.disabled'),
     ],
-    [t('ma.lastCheck', { time: '' }), formatDateTime(m.health_checked_at) || '—'],
-    [t('ma.source'), t('ma.' + (priceHistory.value[0]?.source_type || 'ENTERPRISE_CUSTOM'))],
-    [
-      t('ma.priceSummary'),
-      priceHistory.value[0]?.metric_rates
-        .map(
-          (r) =>
-            `${metricLabel(r.metric_key)}: ${priceHistory.value[0]?.pricing_mode === 'TIME_BASED' ? priceHistory.value[0].time_periods.map((p) => `${p.is_fallback ? t('ma.fallback') : p.name}: ${r.period_prices[p.id] ?? '—'}`).join(' / ') : (r.unit_price ?? '—')} CNY / ${t('ma.' + unitLabel(r.unit))}`,
-        )
-        .join('；') || '—',
-    ],
+    [t('ma.lastCheckLabel'), formatDateTime(m.health_checked_at) || '—'],
+    [t('ma.priceSummary'), pricesFailed.value ? t('common.loadFailed') : '—'],
     [
       t('ma.admissionAt'),
-      formatDateTime(histories.value.ADMISSION.find((x) => x.status === 'PASSED')?.completed_at) ||
-        '—',
+      historyFailed.value.ADMISSION
+        ? t('common.loadFailed')
+        : formatDateTime(
+            histories.value.ADMISSION.find((x) => x.status === 'PASSED')?.completed_at,
+          ) || '—',
     ],
     [t('ma.description'), m.description || '—'],
     [t('ma.created'), formatDateTime(m.created_at)],
   ]
 })
 async function loadPrices() {
-  const p = await accessApi.prices(props.id, pricePage.value)
-  priceHistory.value = p.items
-  priceTotal.value = p.total
+  const current = pricesRequest.begin()
+  pricesLoading.value = true
+  pricesFailed.value = false
+  try {
+    const p = await accessApi.prices(props.id, pricePage.value, pricePageSize)
+    if (!current.isCurrent()) return
+    priceHistory.value = p.items
+    if (pricePage.value === 1) currentPrice.value = p.items[0]
+    priceTotal.value = p.total
+  } catch {
+    if (current.isCurrent()) pricesFailed.value = true
+  } finally {
+    if (current.isCurrent()) pricesLoading.value = false
+  }
 }
 async function refresh() {
-  const updated = await accessApi.model(props.id)
-  await Promise.all([loadPrices(), ...(['ADMISSION', 'HEALTH'] as const).map(loadHistory)])
-  model.value = updated
+  const current = modelRequest.begin()
+  const [updated] = await Promise.all([
+    accessApi.model(props.id),
+    loadPrices(),
+    ...(['ADMISSION', 'HEALTH'] as const).map(loadHistory),
+  ])
+  if (current.isCurrent()) model.value = updated
 }
-defineExpose({ refresh })
-onMounted(async () => {
+async function refreshTest(purpose: 'ADMISSION' | 'HEALTH') {
+  const current = modelRequest.begin()
+  const [updated] = await Promise.all([accessApi.model(props.id), loadHistory(purpose)])
+  if (current.isCurrent()) model.value = updated
+}
+defineExpose({ refresh, refreshTest })
+async function loadDetail() {
+  const current = loadRequest.begin()
+  loading.value = true
+  failed.value = false
   try {
     await refresh()
+  } catch {
+    if (current.isCurrent()) failed.value = true
   } finally {
-    loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
-})
+}
+onMounted(loadDetail)
 </script>
 <style scoped src="./access.css"></style>

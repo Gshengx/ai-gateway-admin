@@ -20,15 +20,18 @@
     </div>
 
     <t-table
+      height="var(--stable-table-height)"
       row-key="id"
       :data="tableData"
       :columns="columns"
       :loading="loading"
       :pagination="pagination"
+      :class="{ 'stable-table--pending-footer': (loading || listFailed) && !tableData.length }"
       :scroll="{ x: 1030 }"
       hover
       @page-change="onPageChange"
     >
+      <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
       <template #name="{ row }">
         <t-link theme="primary" hover="color" @click="onOpenMembers(row)">
           {{ row.display_name || row.name }}
@@ -106,7 +109,9 @@
       loading: confirmDialog.loading || checkingReferences,
       disabled: !canConfirmDelete,
     }"
-    :cancel-btn="{ content: t('common.cancel') }"
+    :cancel-btn="{ content: t('common.cancel'), disabled: confirmDialog.loading }"
+    :close-btn="!confirmDialog.loading"
+    :close-on-esc-keydown="!confirmDialog.loading"
     @confirm="onConfirmDelete"
     @close="onConfirmClose"
   >
@@ -127,6 +132,7 @@
 
 <script setup lang="ts">
 import { h, computed, onMounted, reactive, ref, watch } from 'vue'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 import { useI18n } from 'vue-i18n'
 import {
   DialogPlugin,
@@ -155,10 +161,11 @@ import {
 const { t } = useI18n()
 
 const keyword = ref('')
-const loading = ref(false)
+const loading = ref(true)
+const listFailed = ref(false)
 
 const tableData = ref<UserGroupItem[]>([])
-let listRequest = 0
+const listRequest = useLatestRequest()
 const pagination = reactive<PaginationProps>({
   current: 1,
   pageSize: 20,
@@ -178,19 +185,24 @@ const columns = computed<PrimaryTableCol<UserGroupItem>[]>(() => [
 
 watch(keyword, () => {
   pagination.current = 1
-  void fetchGroups()
+  loading.value = true
+  listRequest.schedule(() => void fetchGroups())
 })
 
 async function fetchGroups(): Promise<void> {
-  const requestId = ++listRequest
+  const current = listRequest.begin()
   loading.value = true
+  listFailed.value = false
   try {
-    const result = await getUserGroupListApi({
-      page: pagination.current ?? 1,
-      page_size: pagination.pageSize ?? 20,
-      search: keyword.value.trim() || undefined,
-    })
-    if (requestId !== listRequest) return
+    const result = await getUserGroupListApi(
+      {
+        page: pagination.current ?? 1,
+        page_size: pagination.pageSize ?? 20,
+        search: keyword.value.trim() || undefined,
+      },
+      { signal: current.signal },
+    )
+    if (!current.isCurrent()) return
     pagination.total = result.total
     pagination.pageSize = Math.min(100, Math.max(1, result.page_size))
     const lastPage = Math.max(1, result.total_pages)
@@ -202,11 +214,12 @@ async function fetchGroups(): Promise<void> {
     pagination.current = result.page
     tableData.value = result.items
   } catch {
-    if (requestId !== listRequest) return
+    if (!current.isCurrent()) return
+    listFailed.value = true
     tableData.value = []
     pagination.total = 0
   } finally {
-    if (requestId === listRequest) loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
 }
 
@@ -238,6 +251,7 @@ function onEdit(row: UserGroupItem) {
 }
 
 async function onFormSubmit(payload: CreateUserGroupPayload | UpdateUserGroupPayload) {
+  if (submitting.value) return
   submitting.value = true
   try {
     if (formDialog.mode === 'create') {
@@ -351,7 +365,7 @@ function openConfirmDialog(options: { title: string; content: string; action: Co
 }
 
 async function onConfirmDelete() {
-  if (!canConfirmDelete.value || !pendingAction) return
+  if (confirmDialog.loading || !canConfirmDelete.value || !pendingAction) return
   confirmDialog.loading = true
   try {
     await pendingAction()

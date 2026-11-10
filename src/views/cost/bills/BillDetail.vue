@@ -20,7 +20,11 @@
           ><strong>{{ item.value }}</strong>
         </div>
       </div>
-      <t-tabs v-model="dimension" @change="reset"
+      <t-tabs
+        ref="tabsRef"
+        class="drawer-tabs drawer-tabs--standalone"
+        v-model="dimension"
+        @change="reset"
         ><t-tab-panel
           v-for="value in dimensions"
           :key="value"
@@ -102,6 +106,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useDrawerTabs } from '@/utils/useDrawerTabs'
 import type { PrimaryTableCol, TableRowData } from 'tdesign-vue-next'
 import {
   getBillItems,
@@ -120,6 +125,7 @@ const dimension = ref<Dimension>('PROVIDER'),
   departmentId = ref(''),
   sortBy = ref('cost'),
   direction = ref('desc')
+const tabsRef = useDrawerTabs(dimension)
 const dimensions: Dimension[] = ['PROVIDER', 'DEPARTMENT', 'USER', 'MODEL']
 const items = ref<BillItem[]>([]),
   loading = ref(false),

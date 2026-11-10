@@ -285,7 +285,12 @@ import { getModelApi, type PhysicalModelItem } from '@/api/modules/models'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import type { PageInfo, PrimaryTableCol, SelectInputProps } from 'tdesign-vue-next'
+import {
+  MessagePlugin,
+  type PageInfo,
+  type PrimaryTableCol,
+  type SelectInputProps,
+} from 'tdesign-vue-next'
 import {
   getLogicalModelApi,
   deleteLogicalModelApi,
@@ -511,6 +516,7 @@ function deleteModel() {
   if (!reason.value.trim() || impactBlocked.value) return
   void run(async () => {
     await deleteLogicalModelApi(logicalModelId.value, { reason: reason.value.trim() })
+    MessagePlugin.success(t('ma.success'))
     await router.push('/model/logical')
   })
 }
@@ -524,6 +530,7 @@ async function unmount() {
   unmountBusy.value = true
   try {
     await unmountLogicalModelApi(id, target, { reason: 'admin-console' })
+    MessagePlugin.success(t('ma.success'))
     if (id !== logicalModelId.value) return
     await refreshMounts()
     unmountId.value = ''
@@ -563,6 +570,7 @@ function addGrants() {
       })),
     })
     selectedSubjects.value = []
+    MessagePlugin.success(t('ma.success'))
     await Promise.all([loadGrants(), loadDetail()])
   })
 }
@@ -573,6 +581,7 @@ function removeGrants() {
       relations: removeTargets.value,
     })
     removeTargets.value = []
+    MessagePlugin.success(t('ma.success'))
     await Promise.all([loadGrants(), loadDetail()])
   })
 }

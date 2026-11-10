@@ -9,7 +9,7 @@ import {
 import { mockAccounts, mockRoles } from './_accounts'
 import { CAPABILITIES, CAPABILITY_NAMES } from './_capabilities'
 import { getPasswordRules } from './settings'
-import { termsAcceptances } from './terms'
+import { termsAcceptances, userTermsInfo } from './terms'
 import { modelAccessState } from './_modelAccessState'
 import { createHash } from 'node:crypto'
 import {
@@ -1223,7 +1223,7 @@ export default auditedMock([
       const locale = requestLocale(req)
       const user = users.find((u) => u.id === pathId(req))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      return success({ user: toApiUser(user, locale) })
+      return success({ user: toApiUser(user, locale), terms: userTermsInfo(user.username) })
     },
   },
   {

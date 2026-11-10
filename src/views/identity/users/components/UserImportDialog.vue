@@ -63,6 +63,9 @@
           }}</t-radio-button>
         </t-radio-group>
       </div>
+      <p v-if="stage === 'upload' && mode === 'OVERWRITE'" class="import-tip">
+        {{ t('users.importDialog.overwriteHelp') }}
+      </p>
       <t-alert v-if="error" theme="error" :message="error" class="import-block" />
     </template>
     <section
@@ -145,9 +148,15 @@
         <t-button v-if="queryError && taskId" variant="outline" @click="refreshTask">{{
           t('users.importDialog.continueQuery')
         }}</t-button>
-        <t-button v-if="stage !== 'result'" variant="outline" @click="onClose">{{
-          stage === 'preview' ? t('users.importDialog.cancelLater') : t('common.cancel')
-        }}</t-button>
+        <t-button
+          v-if="stage !== 'result'"
+          variant="outline"
+          :disabled="confirming"
+          @click="onClose"
+          >{{
+            stage === 'preview' ? t('users.importDialog.cancelLater') : t('common.cancel')
+          }}</t-button
+        >
         <t-button
           v-if="stage === 'upload' || previewNeedsUpload"
           theme="primary"
@@ -761,6 +770,7 @@ async function downloadFailures() {
 }
 
 function onClose() {
+  if (confirming.value && stage.value !== 'running') return
   if (stage.value === 'running') {
     leaveVisible.value = true
     return

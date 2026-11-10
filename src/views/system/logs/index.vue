@@ -116,14 +116,20 @@
       >
     </t-alert>
     <t-table
+      height="var(--stable-table-height)"
       :key="tab"
       :data="rows"
       :columns="columns"
       :row-key="tab === 'operation' ? 'event_id' : 'id'"
       :loading="loading"
       :pagination="pagination"
+      :class="{ 'stable-table--pending-footer': (loading || failed) && !rows.length }"
       :hover="true"
-      :empty="t(tab === 'operation' ? 'logs.emptyOperation' : 'logs.emptyRuntime')"
+      :empty="
+        failed
+          ? t('logs.loadFailed')
+          : t(tab === 'operation' ? 'logs.emptyOperation' : 'logs.emptyRuntime')
+      "
       @page-change="changePage"
       @row-click="onRowClick"
     >
@@ -251,38 +257,53 @@
       </t-loading>
     </t-drawer>
     <t-dialog
-      v-model:visible="configVisible"
+      :visible="configVisible"
+      @close="!saving && (configVisible = false)"
+      :close-btn="!saving"
+      :close-on-overlay-click="!saving"
       :header="t('logs.configTitle')"
       :width="'var(--system-log-config-width)'"
-      :confirm-btn="{ content: t('logs.save'), loading: saving, disabled: !retentionValid }"
-      :cancel-btn="t('logs.cancel')"
-      :close-on-esc-keydown="true"
+      :confirm-btn="{
+        content: t('logs.save'),
+        loading: saving,
+        disabled: configLoading || configFailed || !retentionValid,
+      }"
+      :cancel-btn="{ content: t('logs.cancel'), disabled: saving }"
+      :close-on-esc-keydown="!saving"
       @confirm="saveConfig"
     >
-      <t-form label-align="top">
-        <t-form-item :label="t('logs.operationDays')" :help="t('logs.operationRange')"
-          ><t-space
-            ><t-input-number
-              v-model="draft.operation_days"
-              :min="180"
-              :max="730"
-              :decimal-places="0"
-              :aria-label="t('logs.operationDays')"
-            /><span>{{ t('logs.days') }}</span></t-space
-          ></t-form-item
-        >
-        <t-form-item :label="t('logs.runtimeDays')" :help="t('logs.runtimeRange')"
-          ><t-space
-            ><t-input-number
-              v-model="draft.runtime_days"
-              :min="30"
-              :max="365"
-              :decimal-places="0"
-              :aria-label="t('logs.runtimeDays')"
-            /><span>{{ t('logs.days') }}</span></t-space
-          ></t-form-item
-        >
-      </t-form>
+      <LoadingState
+        :loading="configLoading"
+        preserve-content
+        :failed="configFailed"
+        retryable
+        @retry="openConfig"
+      >
+        <t-form :disabled="saving" label-align="top">
+          <t-form-item :label="t('logs.operationDays')" :help="t('logs.operationRange')"
+            ><t-space
+              ><t-input-number
+                v-model="draft.operation_days"
+                :min="180"
+                :max="730"
+                :decimal-places="0"
+                :aria-label="t('logs.operationDays')"
+              /><span>{{ t('logs.days') }}</span></t-space
+            ></t-form-item
+          >
+          <t-form-item :label="t('logs.runtimeDays')" :help="t('logs.runtimeRange')"
+            ><t-space
+              ><t-input-number
+                v-model="draft.runtime_days"
+                :min="30"
+                :max="365"
+                :decimal-places="0"
+                :aria-label="t('logs.runtimeDays')"
+              /><span>{{ t('logs.days') }}</span></t-space
+            ></t-form-item
+          >
+        </t-form>
+      </LoadingState>
     </t-dialog>
   </section>
 </template>
@@ -290,6 +311,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type TableProps, type PageInfo } from 'tdesign-vue-next'
 import { DownloadIcon, SettingIcon } from 'tdesign-icons-vue-next'
 import FilterBar from '@/components/FilterBar.vue'
@@ -370,7 +392,7 @@ const dateError = computed(() =>
         : '',
 )
 const rows = ref<Array<ManagementLog | RuntimeLog>>([])
-const loading = ref(false),
+const loading = ref(true),
   failed = ref(false)
 const page = ref(1),
   pageSize = ref(50),
@@ -505,6 +527,8 @@ async function load() {
 }
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(filters, () => {
+  loading.value = true
+  failed.value = false
   clearTimeout(timer)
   ++listVersion
   page.value = 1
@@ -536,6 +560,12 @@ let detailVersion = 0
 const onRowClick: NonNullable<TableProps['onRowClick']> = ({ row }) => {
   openDetail(row as ManagementLog | RuntimeLog)
 }
+watch(detailVisible, (visible) => {
+  if (!visible) {
+    ++detailVersion
+    detailLoading.value = false
+  }
+})
 async function openDetail(row: ManagementLog | RuntimeLog) {
   const version = ++detailVersion
   operationDetail.value = null
@@ -606,6 +636,9 @@ async function copyContext() {
 }
 const configVisible = ref(false),
   saving = ref(false)
+const configLoading = ref(false),
+  configFailed = ref(false)
+let configVersion = 0
 const draft = reactive({ operation_days: 365, runtime_days: 90 })
 const retentionValid = computed(
   () =>
@@ -616,16 +649,32 @@ const retentionValid = computed(
     draft.runtime_days >= 30 &&
     draft.runtime_days <= 365,
 )
+watch(configVisible, (visible) => {
+  if (!visible) {
+    ++configVersion
+    configLoading.value = false
+  }
+})
 async function openConfig() {
+  const version = ++configVersion
+  configVisible.value = true
+  configLoading.value = true
+  configFailed.value = false
   try {
-    Object.assign(draft, await getLogRetention())
+    const result = await getLogRetention()
+    if (version !== configVersion || !configVisible.value) return
+    Object.assign(draft, result)
     configVisible.value = true
   } catch (error) {
+    if (version !== configVersion || !configVisible.value) return
+    configFailed.value = true
     notify(error)
+  } finally {
+    if (version === configVersion) configLoading.value = false
   }
 }
 async function saveConfig() {
-  if (!retentionValid.value || saving.value) return
+  if (configLoading.value || configFailed.value || !retentionValid.value || saving.value) return
   saving.value = true
   try {
     await saveLogRetention({ ...draft })
@@ -699,6 +748,7 @@ onBeforeUnmount(() => {
   clearTimeout(timer)
   ++listVersion
   ++detailVersion
+  ++configVersion
 })
 </script>
 

@@ -7,7 +7,12 @@
     :footer="false"
     @close="onClose"
   >
-    <t-skeleton v-if="loading" :rows="8" animation="gradient" />
+    <LoadingState v-if="loading" :loading="true" height="var(--stable-detail-section-height)" />
+    <t-alert v-else-if="detailFailed" theme="error" :message="t('common.loadFailed')">
+      <template #operation>
+        <t-button variant="text" @click="detailReload += 1">{{ t('common.retry') }}</t-button>
+      </template>
+    </t-alert>
     <template v-else-if="detail">
       <div class="profile-heading">
         <t-avatar size="56px">{{ avatarText }}</t-avatar>
@@ -24,7 +29,7 @@
         </t-tag>
       </div>
 
-      <t-tabs v-model="activeTab">
+      <t-tabs ref="tabsRef" v-model="activeTab" class="drawer-tabs">
         <t-tab-panel value="basic" :label="t('users.detail.tabs.basic')">
           <dl class="detail-grid">
             <dt>{{ t('users.detail.username') }}</dt>
@@ -116,7 +121,11 @@
           </dl>
         </t-tab-panel>
 
-        <t-tab-panel value="models" :label="t('users.detail.tabs.models', { n: modelRows.length })">
+        <t-tab-panel
+          value="models"
+          lazy
+          :label="t('users.detail.tabs.models', { n: modelsLoaded ? modelRows.length : '—' })"
+        >
           <div v-if="canWriteUsers" class="model-toolbar">
             <ModelGrantSelect
               :key="detail.id"
@@ -136,13 +145,15 @@
             </t-button>
           </div>
           <t-table
+            :height="modelsLoading ? 'var(--stable-detail-table-height)' : undefined"
             row-key="id"
             :data="modelRows"
             :columns="modelColumns"
+            :loading="modelsLoading"
             hover
             table-layout="fixed"
             :max-height="460"
-            :empty="t('users.detail.models.empty')"
+            :empty="modelsFailed ? t('common.loadFailed') : t('users.detail.models.empty')"
           >
             <template #name="{ row }">
               <t-tooltip :content="row.name">
@@ -172,7 +183,8 @@
         <t-tab-panel
           v-if="canViewKeys"
           value="keys"
-          :label="t('users.detail.tabs.keys', { n: keyTotal })"
+          lazy
+          :label="t('users.detail.tabs.keys', { n: keysLoaded ? keyTotal : '—' })"
         >
           <t-alert
             v-if="detail.status !== 'ACTIVE'"
@@ -231,8 +243,10 @@
             />
           </div>
           <t-table
+            :height="keysLoading ? 'var(--stable-detail-table-height)' : undefined"
             row-key="id"
             :data="keys"
+            :class="{ 'stable-table--pending-footer': (keysLoading || keysFailed) && !keys.length }"
             :disable-data-page="true"
             :pagination="{
               current: keyPage,
@@ -248,7 +262,7 @@
             hover
             table-layout="fixed"
             :max-height="460"
-            :empty="t('users.detail.keys.empty')"
+            :empty="keysFailed ? t('common.loadFailed') : t('users.detail.keys.empty')"
           >
             <template #name="{ row }"
               ><span class="key-name">{{ row.name }}</span></template
@@ -303,7 +317,9 @@
         loading: grantDialog.loading,
         disabled: !canConfirmGrant,
       }"
-      :cancel-btn="{ content: t('common.cancel') }"
+      :cancel-btn="{ content: t('common.cancel'), disabled: grantDialog.loading }"
+      :close-btn="!grantDialog.loading"
+      :close-on-esc-keydown="!grantDialog.loading"
       @confirm="submitGrant"
       @close="onGrantClose"
     >
@@ -341,8 +357,11 @@
 </template>
 
 <script setup lang="ts">
+import { useDrawerTabs } from '@/utils/useDrawerTabs'
+import LoadingState from '@/components/LoadingState.vue'
 import ModelGrantSelect from './ModelGrantSelect.vue'
 import { usePageSelection } from '@/utils/usePageSelection'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -372,7 +391,7 @@ import { formatDateTime } from '@/utils/datetime'
 
 const props = defineProps<{
   visible: boolean
-  /** 列表行数据：打开时先展示，再用详情接口刷新的数据覆盖 */
+  /** 列表行数据用于标识目标用户，详情数据准备好后再展示。 */
   user: UserItem | null
 }>()
 
@@ -384,8 +403,17 @@ const { t } = useI18n()
 const userStore = useUserStore()
 
 const loading = ref(false)
+const detailFailed = ref(false)
+const detailReload = ref(0)
+const modelsFailed = ref(false)
+const keysFailed = ref(false)
 const detail = ref<UserItem | null>(null)
 const activeTab = ref('basic')
+const tabsRef = useDrawerTabs(activeTab)
+const modelsLoading = ref(false)
+const modelsLoaded = ref(false)
+const keysLoaded = ref(false)
+const keyRequest = useLatestRequest()
 const modelSources = ref<UserModelGrantSource[]>([])
 /** 用户级直接授权（F-USER-09：取消授权只能作用于直接授权） */
 const directGrants = ref<UserModelGrant[]>([])
@@ -572,7 +600,8 @@ const keyDialogContent = computed(() =>
 watch(keySearch, () => {
   resetKeyOperation()
   keyPage.value = 1
-  if (props.visible && props.user && canViewKeys.value) void loadKeys(props.user.id).catch(() => {})
+  if (props.visible && props.user && canViewKeys.value && activeTab.value === 'keys')
+    keyRequest.schedule(() => void loadKeys(props.user!.id).catch(() => {}))
 })
 watch(
   canWriteKeys,
@@ -602,16 +631,27 @@ async function collectPages<T>(
   }
 }
 async function loadKeys(userId: string) {
+  keysFailed.value = false
+  const current = keyRequest.begin()
   const request = ++keyListRequest
   keysLoading.value = true
   try {
-    const result = await getUserApiKeysApi({
-      user_id: userId,
-      search: keySearch.value.trim() || undefined,
-      page: keyPage.value,
-      page_size: keyPageSize.value,
-    })
-    if (request !== keyListRequest || !props.visible || props.user?.id !== userId) return
+    const result = await getUserApiKeysApi(
+      {
+        user_id: userId,
+        search: keySearch.value.trim() || undefined,
+        page: keyPage.value,
+        page_size: keyPageSize.value,
+      },
+      { signal: current.signal },
+    )
+    if (
+      !current.isCurrent() ||
+      request !== keyListRequest ||
+      !props.visible ||
+      props.user?.id !== userId
+    )
+      return
     keyTotal.value = result.total
     keyPageSize.value = result.page_size
     const lastPage = Math.max(1, result.total_pages)
@@ -622,11 +662,16 @@ async function loadKeys(userId: string) {
     }
     keyPage.value = result.page
     keys.value = result.items
+    keysLoaded.value = true
+  } catch (error) {
+    if (current.isCurrent()) keysFailed.value = true
+    throw error
   } finally {
-    if (request === keyListRequest) keysLoading.value = false
+    if (current.isCurrent() && request === keyListRequest) keysLoading.value = false
   }
 }
 function resetKeyOperation() {
+  keyRequest.invalidate()
   ++keyGeneration
   ++keyListRequest
   keyConfirmVisible.value = false
@@ -688,18 +733,24 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => [props.visible, props.user?.id] as const,
+  () => [props.visible, props.user?.id, detailReload.value] as const,
   async ([visible], _previous, onCleanup) => {
     let stale = false
     onCleanup(() => {
       stale = true
     })
-    const generation = ++drawerGeneration
+    ++drawerGeneration
     resetKeyOperation()
     grantDialog.loading = false
     selectedModelIds.value = []
     grantDialog.visible = false
     if (!visible) return
+    modelsLoaded.value = false
+    detailFailed.value = false
+    modelsFailed.value = false
+    keysFailed.value = false
+    modelsLoading.value = false
+    keysLoaded.value = false
     activeTab.value = 'basic'
     keyPage.value = 1
     keyTotal.value = 0
@@ -717,36 +768,68 @@ watch(
 
     const userId = props.user.id
     loading.value = true
-    const tasks: Array<Promise<unknown>> = [
+    const generation = drawerGeneration
+    const results = await Promise.allSettled([
       getUserDetailApi(userId)
         .then((result) => {
           if (stale) return
           detail.value = result.user
           termsInfo.value = result.terms ?? null
         })
-        .catch(() => {
-          if (!stale) termsInfo.value = null
+        .catch((error) => {
+          if (!stale) {
+            detailFailed.value = true
+            termsInfo.value = null
+          }
+          throw error
         })
         .finally(() => {
           if (!stale) termsLoading.value = false
         }),
-      collectPages(
-        (query) => getUserModelGrantSourcesApi(userId, query),
-        () => !stale,
-      ).then((result) => {
-        if (stale) return
-        modelSources.value = result
-      }),
-      loadModelGrants(userId, generation),
-    ]
-    if (canViewKeys.value) {
-      tasks.push(loadKeys(userId))
+      loadModels(userId, generation),
+      ...(canViewKeys.value ? [loadKeys(userId)] : []),
+    ])
+    if (!stale) {
+      detailFailed.value =
+        results.some((result) => result.status === 'rejected') || !modelsLoaded.value
+      loading.value = false
     }
-    // 任一子接口失败不影响其余区块展示（错误提示由请求拦截器统一处理）
-    await Promise.allSettled(tasks)
-    if (!stale) loading.value = false
   },
 )
+
+watch(activeTab, async (tab) => {
+  if (!props.visible || !props.user) return
+  const userId = props.user.id
+  const generation = drawerGeneration
+  if (tab === 'keys' && canViewKeys.value && !keysLoaded.value && !keysLoading.value) {
+    await loadKeys(userId).catch(() => {})
+  }
+  if (tab === 'models' && !modelsLoaded.value && !modelsLoading.value) {
+    await loadModels(userId, generation)
+  }
+})
+
+async function loadModels(userId: string, generation = drawerGeneration) {
+  const current = () =>
+    generation === drawerGeneration && props.visible && props.user?.id === userId
+  modelsLoading.value = true
+  modelsFailed.value = false
+  try {
+    const [sources] = await Promise.all([
+      collectPages((query) => getUserModelGrantSourcesApi(userId, query), current),
+      loadModelGrants(userId, generation),
+    ])
+    if (current()) {
+      modelSources.value = sources
+      modelsLoaded.value = true
+    }
+  } catch {
+    if (current()) modelsFailed.value = true
+    // Request errors are reported by the interceptor; returning to the tab retries.
+  } finally {
+    if (current()) modelsLoading.value = false
+  }
+}
 
 async function loadModelGrants(userId: string, generation = drawerGeneration) {
   const current = () =>
@@ -838,6 +921,7 @@ async function submitGrant() {
 }
 
 function onClose() {
+  if (grantDialog.loading || keyBusy.value) return
   ++drawerGeneration
   selectedModelIds.value = []
   resetKeyOperation()

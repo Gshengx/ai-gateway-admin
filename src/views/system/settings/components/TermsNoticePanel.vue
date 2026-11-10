@@ -1,74 +1,83 @@
 <template>
   <t-card :bordered="false" class="settings-panel">
-    <div class="notice-header">
-      <h2>{{ t('terms.notice.title') }}</h2>
-      <t-tag :theme="tag.theme">{{ tag.text }}</t-tag>
-    </div>
-    <p class="description">{{ t('terms.notice.desc') }}</p>
-    <section class="notice-display">
-      <div class="switch-block">
-        <t-checkbox
-          v-model="form.login_popup_enabled"
-          :disabled="!canWrite || form.mandatory_confirmation"
-          >{{ t('terms.notice.showLoginDialog') }}</t-checkbox
-        >
-        <p class="hint">{{ t('terms.notice.showLoginDialogHint') }}</p>
+    <LoadingState :loading="loading" preserve-content :failed="loadFailed" retryable @retry="load">
+      <div class="notice-header">
+        <h2>{{ t('terms.notice.title') }}</h2>
+        <t-tag :theme="tag.theme">{{ tag.text }}</t-tag>
       </div>
-      <div class="switch-block">
-        <t-checkbox v-model="form.mandatory_confirmation" :disabled="!canWrite">{{
-          t('terms.notice.requireConfirmation')
-        }}</t-checkbox>
-        <p class="hint">{{ t('terms.notice.requireConfirmationHint') }}</p>
-      </div>
-    </section>
-    <t-form ref="formRef" :data="form" :rules="rules" label-align="top" class="notice-form">
-      <t-form-item
-        class="notice-group"
-        v-for="field in fields"
-        :key="field.key"
-        :name="field.key"
-        :label="t(field.label)"
-      >
-        <t-textarea
-          v-if="field.body"
-          v-model="form[field.key]"
-          :disabled="!canWrite"
-          :maxlength="10000"
-          :autosize="{ minRows: 6, maxRows: 12 }"
-        />
-        <t-input v-else v-model="form[field.key]" :disabled="!canWrite" :maxlength="100" />
-      </t-form-item>
-    </t-form>
-    <div class="notice-actions">
-      <span class="hint">{{
-        t('terms.notice.version', {
-          version: saved?.version || '—',
-          time: formatDateTime(saved?.config_updated_at) || '—',
-        })
-      }}</span>
-      <t-space>
-        <t-button variant="outline" @click="previewVisible = true">{{
-          t('terms.notice.preview')
-        }}</t-button>
-        <t-button v-permission="'system.settings:write'" :disabled="submitting" @click="reset">{{
-          t('terms.notice.reset')
-        }}</t-button>
-        <t-button
-          v-permission="'system.settings:write'"
-          theme="primary"
-          :loading="submitting"
-          @click="save"
-          >{{ t('terms.notice.save') }}</t-button
+      <p class="description">{{ t('terms.notice.desc') }}</p>
+      <section class="notice-display">
+        <div class="switch-block">
+          <t-checkbox
+            v-model="form.login_popup_enabled"
+            :disabled="!canWrite || submitting || form.mandatory_confirmation"
+            >{{ t('terms.notice.showLoginDialog') }}</t-checkbox
+          >
+          <p class="hint">{{ t('terms.notice.showLoginDialogHint') }}</p>
+        </div>
+        <div class="switch-block">
+          <t-checkbox v-model="form.mandatory_confirmation" :disabled="!canWrite || submitting">{{
+            t('terms.notice.requireConfirmation')
+          }}</t-checkbox>
+          <p class="hint">{{ t('terms.notice.requireConfirmationHint') }}</p>
+        </div>
+      </section>
+      <t-form ref="formRef" :data="form" :rules="rules" label-align="top" class="notice-form">
+        <t-form-item
+          class="notice-group"
+          v-for="field in fields"
+          :key="field.key"
+          :name="field.key"
+          :label="t(field.label)"
         >
-      </t-space>
-    </div>
+          <t-textarea
+            v-if="field.body"
+            v-model="form[field.key]"
+            :disabled="!canWrite || submitting"
+            :maxlength="10000"
+            :autosize="{ minRows: 6, maxRows: 12 }"
+          />
+          <t-input
+            v-else
+            v-model="form[field.key]"
+            :disabled="!canWrite || submitting"
+            :maxlength="100"
+          />
+        </t-form-item>
+      </t-form>
+      <div class="notice-actions">
+        <span class="hint">{{
+          t('terms.notice.version', {
+            version: saved?.version || '—',
+            time: formatDateTime(saved?.config_updated_at) || '—',
+          })
+        }}</span>
+        <t-space>
+          <t-button variant="outline" :disabled="submitting" @click="previewVisible = true">{{
+            t('terms.notice.preview')
+          }}</t-button>
+          <t-button v-permission="'system.settings:write'" :disabled="submitting" @click="reset">{{
+            t('terms.notice.reset')
+          }}</t-button>
+          <t-button
+            v-permission="'system.settings:write'"
+            theme="primary"
+            :loading="submitting"
+            @click="save"
+            >{{ t('terms.notice.save') }}</t-button
+          >
+        </t-space>
+      </div>
+    </LoadingState>
   </t-card>
   <terms-preview-dialog v-model:visible="previewVisible" :translations="translations" />
 </template>
 <script setup lang="ts">
+import { useLatestRequest } from '@/utils/useLatestRequest'
 import { createIdempotencyKey } from '@/api/request'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import LoadingState from '@/components/LoadingState.vue'
 import {
   MessagePlugin,
   type FormInstanceFunctions,
@@ -224,12 +233,22 @@ async function save() {
     submitting.value = false
   }
 }
-onMounted(async () => {
+const loading = ref(true)
+const loadFailed = ref(false)
+const loadRequest = useLatestRequest()
+async function load() {
+  const current = loadRequest.begin()
+  loading.value = true
+  loadFailed.value = false
   try {
-    apply(await getTermsConfigApi())
+    const result = await getTermsConfigApi()
+    if (current.isCurrent()) apply(result)
   } catch {
-    /* 错误已统一处理，不阻断当前流程 */
+    if (current.isCurrent()) loadFailed.value = true
+  } finally {
+    if (current.isCurrent()) loading.value = false
   }
-})
+}
+onMounted(load)
 </script>
 <style scoped src="@/styles/settings-panels.css"></style>

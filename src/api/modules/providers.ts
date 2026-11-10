@@ -216,11 +216,12 @@ export function importProviderModelsApi(
   id: string,
   data: { discovery_id?: string; items: ModelImportItem[]; reason: string },
   signal: AbortSignal,
+  idempotencyKey?: string,
 ) {
   return request.post<{ accepted: boolean; batch_id: string; replayed: boolean }>(
     `/providers/${encodeURIComponent(id)}/models/import`,
     data,
-    { signal },
+    { signal, idempotencyKey },
   )
 }
 export function getModelImportBatchApi(id: string, signal: AbortSignal, timeout: number) {

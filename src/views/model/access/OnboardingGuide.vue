@@ -1,7 +1,14 @@
 <template>
   <t-dialog
-    dialog-class-name="model-access-dialog"
-    :close-btn="true"
+    :dialog-class-name="
+      [
+        'model-access-dialog',
+        'onboarding-guide',
+        busy && step === 2 ? 'onboarding-guide--testing' : '',
+      ].join(' ')
+    "
+    :close-btn="!busy"
+    placement="center"
     :visible="true"
     :header="
       t('ma.guideTitle', {
@@ -11,15 +18,16 @@
     "
     width="var(--provider-model-dialog-width)"
     :close-on-overlay-click="false"
-    @close="emit('close')"
+    :close-on-esc-keydown="!busy"
+    @close="!busy && emit('close')"
   >
-    <div class="ma-stack">
-      <t-steps :current="step" :readonly="true"
+    <div class="ma-stack" :inert="busy">
+      <t-steps class="onboarding-steps" :current="step" :readonly="true"
         ><t-step-item v-for="n in [1, 2, 3, 4]" :key="n" :value="n" :title="t('ma.step' + n)"
       /></t-steps>
       <template v-if="step === 1">
         <t-alert v-if="notice" theme="warning" :message="notice" />
-        <div class="ma-row ma-between">
+        <div class="ma-row ma-between onboarding-summary">
           <span>{{ t('ma.discoverCount', { n: candidates.length, m: eligible.length }) }}</span
           ><t-checkbox
             :checked="eligible.length > 0 && selected.length === eligible.length"
@@ -31,6 +39,9 @@
           >
         </div>
         <t-table
+          class="onboarding-candidates"
+          table-content-width="100%"
+          table-layout="fixed"
           row-key="model_id_at_provider"
           :data="candidates"
           :columns="candidateColumns"
@@ -46,58 +57,110 @@
             <div class="ma-muted">{{ row.model_id_at_provider }}</div></template
           ><template #tags="{ row }"
             ><t-space break-line
-              ><t-tag variant="light" v-for="tag in row.tags" :key="tag">{{ tagLabel(tag) }}</t-tag
-              ><span v-if="!row.tags.length">—</span></t-space
-            ></template
+              ><t-tag variant="light" v-for="tag in row.tags || []" :key="tag">{{
+                tagLabel(tag)
+              }}</t-tag></t-space
+            >
+            <div class="ma-muted">
+              {{ t('ma.input') }}：{{ row.input_modalities?.join('、') || t('ma.noMetadata') }} ·
+              {{ t('ma.output') }}：{{ row.output_modalities?.join('、') || t('ma.noMetadata') }}
+            </div> </template
+          ><template #limits="{ row }">
+            <div>
+              {{ t('ma.contextSummary') }}
+              {{
+                row.context_window == null
+                  ? t('ma.noMetadata')
+                  : `${row.context_window / 1000} K Token`
+              }}
+            </div>
+            <div>
+              {{ t('ma.maxOutputSummary') }}
+              {{
+                row.max_output_tokens == null
+                  ? t('ma.noMetadata')
+                  : `${row.max_output_tokens / 1000} K Token`
+              }}
+            </div> </template
           ><template #model_id_at_gateway="{ row }"
-            ><t-input
-              v-model="row.model_id_at_gateway"
-              :disabled="row.already_added"
-              :status="conflict(row) ? 'error' : undefined"
-            /><span v-if="conflict(row)" class="ma-error">{{
-              t('ma.nameConflict')
+            ><t-input v-model="row.model_id_at_gateway" :disabled="row.already_added" /></template
+          ><template #status="{ row }"
+            ><span :class="{ 'ma-error': conflict(row) }">{{
+              conflict(row)
+                ? t(row.model_id_at_gateway.trim() ? 'ma.duplicateName' : 'ma.manualNameRequired')
+                : t(row.already_added ? 'ma.added' : 'ma.available')
             }}</span></template
-          ><template #status="{ row }">{{
-            t(row.already_added ? 'ma.added' : 'ma.available')
-          }}</template></t-table
+          ></t-table
         >
-        <t-link theme="primary" @click="manualVisible = !manualVisible">{{
-          t('ma.manual')
-        }}</t-link>
-        <div v-if="manualVisible" class="ma-box ma-stack">
-          <div class="ma-grid">
+        <t-link
+          theme="primary"
+          :aria-expanded="manualVisible"
+          aria-controls="onboarding-manual-form"
+          @click="manualVisible = true"
+          >{{ t('ma.manual') }}</t-link
+        >
+        <div
+          v-if="manualVisible"
+          id="onboarding-manual-form"
+          class="ma-box ma-stack onboarding-manual"
+        >
+          <span>{{ t('ma.manualModel') }}</span>
+          <div class="ma-row">
             <t-input
               v-model="manual.model_id_at_provider"
               :placeholder="t('ma.upstream')"
+              :status="manualAttempted && manualErrors.upstream ? 'error' : undefined"
+              :tips="manualAttempted ? manualErrors.upstream : ''"
               @change="manualPrefill"
-            /><t-input v-model="manual.model_id_at_gateway" :placeholder="t('ma.name')" />
-          </div>
-          <div class="ma-footer">
-            <t-button theme="primary" @click="addManual">{{ t('ma.addManual') }}</t-button>
+            />
+            <t-button theme="default" @click="addManual">{{ t('ma.joinList') }}</t-button>
           </div>
         </div>
-        <p class="ma-muted">{{ t('ma.manualHint') }}</p>
+        <p class="ma-muted onboarding-metadata-help">{{ t('ma.discoveryMetadataHelp') }}</p>
       </template>
       <template v-else-if="step === 2">
-        <t-loading :loading="busy"
-          ><div class="ma-stack">
-            <div v-for="model in imported" :key="model.id" class="ma-box ma-stack">
-              <strong>{{ model.model_id_at_gateway }}</strong
-              ><span class="ma-muted">{{ t('ma.upstream') }} {{ model.model_id_at_provider }}</span>
-              <t-form class="ma-form" label-align="top" required-mark-position="right">
-                <InvocationEditor
-                  v-model:standard="model.supported_invocation_apis"
-                  v-model:custom="model.custom_invocation_apis"
-                  :disabled="busy || ['PENDING_REVIEW', 'ACTIVE'].includes(model.status)"
-                />
-              </t-form>
-            </div></div
-        ></t-loading>
+        <p class="ma-muted">{{ t('ma.onboardingTestHelp') }}</p>
+        <div class="ma-stack">
+          <div v-for="model in imported" :key="model.id" class="ma-box ma-stack">
+            <strong>{{ model.model_id_at_gateway }}</strong
+            ><span class="ma-muted"
+              >{{ t('ma.upstream') }} {{ model.model_id_at_provider }} ·
+              {{ t('ma.contextSummary') }}
+              {{
+                model.context_window == null
+                  ? t('ma.noMetadata')
+                  : `${model.context_window / 1000} K Token`
+              }}
+              · {{ t('ma.maxOutputSummary') }}
+              {{
+                model.max_output_tokens == null
+                  ? t('ma.noMetadata')
+                  : `${model.max_output_tokens / 1000} K Token`
+              }}</span
+            >
+            <span class="ma-muted"
+              >{{ t('ma.input') }} {{ model.input_modalities?.join('、') || t('ma.noMetadata') }} ·
+              {{ t('ma.output') }} {{ model.output_modalities?.join('、') || t('ma.noMetadata') }} ·
+              {{ t('ma.tags') }}
+              {{ model.tags?.map(tagLabel).join('、') || t('ma.noMetadata') }}</span
+            >
+            <span class="ma-muted">{{
+              t(results[model.id] ? 'ma.' + results[model.id]!.status : 'ma.awaitingTest')
+            }}</span>
+            <t-form class="ma-form" label-align="top" required-mark-position="right">
+              <InvocationEditor
+                v-model:standard="model.supported_invocation_apis"
+                v-model:custom="model.custom_invocation_apis"
+                :disabled="busy || model.status !== 'DRAFT'"
+              />
+            </t-form>
+          </div>
+        </div>
       </template>
       <template v-else-if="step === 3">
         <t-alert
-          :theme="passed.length ? 'success' : 'warning'"
-          :message="t('ma.readyToPublish', { n: passed.length })"
+          :theme="publishable.length ? 'success' : 'warning'"
+          :message="t('ma.readyToPublish', { n: publishable.length })"
         />
         <div v-for="model in imported" :key="model.id" class="ma-box ma-row ma-between">
           <div class="ma-stack">
@@ -131,6 +194,16 @@
         <t-link theme="primary" @click="goModels">{{ t('ma.viewInModels') }}</t-link></template
       >
     </div>
+    <div
+      v-if="busy && step === 2"
+      class="onboarding-submit-overlay"
+      role="status"
+      :aria-label="t('common.loading')"
+      @wheel.prevent.stop
+      @touchmove.prevent.stop
+    >
+      <t-loading :text="t('common.loading')" />
+    </div>
     <template #footer
       ><div class="ma-footer">
         <t-button v-if="step !== 4" theme="default" :disabled="busy" @click="emit('close')">{{
@@ -157,10 +230,10 @@
           v-else-if="step === 3"
           v-permission.write="'model.review'"
           theme="primary"
-          :disabled="!passed.length"
+          :disabled="busy || !publishable.length"
           :loading="busy"
           @click="publish"
-          >{{ t('ma.publishPassed', { n: passed.length }) }}</t-button
+          >{{ t('ma.publishPassed', { n: publishable.length }) }}</t-button
         >
         <t-button v-else theme="primary" @click="emit('close')">{{ t('ma.step4') }}</t-button>
       </div></template
@@ -190,8 +263,7 @@ const step = ref(1),
   loading = ref(true),
   busy = ref(false),
   notice = ref(''),
-  discoveryId = ref(''),
-  manualVisible = ref(false)
+  discoveryId = ref('')
 const candidates = ref<Candidate[]>([]),
   selected = ref<string[]>([]),
   imported = ref<Model[]>([]),
@@ -209,16 +281,27 @@ const empty = (): Candidate => ({
   already_added: false,
 })
 const manual = ref(empty())
+const manualVisible = ref(false)
+const manualAttempted = ref(false)
+const manualErrors = computed(() => ({
+  upstream: !manual.value.model_id_at_provider.trim()
+    ? t('ma.manualUpstreamRequired')
+    : candidates.value.some((c) => c.model_id_at_provider === manual.value.model_id_at_provider)
+      ? t('ma.manualUpstreamDuplicate')
+      : '',
+  name: !manual.value.model_id_at_gateway.trim() ? t('ma.manualNameRequired') : '',
+}))
 const eligible = computed(() => candidates.value.filter((c) => !c.already_added))
 const selectedCandidates = computed(() =>
   candidates.value.filter((c) => selected.value.includes(c.model_id_at_provider)),
 )
 const candidateColumns = computed<PrimaryTableCol[]>(() => [
-  { colKey: 'selection', title: '', width: 45 },
-  { colKey: 'display_name', title: t('ma.candidate') },
-  { colKey: 'tags', title: t('ma.capability') },
-  { colKey: 'model_id_at_gateway', title: t('ma.name') },
-  { colKey: 'status', title: t('ma.status'), width: 80 },
+  { colKey: 'selection', title: '', width: '5%' },
+  { colKey: 'display_name', title: t('ma.candidate'), width: '22%' },
+  { colKey: 'tags', title: t('ma.capabilityModalities'), width: '24%' },
+  { colKey: 'limits', title: t('ma.contextOutput'), width: '21%' },
+  { colKey: 'model_id_at_gateway', title: t('ma.name'), width: '18%' },
+  { colKey: 'status', title: t('ma.status'), width: '10%' },
 ])
 let closed = false
 function conflict(c: Candidate) {
@@ -245,21 +328,19 @@ function manualPrefill(value: string) {
 }
 function addManual() {
   const m = manual.value
-  if (
-    !m.model_id_at_provider.trim() ||
-    !m.model_id_at_gateway.trim() ||
-    candidates.value.some((c) => c.model_id_at_provider === m.model_id_at_provider)
-  ) {
-    MessagePlugin.warning(t('ma.required'))
-    return
-  }
+  m.model_id_at_provider = m.model_id_at_provider.trim()
+  m.model_id_at_gateway = m.model_id_at_provider
+  manualAttempted.value = true
+  if (manualErrors.value.upstream || manualErrors.value.name) return
   m.display_name = m.model_id_at_provider
   candidates.value.push(JSON.parse(JSON.stringify(m)) as Candidate)
   selected.value.push(m.model_id_at_provider)
   manual.value = empty()
+  manualAttempted.value = false
   lastManualName = ''
 }
 async function add() {
+  if (busy.value) return
   busy.value = true
   try {
     const result = await accessApi.import(
@@ -273,11 +354,14 @@ async function add() {
       step.value = 2
       emit('changed')
     }
+  } catch {
+    if (!closed) notice.value = t('common.loadFailed')
   } finally {
     busy.value = false
   }
 }
 async function testAll() {
+  if (busy.value) return
   if (
     imported.value.some(
       (m) =>
@@ -294,14 +378,20 @@ async function testAll() {
     for (const m of imported.value) {
       if (closed) break
       if (['PENDING_REVIEW', 'ACTIVE'].includes(m.status)) continue
-      await accessApi.saveModel(m)
-      let run = await accessApi.startTest(m.id, 'ADMISSION', [
-        'CONNECTIVITY',
-        'PROTOCOL',
-        ...(m.tags.includes('STREAMING') ? ['STREAMING'] : []),
-      ])
+      let run = results.value[m.id]
+      if (!run || run.status !== 'RUNNING') {
+        await accessApi.saveModel(m)
+        run = await accessApi.startTest(m.id, 'ADMISSION', [
+          'CONNECTIVITY',
+          'PROTOCOL',
+          ...(m.tags.includes('STREAMING') ? ['STREAMING'] : []),
+        ])
+      }
+      results.value[m.id] = run
+      const deadline = Date.now() + 5 * 60 * 1000
       m.status = 'TESTING'
       while (run.status === 'RUNNING' && !closed) {
+        if (Date.now() >= deadline) throw new Error(t('common.loadFailed'))
         await new Promise((resolve) => setTimeout(resolve, 400))
         run = await accessApi.test(m.id, 'ADMISSION', run.id)
         results.value[m.id] = run
@@ -312,6 +402,8 @@ async function testAll() {
       step.value = 3
       emit('changed')
     }
+  } catch {
+    if (!closed) notice.value = t('common.loadFailed')
   } finally {
     busy.value = false
   }
@@ -323,13 +415,24 @@ function goModels() {
 const passed = computed(() =>
   imported.value.filter((m) => ['PENDING_REVIEW', 'ACTIVE'].includes(m.status)),
 )
+const publishable = computed(() =>
+  imported.value.filter(
+    (model) =>
+      model.status === 'PENDING_REVIEW' &&
+      model.admission_valid &&
+      results.value[model.id]?.status === 'PASSED',
+  ),
+)
 async function publish() {
+  if (busy.value || !publishable.value.length) return
   busy.value = true
   try {
-    for (const m of imported.value.filter((m) => m.status === 'PENDING_REVIEW'))
+    for (const m of publishable.value)
       Object.assign(m, await accessApi.status(m.id, 'ACTIVE', t('ma.publishSelected')))
     step.value = 4
     emit('changed')
+  } catch {
+    if (!closed) notice.value = t('common.loadFailed')
   } finally {
     busy.value = false
   }
@@ -347,7 +450,6 @@ onMounted(async () => {
     selected.value = eligible.value.map((c) => c.model_id_at_provider)
     if (result.error_code) {
       notice.value = t('ma.' + result.error_code)
-      manualVisible.value = true
     }
   } finally {
     loading.value = false

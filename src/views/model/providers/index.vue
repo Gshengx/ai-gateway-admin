@@ -17,6 +17,7 @@
         theme="primary"
         v-permission.write="'model.providers'"
         :disabled="!templates.length"
+        :loading="templatesLoading"
         @click="
           () => {
             editing = undefined
@@ -27,6 +28,7 @@
       >
     </div>
     <t-table
+      height="var(--stable-table-height)"
       class="ma-table"
       table-layout="fixed"
       table-content-width="max(100%, var(--model-access-table-width))"
@@ -35,9 +37,11 @@
       :columns="columns"
       :loading="loading"
       :pagination="pagination"
+      :class="{ 'stable-table--pending-footer': (loading || listFailed) && !items.length }"
       :disable-data-page="true"
       @page-change="changePage"
     >
+      <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
       <template #name="{ row }"
         ><div class="ma-row">
           <t-avatar size="small">{{ templateName(row.template_key).charAt(0) }}</t-avatar
@@ -74,6 +78,7 @@
       >
       <template #action="{ row }"><RowActions :actions="rowActions(row)" /></template>
     </t-table>
+    <t-loading v-if="editingLoading" fullscreen :text="t('common.loading')" />
     <ProviderForm
       v-if="formVisible"
       :initial="editing"
@@ -94,217 +99,234 @@
     />
     <t-drawer
       :close-btn="true"
-      :visible="!!detail"
-      :header="detail?.name"
+      :visible="detailVisible"
+      :header="detail?.name || detailTitle"
       :footer="false"
       size="large"
-      @close="detail = undefined"
-      ><div v-if="detail" class="ma-stack provider-detail">
-        <div class="ma-row">
-          <t-tag variant="light">{{ t('ma.' + detail.security_level) }}</t-tag
-          ><t-button
-            theme="default"
-            v-permission.write="'model.providers'"
-            @click="guide = detail"
-            >{{ t('ma.getModels') }}</t-button
-          ><t-button theme="primary" v-permission.write="'model.providers'" @click="edit(detail)">{{
-            t('ma.edit')
-          }}</t-button>
-        </div>
-        <section class="ma-stack">
-          <h3>{{ t('ma.basicInfo') }}</h3>
-          <dl class="ma-definitions">
-            <dt>{{ t('ma.template') }}</dt>
-            <dd>{{ templateName(detail.template_key) }}</dd>
-            <dt>{{ t('ma.baseUrl') }}</dt>
-            <dd>
-              <code>{{ detail.base_url }}</code>
-            </dd>
-            <dt>{{ t('ma.security') }}</dt>
-            <dd>{{ t('ma.' + detail.security_level) }}</dd>
-            <dt>{{ t('ma.notes') }}</dt>
-            <dd>{{ detail.notes || '—' }}</dd>
-            <dt>{{ t('ma.created') }}</dt>
-            <dd>{{ formatDateTime(detail.created_at) }}</dd>
-          </dl>
-        </section>
-        <t-divider />
-        <section class="ma-stack">
-          <h3>{{ t('ma.auth') }}</h3>
-          <dl class="ma-definitions">
-            <template
-              v-for="field in templates.find((x) => x.template_key === detail?.template_key)
-                ?.fields ?? []"
-              :key="field.key"
-              ><dt>{{ authFieldLabel(field) }}</dt>
-              <dd>
-                {{
-                  field.secret
-                    ? t(
-                        detail.configured_secret_fields.includes(field.key)
-                          ? 'ma.configured'
-                          : 'ma.unconfigured',
-                      )
-                    : detail.provider_config[field.key] || '—'
-                }}
-              </dd></template
-            >
-          </dl>
-        </section>
-        <t-divider />
-        <section class="ma-stack">
-          <div class="ma-row ma-between">
-            <h3>{{ t('ma.accountBalance') }}</h3>
-            <t-button
-              v-if="detail.balance_query_mode !== 'NONE'"
+      @close="closeDetail"
+      ><LoadingState :loading="detailLoading" :failed="detailFailed">
+        <div v-if="detail" class="ma-stack provider-detail">
+          <div class="ma-row">
+            <t-tag variant="light">{{ t('ma.' + detail.security_level) }}</t-tag
+            ><t-button
+              theme="default"
               v-permission.write="'model.providers'"
+              @click="guide = detail"
+              >{{ t('ma.getModels') }}</t-button
+            ><t-button
               theme="primary"
-              variant="outline"
-              :loading="querying"
-              @click="balance(detail)"
-              >{{ t('ma.queryBalance') }}</t-button
+              v-permission.write="'model.providers'"
+              @click="edit(detail)"
+              >{{ t('ma.edit') }}</t-button
             >
           </div>
-          <p v-if="detail.balance_query_mode === 'NONE'" class="ma-muted">
-            {{ t('ma.balanceNotConfigured') }}
-          </p>
-          <template v-else>
-            <div class="ma-row">
-              <strong
-                :class="[
-                  'ma-balance-amount',
-                  {
-                    'ma-low-balance':
-                      detail.balance_alert_enabled &&
-                      detail.last_balance_value !== null &&
-                      detail.last_balance_value <= detail.balance_alert_threshold,
-                  },
-                ]"
-                >{{
-                  detail.last_balance_value === null
-                    ? '—'
-                    : detail.last_balance_value.toFixed(2) + ' ' + detail.balance_alert_unit
-                }}</strong
-              ><t-tag
-                v-if="detail.balance_alert_enabled && detail.last_balance_value !== null"
-                variant="light"
-                :theme="
-                  detail.last_balance_value <= detail.balance_alert_threshold
-                    ? 'warning'
-                    : 'success'
-                "
-                >{{
-                  t(
+          <section class="ma-stack">
+            <h3>{{ t('ma.basicInfo') }}</h3>
+            <dl class="ma-definitions">
+              <dt>{{ t('ma.template') }}</dt>
+              <dd>{{ templateName(detail.template_key) }}</dd>
+              <dt>{{ t('ma.baseUrl') }}</dt>
+              <dd>
+                <code>{{ detail.base_url }}</code>
+              </dd>
+              <dt>{{ t('ma.security') }}</dt>
+              <dd>{{ t('ma.' + detail.security_level) }}</dd>
+              <dt>{{ t('ma.notes') }}</dt>
+              <dd>{{ detail.notes || '—' }}</dd>
+              <dt>{{ t('ma.created') }}</dt>
+              <dd>{{ formatDateTime(detail.created_at) }}</dd>
+            </dl>
+          </section>
+          <t-divider />
+          <section class="ma-stack">
+            <h3>{{ t('ma.auth') }}</h3>
+            <dl class="ma-definitions">
+              <template
+                v-for="field in templates.find((x) => x.template_key === detail?.template_key)
+                  ?.fields ?? []"
+                :key="field.key"
+                ><dt>{{ authFieldLabel(field) }}</dt>
+                <dd>
+                  {{
+                    field.secret
+                      ? t(
+                          detail.configured_secret_fields.includes(field.key)
+                            ? 'ma.configured'
+                            : 'ma.unconfigured',
+                        )
+                      : detail.provider_config[field.key] || '—'
+                  }}
+                </dd></template
+              >
+            </dl>
+          </section>
+          <t-divider />
+          <section class="ma-stack">
+            <div class="ma-row ma-between">
+              <h3>{{ t('ma.accountBalance') }}</h3>
+              <t-button
+                v-if="detail.balance_query_mode !== 'NONE'"
+                v-permission.write="'model.providers'"
+                theme="primary"
+                variant="outline"
+                :loading="querying"
+                @click="balance(detail)"
+                >{{ t('ma.queryBalance') }}</t-button
+              >
+            </div>
+            <p v-if="detail.balance_query_mode === 'NONE'" class="ma-muted">
+              {{ t('ma.balanceNotConfigured') }}
+            </p>
+            <template v-else>
+              <div class="ma-row">
+                <strong
+                  :class="[
+                    'ma-balance-amount',
+                    {
+                      'ma-low-balance':
+                        detail.balance_alert_enabled &&
+                        detail.last_balance_value !== null &&
+                        detail.last_balance_value <= detail.balance_alert_threshold,
+                    },
+                  ]"
+                  >{{
+                    detail.last_balance_value === null
+                      ? '—'
+                      : detail.last_balance_value.toFixed(2) + ' ' + detail.balance_alert_unit
+                  }}</strong
+                ><t-tag
+                  v-if="detail.balance_alert_enabled && detail.last_balance_value !== null"
+                  variant="light"
+                  :theme="
                     detail.last_balance_value <= detail.balance_alert_threshold
-                      ? 'ma.lowBalance'
-                      : 'ma.balanceNormal',
+                      ? 'warning'
+                      : 'success'
+                  "
+                  >{{
+                    t(
+                      detail.last_balance_value <= detail.balance_alert_threshold
+                        ? 'ma.lowBalance'
+                        : 'ma.balanceNormal',
+                    )
+                  }}</t-tag
+                >
+              </div>
+              <div class="ma-muted">
+                {{ t('ma.queryMode') }}：{{
+                  t(
+                    detail.balance_query_mode === 'CUSTOM'
+                      ? 'ma.CUSTOM_QUERY'
+                      : detail.balance_query_mode === 'TEMPLATE'
+                        ? 'ma.TEMPLATE'
+                        : 'ma.NONE',
                   )
-                }}</t-tag
-              >
-            </div>
-            <div class="ma-muted">
-              {{ t('ma.queryMode') }}：{{
-                t(
-                  detail.balance_query_mode === 'CUSTOM'
-                    ? 'ma.CUSTOM_QUERY'
-                    : detail.balance_query_mode === 'TEMPLATE'
-                      ? 'ma.TEMPLATE'
-                      : 'ma.NONE',
-                )
-              }}<template v-if="detail.balance_query_mode === 'CUSTOM'">
-                · {{ detail.balance_query_config.method }} ·
-                {{ detail.balance_query_config.url }}</template
-              >
-            </div>
-            <div v-if="detail.balance_alert_enabled" class="ma-muted">
-              {{ t('ma.threshold') }}：{{ detail.balance_alert_threshold }}
-              {{ detail.balance_alert_unit }}
-            </div>
-            <div v-if="detail.balance_alert_enabled" class="ma-muted">
-              {{ t('ma.recipients') }}：{{
-                detail.balance_alert_recipients.map((id) => recipientNames[id] || id).join('、')
-              }}
-            </div>
-            <div v-if="detail.balance_alert_enabled" class="ma-muted">
-              {{ t('ma.channels') }}：{{
-                detail.balance_alert_channels.map((v) => t('ma.' + v)).join('、')
-              }}
-            </div>
-            <div class="ma-muted">
-              {{ t('ma.balanceQueryTime') }}：{{
-                formatDateTime(detail.last_balance_attempt_at) || '—'
-              }}
-              ·
-              {{
-                t(
-                  detail.balance_query_status === 'SUCCESS'
-                    ? 'ma.PASSED'
-                    : detail.balance_query_status === 'FAILED'
-                      ? 'ma.FAILED'
-                      : 'ma.UNKNOWN',
-                )
-              }}
-            </div>
-            <div class="ma-muted">
-              {{ t('ma.balanceSuccessTime') }}：{{
-                formatDateTime(detail.last_balance_success_at) || '—'
-              }}
-            </div>
-            <t-alert
-              v-if="detail.balance_query_status === 'FAILED'"
-              theme="error"
-              :message="t('ma.balanceFailure')"
-            />
-          </template>
-        </section>
-        <t-divider />
-        <section class="ma-stack">
-          <h3>{{ t('ma.relatedModels') }}</h3>
-          <t-table
-            row-key="id"
-            :data="related"
-            :columns="relatedColumns"
-            :pagination="{
-              current: relatedPage,
-              pageSize: 20,
-              total: relatedTotal,
-              showPageSize: false,
-            }"
-            :disable-data-page="true"
-            @page-change="
-              (p: PageInfo) => {
-                relatedPage = p.current
-                loadRelated()
-              }
-            "
-            ><template #status="{ row }"
-              ><t-tag variant="light" :theme="statusTheme(row.status)">{{
-                t('ma.' + row.status)
-              }}</t-tag></template
-            ></t-table
-          >
-        </section>
-      </div></t-drawer
+                }}<template v-if="detail.balance_query_mode === 'CUSTOM'">
+                  · {{ detail.balance_query_config.method }} ·
+                  {{ detail.balance_query_config.url }}</template
+                >
+              </div>
+              <div v-if="detail.balance_alert_enabled" class="ma-muted">
+                {{ t('ma.threshold') }}：{{ detail.balance_alert_threshold }}
+                {{ detail.balance_alert_unit }}
+              </div>
+              <div v-if="detail.balance_alert_enabled" class="ma-muted">
+                {{ t('ma.recipients') }}：{{
+                  detail.balance_alert_recipients.map((id) => recipientNames[id] || id).join('、')
+                }}
+              </div>
+              <div v-if="detail.balance_alert_enabled" class="ma-muted">
+                {{ t('ma.channels') }}：{{
+                  detail.balance_alert_channels.map((v) => t('ma.' + v)).join('、')
+                }}
+              </div>
+              <div class="ma-muted">
+                {{ t('ma.balanceQueryTime') }}：{{
+                  formatDateTime(detail.last_balance_attempt_at) || '—'
+                }}
+                ·
+                {{
+                  t(
+                    detail.balance_query_status === 'SUCCESS'
+                      ? 'ma.PASSED'
+                      : detail.balance_query_status === 'FAILED'
+                        ? 'ma.FAILED'
+                        : 'ma.UNKNOWN',
+                  )
+                }}
+              </div>
+              <div class="ma-muted">
+                {{ t('ma.balanceSuccessTime') }}：{{
+                  formatDateTime(detail.last_balance_success_at) || '—'
+                }}
+              </div>
+              <t-alert
+                v-if="detail.balance_query_status === 'FAILED'"
+                theme="error"
+                :message="t('ma.balanceFailure')"
+              />
+            </template>
+          </section>
+          <t-divider />
+          <section class="ma-stack">
+            <h3>{{ t('ma.relatedModels') }}</h3>
+            <t-table
+              :height="relatedLoading ? 'var(--stable-detail-table-height)' : undefined"
+              max-height="var(--stable-detail-table-height)"
+              row-key="id"
+              :data="related"
+              :class="{
+                'stable-table--pending-footer':
+                  (relatedLoading || relatedFailed) && !related.length,
+              }"
+              :loading="relatedLoading"
+              :columns="relatedColumns"
+              :pagination="{
+                current: relatedPage,
+                pageSize: 20,
+                total: relatedTotal,
+                showPageSize: false,
+              }"
+              :disable-data-page="true"
+              @page-change="
+                (p: PageInfo) => {
+                  relatedPage = p.current
+                  loadRelated()
+                }
+              "
+              ><template v-if="relatedFailed" #empty>{{ t('common.loadFailed') }}</template
+              ><template #status="{ row }"
+                ><t-tag variant="light" :theme="statusTheme(row.status)">{{
+                  t('ma.' + row.status)
+                }}</t-tag></template
+              ></t-table
+            >
+          </section>
+        </div></LoadingState
+      ></t-drawer
     >
     <t-dialog
       dialog-class-name="model-access-dialog"
-      :close-btn="true"
+      :close-btn="!mutating"
       :visible="!!removing"
+      :close-on-esc-keydown="!mutating"
+      :close-on-overlay-click="false"
       :header="t('ma.remove')"
       :confirm-btn="{ content: t('ma.confirm'), loading: mutating }"
-      :cancel-btn="t('ma.cancel')"
-      @close="removing = undefined"
+      :cancel-btn="{ content: t('ma.cancel'), disabled: mutating }"
+      @close="!mutating && (removing = undefined)"
       @confirm="remove"
       ><div class="ma-stack">
         <t-alert theme="warning" :message="t('ma.providerDelete')" />
         <div>{{ removing?.name }}</div>
-        <t-textarea v-model="reason" :placeholder="t('ma.reason')" /></div
+        <t-textarea v-model="reason" :disabled="mutating" :placeholder="t('ma.reason')" /></div
     ></t-dialog>
   </section>
 </template>
 <script setup lang="ts">
+import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
 import { getUserDetailApi } from '@/api/modules/identity'
 import { useUserStore } from '@/stores/modules/user'
@@ -323,7 +345,7 @@ const items = ref<Provider[]>([]),
   templates = ref<Template[]>([]),
   related = ref<Model[]>([])
 const search = ref(''),
-  loading = ref(false),
+  loading = ref(true),
   formVisible = ref(false),
   editing = ref<Provider>(),
   detail = ref<Provider>(),
@@ -332,6 +354,25 @@ const search = ref(''),
   reason = ref(''),
   mutating = ref(false),
   querying = ref(false)
+const detailTitle = ref('')
+const detailVisible = ref(false),
+  detailLoading = ref(false),
+  detailFailed = ref(false)
+const listFailed = ref(false),
+  editingLoading = ref(false),
+  templatesLoading = ref(true)
+let templateRequest: Promise<void> | undefined
+const templatesFailed = ref(false)
+const relatedLoading = ref(false),
+  relatedFailed = ref(false)
+let detailVersion = 0,
+  relatedVersion = 0
+function closeDetail() {
+  ++detailVersion
+  ++relatedVersion
+  detailVisible.value = false
+  detail.value = undefined
+}
 const relatedPage = ref(1),
   relatedTotal = ref(0)
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, pageSizeOptions: [20, 50, 100] })
@@ -386,11 +427,14 @@ function rowActions(row: Provider): RowAction[] {
   return actions
 }
 function templateName(key: string) {
+  if (templatesLoading.value) return t('common.loading')
+  if (templatesFailed.value) return t('common.loadFailed')
   return templates.value.find((x) => x.template_key === key)?.name ?? key
 }
 async function load() {
   const g = ++generation
   loading.value = true
+  listFailed.value = false
   try {
     const data = await accessApi.providers({
       page: pagination.current,
@@ -405,54 +449,102 @@ async function load() {
     }
     items.value = data.items
     pagination.total = data.total
+  } catch {
+    if (g === generation) listFailed.value = true
   } finally {
     if (g === generation) loading.value = false
   }
 }
+const editRequest = useLatestRequest()
 async function edit(row: Provider) {
-  editing.value = await accessApi.provider(row.id)
-  detail.value = undefined
-  formVisible.value = true
+  if (editingLoading.value) return
+  const current = editRequest.begin()
+  editingLoading.value = true
+  try {
+    await templateRequest
+    if (!current.isCurrent() || templatesFailed.value) return
+    const provider = await accessApi.provider(row.id)
+    if (!current.isCurrent()) return
+    editing.value = provider
+    closeDetail()
+    formVisible.value = true
+  } catch {
+    // The request layer reports failures; keep the existing page.
+  } finally {
+    if (current.isCurrent()) editingLoading.value = false
+  }
 }
 async function saved(provider: Provider, created: boolean) {
+  MessagePlugin.success(t('providers.saved'))
   await load()
   if (created) guide.value = provider
 }
 async function openDetail(row: Provider) {
-  detail.value = await accessApi.provider(row.id)
-  const session = useUserStore().context.session
-  if (session) recipientNames.value[session.user_id] = session.display_name || session.username
-  await Promise.all(
-    (detail.value.balance_alert_enabled && detail.value.balance_query_mode !== 'NONE'
-      ? detail.value.balance_alert_recipients
-      : []
+  const version = ++detailVersion
+  detailTitle.value = row.name
+  detailVisible.value = true
+  detailLoading.value = true
+  detailFailed.value = false
+  detail.value = undefined
+  related.value = []
+  relatedTotal.value = 0
+  try {
+    const provider = await accessApi.provider(row.id)
+    if (version !== detailVersion) return
+    detail.value = provider
+    await templateRequest
+    if (version !== detailVersion) return
+    if (templatesFailed.value) throw new Error('Provider templates unavailable')
+    const session = useUserStore().context.session
+    if (session) recipientNames.value[session.user_id] = session.display_name || session.username
+    await Promise.all(
+      (detail.value.balance_alert_enabled && detail.value.balance_query_mode !== 'NONE'
+        ? detail.value.balance_alert_recipients
+        : []
+      )
+        .filter((id) => !recipientNames.value[id])
+        .map(async (id) => {
+          try {
+            const user = (
+              await getUserDetailApi(id, {
+                handledErrorCodes: ['NOT_FOUND', 'OUT_OF_SCOPE', 'FORBIDDEN'],
+              })
+            ).user
+            recipientNames.value[id] = user.display_name || user.username
+          } catch {
+            /* Keep the configured identifier when out of scope. */
+          }
+        }),
     )
-      .filter((id) => !recipientNames.value[id])
-      .map(async (id) => {
-        try {
-          const user = (
-            await getUserDetailApi(id, {
-              handledErrorCodes: ['NOT_FOUND', 'OUT_OF_SCOPE', 'FORBIDDEN'],
-            })
-          ).user
-          recipientNames.value[id] = user.display_name || user.username
-        } catch {
-          /* Keep the configured identifier when out of scope. */
-        }
-      }),
-  )
-  relatedPage.value = 1
-  await loadRelated()
+    if (version !== detailVersion) return
+    relatedPage.value = 1
+    await loadRelated()
+  } catch {
+    if (version === detailVersion) detailFailed.value = true
+  } finally {
+    if (version === detailVersion) detailLoading.value = false
+  }
 }
 async function loadRelated() {
   if (!detail.value) return
-  const data = await accessApi.models({
-    provider_id: detail.value.id,
-    page: relatedPage.value,
-    page_size: 20,
-  })
-  related.value = data.items
-  relatedTotal.value = data.total
+  const version = ++relatedVersion
+  const providerId = detail.value.id
+  relatedLoading.value = true
+  relatedFailed.value = false
+  try {
+    const data = await accessApi.models({
+      provider_id: providerId,
+      page: relatedPage.value,
+      page_size: 20,
+    })
+    if (version !== relatedVersion || detail.value?.id !== providerId) return
+    related.value = data.items
+    relatedTotal.value = data.total
+  } catch {
+    if (version === relatedVersion) relatedFailed.value = true
+  } finally {
+    if (version === relatedVersion) relatedLoading.value = false
+  }
 }
 async function balance(row: Provider) {
   querying.value = true
@@ -465,6 +557,7 @@ async function balance(row: Provider) {
   }
 }
 async function remove() {
+  if (mutating.value) return
   if (!removing.value) return
   if (!reason.value.trim()) {
     MessagePlugin.warning(t('ma.reasonRequired'))
@@ -472,7 +565,18 @@ async function remove() {
   }
   mutating.value = true
   try {
+    const active = await accessApi.models({
+      page: 1,
+      page_size: 1,
+      provider_id: removing.value.id,
+      status: 'ACTIVE',
+    })
+    if (active.total > 0) {
+      MessagePlugin.warning(t('ma.providerDeleteBlocked'))
+      return
+    }
     await accessApi.removeProvider(removing.value.id, reason.value)
+    MessagePlugin.success(t('ma.success'))
     if (detail.value?.id === removing.value.id) detail.value = undefined
     removing.value = undefined
     await load()
@@ -486,17 +590,30 @@ function changePage(p: PageInfo) {
   void load()
 }
 watch(search, () => {
+  ++generation
+  loading.value = true
   clearTimeout(timer)
   timer = setTimeout(() => {
     pagination.current = 1
     void load()
   }, 250)
 })
-onMounted(async () => {
-  templates.value = await accessApi.templates()
-  await load()
+onMounted(() => {
+  templateRequest = accessApi
+    .templates()
+    .then((result) => {
+      templates.value = result
+    })
+    .catch(() => {
+      templatesFailed.value = true
+    })
+    .finally(() => {
+      templatesLoading.value = false
+    })
+  void load().catch(() => {})
 })
 onBeforeUnmount(() => {
+  closeDetail()
   generation++
   clearTimeout(timer)
 })

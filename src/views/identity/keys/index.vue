@@ -68,6 +68,7 @@
       </t-button>
     </t-space>
     <t-table
+      height="var(--stable-table-height)"
       row-key="id"
       table-layout="fixed"
       table-content-width="max(100%, var(--managed-key-table-width))"
@@ -76,7 +77,7 @@
       :loading="loading"
       :selected-row-keys="selectedKeys"
       :disable-data-page="true"
-      :empty="t('managedKeys.empty')"
+      :empty="listFailed ? t('common.loadFailed') : t('managedKeys.empty')"
       @select-change="selectRows"
     >
       <template #id="{ row }"
@@ -162,6 +163,7 @@
     </t-table>
     <div class="key-pagination">
       <t-pagination
+        :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
         :current="page"
         :page-size="pageSize"
         :total="paginationTotal"
@@ -190,6 +192,7 @@
 
 <script setup lang="ts">
 import { usePageSelection } from '@/utils/usePageSelection'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -230,7 +233,8 @@ const {
   selectRows: updateSelection,
   clearSelection,
 } = usePageSelection(items)
-const loading = ref(false)
+const loading = ref(true)
+const listFailed = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const paginationTotal = ref(0)
@@ -309,18 +313,23 @@ function selectRows(keys: Array<string | number>) {
 }
 async function fetchList(): Promise<void> {
   if (disposed) return
+  const current = latestList.begin()
   const requestId = ++listRequest
   loading.value = true
+  listFailed.value = false
   try {
-    const result = await getManagedKeysApi({
-      search: filters.search.trim() || undefined,
-      status: (filters.status || undefined) as 'ACTIVE' | 'DISABLED' | undefined,
-      control_condition: (filters.control || undefined) as KeyControlCondition | undefined,
-      department_id: filters.department || undefined,
-      page: page.value,
-      page_size: pageSize.value,
-    })
-    if (disposed || requestId !== listRequest) return
+    const result = await getManagedKeysApi(
+      {
+        search: filters.search.trim() || undefined,
+        status: (filters.status || undefined) as 'ACTIVE' | 'DISABLED' | undefined,
+        control_condition: (filters.control || undefined) as KeyControlCondition | undefined,
+        department_id: filters.department || undefined,
+        page: page.value,
+        page_size: pageSize.value,
+      },
+      { signal: current.signal },
+    )
+    if (!current.isCurrent() || disposed || requestId !== listRequest) return
     paginationTotal.value = result.total
     pageSize.value = result.page_size
     const lastPage = Math.max(1, result.total_pages)
@@ -332,12 +341,13 @@ async function fetchList(): Promise<void> {
     page.value = result.page
     items.value = result.items
   } catch (error) {
-    if (disposed || requestId !== listRequest) return
+    if (!current.isCurrent() || disposed || requestId !== listRequest) return
+    listFailed.value = true
     items.value = []
     paginationTotal.value = 0
     showError(error)
   } finally {
-    if (requestId === listRequest) loading.value = false
+    if (current.isCurrent() && requestId === listRequest) loading.value = false
   }
 }
 function changePage(info: PageInfo) {
@@ -355,11 +365,21 @@ function resetFilters() {
   departmentFilter.value?.reset()
   Object.assign(filters, { search: '', status: '', control: '', department: '' })
 }
-watch(locale, () => void fetchList())
-watch(filters, () => {
+const latestList = useLatestRequest()
+watch(
+  () => filters.search,
+  () => {
+    clearSelection()
+    resetPage()
+    loading.value = true
+    latestList.schedule(() => void fetchList())
+  },
+)
+watch([() => filters.status, () => filters.control, () => filters.department, locale], () => {
   clearSelection()
   resetPage()
-  void fetchList()
+  // Coalesce a reset that changes both text and select filters.
+  latestList.schedule(() => void fetchList(), 0)
 })
 async function loadOptions() {
   const requestId = ++optionRequest
@@ -401,6 +421,7 @@ const dialogContent = computed(() =>
         id: targets.value[0]?.id,
       }),
 )
+let pendingAttempt: Attempt | null = null
 function openOperation(action: Operation, row?: ManagedKeyItem) {
   if (busy.value || loading.value || !userStore.permissions.includes('identity.keys:write')) return
   operation.value = action
@@ -417,6 +438,7 @@ function openOperation(action: Operation, row?: ManagedKeyItem) {
     return
   }
   if (!targets.value.length) return
+  pendingAttempt = null
   confirmVisible.value = true
 }
 function closeConfirm() {
@@ -431,12 +453,8 @@ function prepareAttempt(): Attempt | null {
   const keyIds = targets.value.map((row) => row.id)
   const id = atomicBatch ? undefined : keyIds[0]!
   const body = { ...(atomicBatch ? { key_ids: keyIds } : {}) }
-  return {
-    id,
-    operation: action,
-    body,
-    key: createIdempotencyKey(),
-  }
+  if (!pendingAttempt) pendingAttempt = { id, operation: action, body, key: createIdempotencyKey() }
+  return pendingAttempt
 }
 function callAttempt(attempt: Attempt) {
   if (attempt.id === undefined) {
@@ -456,6 +474,7 @@ function callAttempt(attempt: Attempt) {
   return api(attempt.id, attempt.body, attempt.key)
 }
 async function finishOperation() {
+  pendingAttempt = null
   confirmVisible.value = false
   clearSelection()
   MessagePlugin.success(t('managedKeys.success'))

@@ -56,6 +56,8 @@ function derivePermissions(capabilities: Capability[]): string[] {
   return codes
 }
 let permissionRequest: { key: string; promise: Promise<void> } | undefined
+let contextRequest: Promise<void> | undefined
+let contextEpoch = 0
 
 export const useUserStore = defineStore('user', {
   state: (): UserState => ({
@@ -90,6 +92,17 @@ export const useUserStore = defineStore('user', {
       await this.loadContext()
     },
     async loadContext() {
+      if (contextRequest) return contextRequest
+      const pending = this.fetchContext()
+      contextRequest = pending
+      try {
+        await pending
+      } finally {
+        if (contextRequest === pending) contextRequest = undefined
+      }
+    },
+    async fetchContext() {
+      const epoch = ++contextEpoch
       this.invalidatePermissions()
       this.contextLoaded = false
       clearCsrf()
@@ -98,6 +111,7 @@ export const useUserStore = defineStore('user', {
         if (context.session.scope === 'ONBOARDING' && context.session.gate === 'READY') {
           context = await getAuthContextApi()
         }
+        if (epoch !== contextEpoch) return
         const { csrf_token, ...configuration } = context
         if (
           this.context.session?.user_id &&
@@ -108,8 +122,8 @@ export const useUserStore = defineStore('user', {
         this.context = configuration
         this.contextLoaded = true
         this.loaded = false
-        return this.context
       } catch (error) {
+        if (epoch !== contextEpoch) return
         if ((error as { code?: string }).code === 'UNAUTHENTICATED') this.reset()
         throw error
       }
@@ -202,6 +216,11 @@ export const useUserStore = defineStore('user', {
         if (epoch === this.permissionEpoch) this.permissionsLoading = false
       }
     },
+    async recoverPermissions() {
+      // Keep route instances until the new snapshot proves a structural change.
+      this.permissionsReady = false
+      await this.fetchUserInfo()
+    },
     invalidatePermissions() {
       permissionRequest = undefined
       this.permissionEpoch++
@@ -218,6 +237,8 @@ export const useUserStore = defineStore('user', {
     },
     /** 本地登出（401 等场景，不调接口） */
     reset() {
+      ++contextEpoch
+      contextRequest = undefined
       this.invalidatePermissions()
       this.permissionError = ''
       setCostMockActor('')

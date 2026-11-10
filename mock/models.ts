@@ -1,4 +1,4 @@
-import { nextSequence, subjectName } from './_runtime'
+import { nextSequence, runtimeState, subjectName } from './_runtime'
 import { mockAccounts } from './_accounts'
 import {
   invocationApis,
@@ -215,6 +215,21 @@ const seedModels: Model[] = [
 }))
 if (!modelAccessState.initialized) modelAccessState.models.push(...seedModels)
 const { models, prices, permissions, runs, discoveries, polls } = modelAccessState
+// 模拟上游目录与本地接入关系分离：删除本地模型后，上游仍可再次发现。
+const upstreamModels = runtimeState(
+  'modelAccess:upstreamModels',
+  () => new Map<string, Map<string, Model>>(),
+)
+function rememberUpstream(model: Model) {
+  if (!model.provider_id) return
+  let directory = upstreamModels.get(model.provider_id)
+  if (!directory) {
+    directory = new Map()
+    upstreamModels.set(model.provider_id, directory)
+  }
+  directory.set(model.model_id_at_provider, structuredClone(model))
+}
+models.forEach(rememberUpstream)
 const adaptedModels = new Map(seedModels.map((m) => [m.model_id_at_provider, structuredClone(m)]))
 function adaptedModel(name: string) {
   return adaptedModels.get(name) ?? adaptedModels.get(name.split('/').pop() ?? '')
@@ -542,6 +557,81 @@ if (!modelAccessState.initialized)
     )
   }
 modelAccessState.initialized = true
+// 可直接从页面验证的价格样例；仅迁移未编辑过的旧种子，不覆盖管理员保存的数据。
+for (const [name, count] of [
+  ['o3-mini', 23],
+  ['gpt-4o-mini', 1],
+] as const) {
+  const model = models.find((item) => item.model_id_at_gateway === name)
+  if (!model) continue
+  const existing = prices.get(model.id)
+  if (
+    existing?.length !== 3 ||
+    !existing.every(
+      (price) =>
+        price.id === mockId(`seed-price-${model.id}-${price.version}`) &&
+        price.source_type === 'BUILT_IN' &&
+        price.pricing_mode === 'FIXED',
+    )
+  )
+    continue
+  prices.set(
+    model.id,
+    Array.from({ length: count }, (_, index): Pricing => {
+      const version = count - index
+      const fixed = count > 1 && index % 3 === 2
+      const base = platformPrice(model)
+      return {
+        ...base,
+        id: mockId(`seed-time-price-${model.id}-${version}`),
+        version,
+        source_type: 'ENTERPRISE_CUSTOM',
+        platform_catalog_version: null,
+        last_synced_at: null,
+        pricing_mode: fixed ? 'FIXED' : 'TIME_BASED',
+        time_periods: fixed
+          ? base.time_periods
+          : [
+              {
+                id: 'weekday-peak',
+                name: '工作日高峰',
+                is_fallback: false,
+                conditions: [
+                  { weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00' },
+                  { weekdays: [1, 2, 3, 4, 5], start: '14:00', end: '18:00' },
+                ],
+              },
+              {
+                id: 'weekend',
+                name: '周末日间',
+                is_fallback: false,
+                conditions: [
+                  { weekdays: [6, 7], start: '09:00', end: '12:00' },
+                  { weekdays: [6, 7], start: '14:00', end: '18:00' },
+                ],
+              },
+              { id: 'fallback', name: '', is_fallback: true, conditions: [] },
+            ],
+        metric_rates: base.metric_rates.map((rate): Pricing['metric_rates'][number] => {
+          const unitPrice = Number(((rate.unit_price ?? 0) * (1 + index * 0.05)).toFixed(4))
+          return {
+            ...rate,
+            unit_price: fixed ? unitPrice : null,
+            period_prices: fixed
+              ? {}
+              : {
+                  'weekday-peak': Number((unitPrice * 2).toFixed(4)),
+                  weekend: Number((unitPrice * 1.5).toFixed(4)),
+                  fallback: unitPrice,
+                },
+          }
+        }),
+        created_at: new Date(Date.parse(model.created_at) + (version - 1) * 86400000).toISOString(),
+        created_by: 'Mock Administrator',
+      }
+    }),
+  )
+}
 function savePrice(modelId: string, body: Pricing, actor = 'system') {
   const list = prices.get(modelId) ?? []
   const result = {
@@ -607,7 +697,20 @@ function modelError(body: Model, existing?: Model) {
     )
   )
     return 'PROVIDER_MODEL_CONFLICT'
-  if (existing && existing.status !== 'DRAFT') return 'EDIT_LOCKED'
+  if (
+    existing &&
+    existing.status !== 'DRAFT' &&
+    (
+      [
+        'provider_id',
+        'model_id_at_provider',
+        'model_id_at_gateway',
+        'supported_invocation_apis',
+        'custom_invocation_apis',
+      ] as const
+    ).some((key) => JSON.stringify(body[key]) !== JSON.stringify(existing[key]))
+  )
+    return 'EDIT_LOCKED'
   return ''
 }
 const transitions: Record<Status, Status[]> = {
@@ -739,7 +842,12 @@ const routes: MockMethod[] = [
     const key = pathId(req, 'providers')
     const i = providers.findIndex((p) => p.id === key)
     if (i < 0) return fail('NOT_FOUND', '')
+    if (models.some((m) => m.provider_id === key && m.status === 'ACTIVE'))
+      return error('DELETE_BLOCKED')
     providers.splice(i, 1)
+    upstreamModels.delete(key)
+    for (const [discoveryId, snapshot] of discoveries)
+      if (snapshot.provider === key) discoveries.delete(discoveryId)
     for (const m of models.filter((m) => m.provider_id === key)) {
       m.provider_id = ''
       m.status = 'DRAFT'
@@ -766,7 +874,7 @@ const routes: MockMethod[] = [
   route('/providers/:id/models/discover', 'post', (req) => {
     const p = providers.find((p) => p.id === pathId(req, 'providers'))
     if (!p) return fail('NOT_FOUND', '')
-    const names = p.base_url.includes('fail')
+    const catalogNames = p.base_url.includes('fail')
       ? []
       : p.template_key === 'openai'
         ? ['gpt-4o', 'gpt-4o-mini', 'text-embedding-3-large', 'o3-mini']
@@ -777,23 +885,54 @@ const routes: MockMethod[] = [
             : p.template_key === 'openrouter'
               ? ['openai/gpt-4o', 'anthropic/claude-sonnet-4']
               : []
+    const connected = new Map(
+      models
+        .filter((model) => model.provider_id === p.id)
+        .map((model) => [model.model_id_at_provider, model]),
+    )
+    const upstream = upstreamModels.get(p.id)
+    const names = catalogNames.length
+      ? [...new Set([...catalogNames, ...(upstream?.keys() ?? []), ...connected.keys()])]
+      : []
     const items = names.map((name) => ({
       model_id_at_provider: name,
-      model_id_at_gateway: name,
+      model_id_at_gateway: connected.get(name)?.model_id_at_gateway ?? name,
       display_name: name,
-      input_modalities: adaptedModel(name)?.input_modalities ?? [],
-      output_modalities: adaptedModel(name)?.output_modalities ?? [],
-      tags: adaptedModel(name)?.tags ?? [],
-      context_window: adaptedModel(name)?.context_window ?? null,
-      max_output_tokens: adaptedModel(name)?.max_output_tokens ?? null,
+      input_modalities:
+        adaptedModel(name)?.input_modalities ??
+        connected.get(name)?.input_modalities ??
+        upstream?.get(name)?.input_modalities ??
+        [],
+      output_modalities:
+        adaptedModel(name)?.output_modalities ??
+        connected.get(name)?.output_modalities ??
+        upstream?.get(name)?.output_modalities ??
+        [],
+      tags:
+        adaptedModel(name)?.tags ?? connected.get(name)?.tags ?? upstream?.get(name)?.tags ?? [],
+      context_window:
+        adaptedModel(name)?.context_window ??
+        connected.get(name)?.context_window ??
+        upstream?.get(name)?.context_window ??
+        null,
+      max_output_tokens:
+        adaptedModel(name)?.max_output_tokens ??
+        connected.get(name)?.max_output_tokens ??
+        upstream?.get(name)?.max_output_tokens ??
+        null,
       supported_invocation_apis:
-        name === 'text-embedding-3-large'
+        connected.get(name)?.supported_invocation_apis ??
+        upstream?.get(name)?.supported_invocation_apis ??
+        (name === 'text-embedding-3-large'
           ? ['EMBEDDINGS']
           : name.includes('gpt-4o')
             ? ['CHAT_COMPLETIONS', 'RESPONSES']
-            : ['CHAT_COMPLETIONS'],
-      custom_invocation_apis: [],
-      already_added: models.some((m) => m.provider_id === p.id && m.model_id_at_provider === name),
+            : ['CHAT_COMPLETIONS']),
+      custom_invocation_apis:
+        connected.get(name)?.custom_invocation_apis ??
+        upstream?.get(name)?.custom_invocation_apis ??
+        [],
+      already_added: connected.has(name),
     }))
     const key = id()
     discoveries.set(key, { provider: p.id, items })
@@ -857,6 +996,7 @@ const routes: MockMethod[] = [
         continue
       }
       models.unshift(m)
+      rememberUpstream(m)
       lifecycle(m, 'CREATE', '', usernameFromToken(req)!)
       if (platformPrice(m).metric_rates.length) {
         prices.set(m.id, [
@@ -924,6 +1064,7 @@ const routes: MockMethod[] = [
           { ...builtIn, id: id(), version: 1, created_at: now(), created_by: 'system' },
         ])
       }
+      rememberUpstream(b)
       return success(b)
     }),
   ),
@@ -935,6 +1076,7 @@ const routes: MockMethod[] = [
     const key = pathId(req, 'models')
     const m = models.find((m) => m.id === key)
     if (!m || m.status === 'ACTIVE' || !req.body?.reason) return error('DELETE_BLOCKED')
+    rememberUpstream(m)
     models.splice(models.indexOf(m), 1)
     prices.delete(key)
     permissions.delete(key)
@@ -1086,7 +1228,13 @@ routes.push(
     )
       return error('invalidPrice')
     if (body.source_type === 'BUILT_IN') {
-      return success(savePrice(model.id, platformPrice(model), usernameFromToken(req)!))
+      return success(
+        savePrice(
+          model.id,
+          { ...platformPrice(model), currency: body.currency || 'CNY' },
+          usernameFromToken(req)!,
+        ),
+      )
     }
     body.source_type = 'ENTERPRISE_CUSTOM'
     const problem = pricingError(body)

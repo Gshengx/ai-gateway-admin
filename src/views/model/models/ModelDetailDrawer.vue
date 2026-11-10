@@ -180,9 +180,9 @@ watch(
           >{{ t('models.admission.approve') }}</t-button
         >
         <t-button
-          v-if="!['TESTING', 'PENDING_REVIEW'].includes(detail.status)"
           v-permission.write="'model.models'"
           theme="default"
+          v-if="detail.status !== 'PENDING_REVIEW'"
           @click="emit('edit', detail.id)"
           >{{ t('models.edit') }}</t-button
         >

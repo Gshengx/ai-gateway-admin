@@ -1,5 +1,6 @@
 import { runtimeState, directory } from './_runtime'
 import type { AcceptTermsResult } from '../src/api/modules/terms'
+import type { UserTermsInfo } from '../src/api/modules/identity'
 import {
   checkToken,
   checkCsrf,
@@ -44,6 +45,33 @@ export function hasAcceptedTerms(username: string) {
     !state.config.mandatory_confirmation ||
     state.records.some((r) => r.username === username && r.version === state.config.version)
   )
+}
+export function userTermsInfo(username: string): UserTermsInfo {
+  const records = state.records
+    .filter((record) => record.username === username)
+    .sort((a, b) => Date.parse(b.accepted_at) - Date.parse(a.accepted_at))
+  const acceptance = (record: AcceptanceRecord | undefined) =>
+    record
+      ? {
+          id: mockId(`acceptance-${record.username}-${record.version}`),
+          terms_id: mockId(`terms-${record.version}`),
+          terms_version: record.version,
+          accepted_at: record.accepted_at,
+          client_ip: record.ip,
+        }
+      : null
+  const current = records.find((record) => record.version === state.config.version)
+  return {
+    visibility: 'VISIBLE',
+    current_terms: {
+      id: state.config.terms_id,
+      version: state.config.version,
+      mandatory_confirmation: state.config.mandatory_confirmation,
+    },
+    status: current ? 'ACCEPTED' : 'NOT_ACCEPTED',
+    current_acceptance: acceptance(current),
+    last_acceptance: acceptance(records[0]),
+  }
 }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const detail = (item: TermsTranslation): TermsTranslationDetail => ({

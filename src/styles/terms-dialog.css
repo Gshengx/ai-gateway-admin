@@ -1,0 +1,12 @@
+/* 登录与配置预览沿用须知正文 40vh 上限，长正文在同一区域内滚动。 */
+.terms-content {
+  max-height: 40vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: var(--td-font-size-body-medium);
+  line-height: var(--td-line-height-body-medium);
+}
+
+.terms-check {
+  margin-top: var(--td-comp-margin-l);
+}

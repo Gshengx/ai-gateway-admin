@@ -1,17 +1,20 @@
 <template>
   <t-dialog
+    dialog-class-name="stable-async-dialog"
     attach="body"
     :visible="visible"
     :header="t('groups.addMembers.title')"
     width="760px"
     placement="center"
-    :close-on-overlay-click="true"
+    :close-on-overlay-click="!submitting"
     :confirm-btn="{
       content: t('groups.addMembers.submit', { n: selectedKeys.length }),
       loading: submitting,
-      disabled: !selectedKeys.length || loading,
+      disabled: !selectedKeys.length || loading || !optionsReady || failed,
     }"
-    :cancel-btn="{ content: t('common.cancel') }"
+    :cancel-btn="{ content: t('common.cancel'), disabled: submitting }"
+    :close-btn="!submitting"
+    :close-on-esc-keydown="!submitting"
     @confirm="handleSubmit"
     @close="onClose"
   >
@@ -38,16 +41,19 @@
       </t-button>
     </div>
 
+    <t-alert v-if="failed && candidates.length" theme="error" :message="t('common.loadFailed')" />
     <t-table
+      height="var(--stable-detail-table-height)"
       row-key="id"
       :data="candidates"
       :columns="columns"
-      :loading="loading"
+      :loading="loading || !optionsReady"
       :selected-row-keys="selectedKeys"
       :max-height="330"
       hover
       @select-change="onSelectChange"
     >
+      <template v-if="failed" #empty>{{ t('common.loadFailed') }}</template>
       <template #department="{ row }">
         <span :class="{ 'cell-empty': !row.department }">
           {{ row.department?.display_name ?? '—' }}
@@ -55,7 +61,10 @@
       </template>
     </t-table>
 
-    <div class="add-pagination">
+    <div
+      :class="{ 'stable-pagination--pending': !optionsReady || loading || failed }"
+      class="add-pagination"
+    >
       <t-pagination
         :current="pagination.current"
         :page-size="pagination.pageSize"
@@ -95,6 +104,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const loading = ref(false)
+const failed = ref(false)
+const optionsReady = ref(false)
 const submitting = ref(false)
 const candidates = ref<UserGroupMember[]>([])
 const search = ref('')
@@ -126,6 +137,7 @@ function clearSearchTimer() {
 }
 
 function invalidateRequests() {
+  optionsReady.value = false
   clearSearchTimer()
   requestSequence++
   loading.value = false
@@ -136,6 +148,8 @@ async function fetchCandidates() {
   if (!props.visible || !props.groupId) return
   const sequence = ++requestSequence
   loading.value = true
+  optionsReady.value = false
+  failed.value = false
   try {
     const res = await getUserGroupMemberOptionsApi(props.groupId, {
       page: pagination.current ?? 1,
@@ -147,9 +161,12 @@ async function fetchCandidates() {
     candidates.value = res.items
     pagination.total = res.total
   } catch {
-    // Keep the displayed page; the interceptor reports errors.
+    if (sequence === requestSequence) failed.value = true
   } finally {
-    if (sequence === requestSequence) loading.value = false
+    if (sequence === requestSequence) {
+      loading.value = false
+      optionsReady.value = true
+    }
   }
 }
 
@@ -158,6 +175,8 @@ watch(
   (value) => {
     if (resetting || !props.visible) return
     invalidateRequests()
+    loading.value = true
+    failed.value = false
     clearSelection()
     pagination.current = 1
     if (!value) {
@@ -232,6 +251,7 @@ function onClose() {
 }
 
 async function handleSubmit() {
+  if (submitting.value || loading.value || !optionsReady.value || failed.value) return
   const userIds = [...selectedKeys.value]
   if (!userIds.length) return
   if (userIds.length > 100) {

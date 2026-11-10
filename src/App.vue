@@ -1,10 +1,10 @@
 <template>
   <t-config-provider :global-config="tdesignLocale">
     <t-loading
-      v-if="userStore.permissionsLoading && !isLoginPage"
+      v-if="userStore.permissionsLoading && !termsStore.accepting"
       :text="t('navigationErrors.loading')"
       fullscreen
-      :delay="200"
+      :delay="isLoginPage ? 0 : 200"
     />
     <div v-if="userStore.permissionError" class="permission-error">
       <t-alert theme="error" :message="userStore.permissionError">
@@ -25,6 +25,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/modules/user'
+import { useTermsStore } from '@/stores/modules/terms'
 import { useI18n } from 'vue-i18n'
 import enUS from 'tdesign-vue-next/es/locale/en_US'
 import zhCN from 'tdesign-vue-next/es/locale/zh_CN'
@@ -34,6 +35,7 @@ import TermsAcceptDialog from '@/components/TermsAcceptDialog.vue'
 // 组件库内置文案（分页/弹窗/日期等）跟随应用语言切换
 const { locale, t } = useI18n()
 const userStore = useUserStore()
+const termsStore = useTermsStore()
 const router = useRouter()
 const isLoginPage = computed(() => router.currentRoute.value.path === '/login')
 async function retryPermissions() {
