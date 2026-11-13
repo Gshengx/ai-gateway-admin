@@ -16,7 +16,7 @@
         :clearable="clearable"
         :disabled="disabled || resolving"
         :popup-props="departmentPopupProps"
-        filterable
+        :filterable="searchable"
         :input-props="{ name: 'department-tree-filter', autocomplete: 'off' }"
         @change="onChange"
         @search="onDepartmentSearch"
@@ -47,8 +47,9 @@ const props = withDefaults(
     clearable?: boolean
     disabled?: boolean
     resolveDescendants?: boolean
+    searchable?: boolean
   }>(),
-  { clearable: true, resolveDescendants: true },
+  { clearable: true, resolveDescendants: true, searchable: true },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]

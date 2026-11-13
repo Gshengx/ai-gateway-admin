@@ -124,6 +124,7 @@
       :id="detailId"
       @close="detailId = ''"
       @edit="edit"
+      @saved="refreshAfterSave"
       @grants="(model) => (authorization = { models: [model], batch: false })"
       @test="test"
     />

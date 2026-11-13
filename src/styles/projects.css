@@ -1,0 +1,62 @@
+/* 原型创建/编辑项目为右侧 640px 抽屉；无对应 TDesign 业务宽度 token。 */
+:root {
+  --project-form-width: 640px;
+  /* 原型确认框距视口顶部 20%，避免全局紧凑弹窗规则将其贴到窗口顶部。 */
+  --project-confirm-top: var(--confirm-dialog-top);
+}
+.projects-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-comp-margin-l);
+}
+.project-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--td-comp-margin-l);
+}
+.project-heading h1 {
+  margin: 0;
+  font-size: var(--td-font-size-title-large);
+  font-weight: var(--td-font-weight-600);
+}
+.project-heading p {
+  margin: var(--td-comp-margin-s) 0 0;
+  color: var(--td-text-color-secondary);
+}
+.project-filters {
+  margin-bottom: var(--td-comp-margin-l);
+}
+.project-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-comp-margin-l);
+  align-items: center;
+  margin-top: var(--td-comp-margin-l);
+}
+.project-extra label {
+  display: block;
+  margin-bottom: var(--td-comp-margin-s);
+  color: var(--td-text-color-secondary);
+}
+.project-confirm {
+  color: var(--td-text-color-primary);
+  line-height: var(--td-line-height-body-medium);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.project-confirm p {
+  margin: 0;
+}
+.project-confirm p + p {
+  margin-top: var(--td-comp-margin-s);
+}
+
+.delete-confirm {
+  margin-top: var(--td-comp-margin-l);
+}
+.delete-confirm p {
+  margin-top: var(--td-comp-margin-s);
+  color: var(--td-text-color-secondary);
+  font-size: var(--td-font-size-body-small);
+}

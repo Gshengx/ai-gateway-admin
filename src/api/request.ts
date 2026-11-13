@@ -37,6 +37,10 @@ export interface NotifiedError extends Error {
 }
 
 function businessMessage(code?: string, config?: RequestConfig): string {
+  if (config?.url?.startsWith('/projects') || config?.url?.startsWith('/me/projects')) {
+    const key = `projects.error_${code}`
+    return i18n.global.te(key) ? i18n.global.t(key) : i18n.global.t('projects.failed')
+  }
   if (config?.url?.startsWith('/model-access')) {
     const key = `ma.error_${code}`
     return i18n.global.te(key) ? i18n.global.t(key) : i18n.global.t('ma.error_fallback')
@@ -208,7 +212,9 @@ instance.interceptors.request.use(async (config) => {
         throw error
       }
     }
-    const login = config.url === '/auth/login'
+    const login =
+      config.url === '/auth/login' ||
+      (import.meta.env.DEV && config.url === '/auth/local-mock-login')
     if (!login && !getCsrfToken()) {
       const { getAuthContextApi } = await import('./modules/auth')
       try {

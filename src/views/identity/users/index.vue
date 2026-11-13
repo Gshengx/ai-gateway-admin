@@ -225,6 +225,17 @@
                 {{ row.role?.display_name ?? '—' }}
               </span>
             </template>
+            <template #projects="{ row }">
+              <t-tooltip :content="projectTooltip(row)">
+                <span class="group-text">
+                  {{ row.projects?.[0]?.display_name ?? '—' }}
+                  <t-tag v-if="(row.projects?.length ?? 0) > 1" size="small" variant="light">
+                    +{{ row.projects.length - 1 }}
+                  </t-tag>
+                </span>
+              </t-tooltip>
+            </template>
+
             <template #status="{ row }">
               <span class="status-cell" :class="`status-cell--${row.status}`">
                 <span class="status-dot" :class="`status-dot--${row.status}`"></span>
@@ -459,6 +470,12 @@ function groupTooltip(row: UserItem) {
   return row.groups.length
     ? row.groups.map((group) => group.display_name).join(t('users.detail.listSeparator'))
     : t('users.detail.noGroups')
+}
+function projectTooltip(row: UserItem) {
+  return (
+    row.projects?.map((project) => project.display_name).join(t('users.detail.listSeparator')) ||
+    '—'
+  )
 }
 const userStore = useUserStore()
 const canWriteUsers = computed(() => canWriteResource(userStore.permissions, 'identity.users'))
@@ -719,6 +736,7 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
   { colKey: 'phone', title: t('users.columns.phone'), width: 140 },
   { colKey: 'department', title: t('users.columns.department'), width: 160, ellipsis: true },
   { colKey: 'groups', title: t('users.columns.groups'), width: 130 },
+  { colKey: 'projects', title: t('projects.project'), width: 160 },
   { colKey: 'role', title: t('users.columns.role'), width: 120 },
   { colKey: 'status', title: t('users.columns.status'), width: 100 },
   { colKey: 'last_login_at', title: t('users.columns.lastLogin'), width: 170 },

@@ -1,4 +1,5 @@
 import { runtimeState, nextSequence, directory, apiKeys, preferencesFor } from './_runtime'
+import { userProjects } from './_projects'
 import { mockAccounts, mockRoles } from './_accounts'
 import { CAPABILITIES, CAPABILITY_NAMES } from './_capabilities'
 import { getPasswordRules } from './settings'
@@ -648,6 +649,7 @@ function toApiUser(user: MockUser, locale: string) {
       requested_locale: locale,
       resolved_locale: locale,
     })),
+    projects: userProjects(user.id),
     role: role
       ? {
           id: role.id,

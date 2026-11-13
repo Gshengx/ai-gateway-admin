@@ -45,6 +45,9 @@ function onReset() {
 
 <style scoped>
 .filter-bar {
-  margin-bottom: 16px;
+  margin-bottom: var(--td-comp-margin-l);
+}
+.filter-bar :deep(.t-card__body) {
+  padding: 0;
 }
 </style>

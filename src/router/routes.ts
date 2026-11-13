@@ -37,7 +37,7 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
   identity_projects: {
     path: '/identity/projects',
     name: 'IdentityProjects',
-    component: placeholder,
+    component: () => import('@/views/identity/projects/index.vue'),
     meta: { permission: 'identity.projects', icon: 'folder' },
   },
   cost_bills: {
@@ -49,7 +49,7 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
   cost_expenses: {
     path: '/cost/expenses',
     name: 'CostExpenses',
-    component: placeholder,
+    component: () => import('@/views/cost/expenses/index.vue'),
     meta: { permission: 'cost.expenses', icon: 'file' },
   },
   cost_budgets: {
@@ -113,11 +113,30 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
     component: () => import('@/views/personal/keys/index.vue'),
     meta: { permission: 'personal.keys', icon: 'key' },
   },
+  personal_work_orders: {
+    path: '/personal/work-orders',
+    name: 'ProjectBudgetRequest',
+    component: () => import('@/views/personal/workOrders/index.vue'),
+    meta: {
+      title: 'budgetFlow.title',
+      serverTitle: false,
+      permission: 'personal.work_orders',
+      icon: 'file',
+    },
+  },
   personal_projects: {
     path: '/account/projects',
     alias: '/personal/projects',
     name: 'PersonalProjects',
-    component: placeholder,
+    component: () => import('@/views/personal/projects/index.vue'),
+    children: [
+      {
+        path: ':id',
+        name: 'PersonalProjectDetail',
+        component: () => import('@/views/personal/projects/Detail.vue'),
+        meta: { title: 'projects.detail', serverTitle: false, permission: 'personal.projects' },
+      },
+    ],
     meta: { permission: 'personal.projects', icon: 'folder' },
   },
   profile: {

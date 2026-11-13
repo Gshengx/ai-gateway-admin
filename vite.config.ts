@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { viteMockServe } from 'vite-plugin-mock'
+import { localMockPlugin } from './mock/_hybridPlugin'
 
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd())
@@ -11,6 +12,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       vue(),
+      localMockPlugin(proxyTarget, env.VITE_USE_MOCK !== 'true'),
       // Mock 模式：npm run dev:mock；默认 dev 直连真实后端（走代理）
       viteMockServe({
         mockPath: 'mock',

@@ -31,8 +31,30 @@
           :color="statusColor"
         />
       </div>
+      <t-tabs v-model="tab"
+        ><t-tab-panel
+          v-for="key in ['overview', 'periods', 'analytics', 'history']"
+          :key="key"
+          :value="key"
+          :label="t(`budgetPlan.${key}`)"
+      /></t-tabs>
+      <t-table
+        v-if="tab === 'periods'"
+        row-key="index"
+        :data="budget.periods ?? []"
+        :columns="periodColumns"
+        ><template #range="{ row }"
+          >{{ formatDate(row.start) }} — {{ formatDate(row.end) }}</template
+        ><template #state="{ row }">{{ t(`budgetPlan.${row.state}`) }}</template
+        ><template
+          v-for="key in ['base', 'temporary', 'amount', 'consumed', 'remaining']"
+          :key="key"
+          #[key]="{ row }"
+          >{{ money(row[key], budget.currency) }}</template
+        ></t-table
+      >
       <ChartCard
-        v-if="analytics"
+        v-if="analytics && tab === 'analytics'"
         :title="t('cost.trend')"
         :option="chartOption"
         height="var(--cost-trend-height)"
@@ -41,15 +63,10 @@
           {{ analytics.trend[analytics.trend.length - 1]?.date }}</template
         ></ChartCard
       >
-      <section>
+      <section v-if="tab === 'overview'">
+        <PeriodOverview :periods="budget.periods ?? []" :currency="budget.currency" />
         <div class="heading">
           <h3>{{ t('cost.budgetConfig') }}</h3>
-          <t-link
-            v-permission.write="'cost.budgets'"
-            theme="primary"
-            @click="emit('edit', budget)"
-            >{{ t('cost.edit') }}</t-link
-          >
         </div>
         <t-descriptions :column="2" layout="vertical" bordered>
           <t-descriptions-item :label="t('cost.department')">{{
@@ -91,7 +108,7 @@
           >
         </t-descriptions>
       </section>
-      <section v-if="kind === 'users'">
+      <section v-if="kind === 'users' && tab === 'overview'">
         <h3>{{ t('cost.temporaryList') }}</h3>
         <div v-if="!budget.adjustments.length" class="hint">{{ t('cost.empty') }}</div>
         <div v-for="item in budget.adjustments" :key="item.id" class="adjustment">
@@ -108,7 +125,7 @@
           <span class="hint">{{ t('cost.sourceOrder') }} {{ item.source_work_order_id }}</span>
         </div>
       </section>
-      <div v-if="analytics" class="rankings">
+      <div v-if="analytics && tab === 'analytics'" class="rankings">
         <section v-if="kind === 'departments'">
           <h3>{{ t('cost.userRanking') }}</h3>
           <div v-for="item in analytics.users" :key="item.name" class="rank">
@@ -127,7 +144,21 @@
           </div>
         </section>
       </div>
-      <section>
+      <section v-if="analytics && tab === 'analytics' && kind === 'departments'">
+        <h3>{{ t('expenses.cost_owner_type') }}</h3>
+        <t-space
+          >{{ t('expenses.directSpend') }}
+          {{ money(analytics.direct_cost ?? 0, budget.currency) }} ·
+          {{ t('expenses.projectSpend') }}
+          {{ money(analytics.project_cost ?? 0, budget.currency) }}</t-space
+        >
+        <h3>{{ t('budgetPlan.projectRanking') }}</h3>
+        <div v-for="item in analytics.projects ?? []" :key="item.id" class="rank">
+          <span>{{ item.name }}</span
+          ><strong>{{ money(item.cost, budget.currency) }}</strong>
+        </div>
+      </section>
+      <section v-if="tab === 'history'">
         <h3>{{ t('cost.history') }}</h3>
         <t-timeline
           v-if="budget.history.length || budget.adjustments.some((a) => a.status === 'EXPIRED')"
@@ -135,7 +166,10 @@
             ><div>
               {{ t(`cost.history${item.action}`) }} · {{ money(item.amount, budget.currency) }}
             </div>
-            <span class="hint">{{ formatDateTime(item.at) }} · {{ item.actor }}</span>
+            <span class="hint"
+              >{{ formatDateTime(item.at) }} ·
+              {{ users.find((u) => u.id === item.actor)?.name ?? item.actor }}</span
+            >
             <p v-if="item.reason">{{ item.reason }}</p>
             <p v-if="item.configuration" class="hint">
               {{ item.configuration.warning_threshold }}% /
@@ -177,9 +211,23 @@ import {
   type BudgetAnalytics,
   type Level,
 } from '@/api/modules/cost'
+import PeriodOverview from './PeriodOverview.vue'
 import ChartCard, { type ChartOption } from '@/components/ChartCard.vue'
 import { formatDate, formatDateTime } from '@/utils/datetime'
 import { useCost } from '../useCost'
+const tab = ref('overview')
+const periodColumns = computed(() =>
+  [
+    ['index', 'budgetFlow.period'],
+    ['range', 'budgetPlan.dates'],
+    ['state', 'cost.status'],
+    ['base', 'cost.baseAmount'],
+    ['temporary', 'cost.temporary'],
+    ['amount', 'budgetPlan.currentBudget'],
+    ['consumed', 'cost.consumed'],
+    ['remaining', 'cost.remaining'],
+  ].map(([colKey, label]) => ({ colKey, title: t(label!) })),
+)
 const props = defineProps<{ budget: Budget | null; kind: 'departments' | 'users' }>()
 const emit = defineEmits<{ close: []; edit: [budget: Budget] }>()
 const { t, users, deptName, money, statusText, statusTheme, userName, error } = useCost()

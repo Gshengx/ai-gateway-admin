@@ -124,6 +124,12 @@ const catalog: {
       resource: null,
     },
     {
+      id: 'personal_work_orders',
+      title: ['工单管理', 'Work orders'],
+      resource: 'personal.work_orders',
+      group: 'personal',
+    },
+    {
       id: 'personal_projects',
       title: ['我的项目', 'My projects'],
       resource: 'personal.projects',

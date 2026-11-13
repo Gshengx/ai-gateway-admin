@@ -1,12 +1,15 @@
 <template>
   <t-drawer
     class="model-detail-drawer"
+    :class="{ 'app-drawer-handoff': handoffVisible }"
     :close-btn="true"
     :visible="drawerVisible"
     :header="model?.model_id_at_gateway || ' '"
     :footer="false"
+    :close-on-overlay-click="handoffVisible ? false : undefined"
+    :close-on-esc-keydown="!handoffVisible"
     size="large"
-    @close="closeDrawer()"
+    @close="!handoffVisible && closeDrawer()"
   >
     <LoadingState :loading="loading" :failed="failed" retryable @retry="loadDetail"
       ><div v-if="model" class="ma-stack">
@@ -27,13 +30,13 @@
             v-if="model.status !== 'PENDING_REVIEW'"
             v-permission.write="'model.permissions'"
             theme="default"
-            @click="emit('grants', model)"
+            @click="authorizationVisible = true"
             >{{ t('ma.grants') }}</t-button
           ><t-button
             v-permission.write="'model.models'"
             theme="primary"
             v-if="model.status !== 'PENDING_REVIEW'"
-            @click="closeDrawer(() => emit('edit', model!.id))"
+            @click="editingVisible = true"
             >{{ t('ma.edit') }}</t-button
           >
         </div>
@@ -178,6 +181,19 @@
       </div></LoadingState
     >
   </t-drawer>
+  <AuthorizationDrawer
+    v-if="authorizationVisible && model"
+    :model="model"
+    :show-overlay="false"
+    @close="closeDrawer()"
+  />
+  <ModelForm
+    v-if="editingVisible"
+    :model-id="id"
+    :show-overlay="false"
+    @close="closeDrawer()"
+    @saved="(updated, previous) => emit('saved', updated, previous)"
+  />
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -185,21 +201,26 @@ import { useLatestRequest } from '@/utils/useLatestRequest'
 import LoadingState from '@/components/LoadingState.vue'
 import PricingSummary from './PricingSummary.vue'
 import TestResultMatrix from './TestResultMatrix.vue'
+import AuthorizationDrawer from './AuthorizationDrawer.vue'
+import ModelForm from './ModelForm.vue'
 import { useI18n } from 'vue-i18n'
 import { accessApi, type Model, type Pricing, type TestRun } from '@/api/modules/modelAccess'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
-import { pricingFlowMessages } from '@/locales/modules/modelAccess/pricingFlow'
 import { useDrawerClose } from '@/utils/useDrawerClose'
 const props = defineProps<{ id: string }>()
 const emit = defineEmits<{
   close: []
   edit: [id: string]
   grants: [model: Model]
+  saved: [model: Model, previous: Model | undefined]
   test: [model: Model, purpose: 'HEALTH' | 'ADMISSION', run?: TestRun]
 }>()
-const { t } = useI18n({ messages: pricingFlowMessages })
+const { t } = useI18n()
+const authorizationVisible = ref(false)
+const editingVisible = ref(false)
+const handoffVisible = computed(() => authorizationVisible.value || editingVisible.value)
 const { visible: drawerVisible, close: closeDrawer } = useDrawerClose('.model-detail-drawer', () =>
   emit('close'),
 )

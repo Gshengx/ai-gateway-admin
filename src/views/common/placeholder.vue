@@ -19,6 +19,7 @@ const { t } = useI18n()
 const permissionStore = usePermissionStore()
 const pageTitle = computed(
   () =>
+    (route.meta.serverTitle === false && route.meta.title ? t(route.meta.title) : '') ||
     permissionStore.routes.find((item) => item.meta?.routeId === route.meta.routeId)?.meta?.title ||
     t('placeholder.fallback'),
 )

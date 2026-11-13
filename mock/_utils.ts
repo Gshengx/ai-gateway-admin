@@ -1,6 +1,13 @@
 import type { MockMethod, RespThisType } from 'vite-plugin-mock'
 import { randomBytes, createHash } from 'node:crypto'
-import { directory, operationLogs, nextSequence, existingState, apiKeys } from './_runtime'
+import {
+  directory,
+  operationLogs,
+  nextSequence,
+  existingState,
+  apiKeys,
+  hybridRequests,
+} from './_runtime'
 
 export type { MockMethod }
 
@@ -80,6 +87,7 @@ function sessionToken(req: MockRequest): string {
   )
 }
 export function checkToken(req: MockRequest): boolean {
+  if (hybridRequests.has(req)) return true
   const username = usernameFromToken(req)
   const user = username ? directory.get(username) : undefined
   return validTokens.has(sessionToken(req)) && (!user || user.status === 'ACTIVE')
@@ -92,6 +100,8 @@ export function mockCsrf(req: MockRequest): string {
   return csrfTokens.get(token)!
 }
 export function checkCsrf(req: MockRequest): boolean {
+  const hybrid = hybridRequests.get(req)
+  if (hybrid) return hybrid.csrfValid
   return checkToken(req) && req.headers?.['x-csrf-token'] === mockCsrf(req)
 }
 export function mockCookie(res: RespThisType['res'], username?: string): string {
@@ -324,5 +334,7 @@ export function pathId(req: MockRequest): string {
 
 /** 根据 Bearer token 查找当前模拟会话用户名。 */
 export function usernameFromToken(req: MockRequest): string | null {
+  const hybrid = hybridRequests.get(req)
+  if (hybrid) return hybrid.username
   return tokenUsernames.get(sessionToken(req)) ?? null
 }

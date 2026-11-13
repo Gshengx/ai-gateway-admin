@@ -3,6 +3,7 @@
     class="model-form-drawer"
     :close-btn="!saving"
     :visible="drawerVisible"
+    :show-overlay="showOverlay"
     :header="t(modelId ? 'ma.editTitle' : 'ma.createTitle')"
     size="min(100vw, var(--physical-model-form-width))"
     :close-on-overlay-click="false"
@@ -279,7 +280,6 @@ import {
 import { statusTheme, tagLabel } from './helpers'
 import PricingEditor from './PricingEditor.vue'
 import PricingSummary from './PricingSummary.vue'
-import { pricingFlowMessages } from '@/locales/modules/modelAccess/pricingFlow'
 import InvocationEditor from './InvocationEditor.vue'
 import { invocationConfigurationError } from '@/utils/modelInvocation'
 import { useDrawerTabs } from '@/utils/useDrawerTabs'
@@ -287,12 +287,15 @@ import { useDrawerClose } from '@/utils/useDrawerClose'
 import type { NotifiedError } from '@/api/request'
 import { useUserStore } from '@/stores/modules/user'
 import { normalizeModelId } from '@/utils/modelContract'
-const props = defineProps<{ modelId?: string; providerId?: string }>()
+const props = withDefaults(
+  defineProps<{ modelId?: string; providerId?: string; showOverlay?: boolean }>(),
+  { showOverlay: true },
+)
 const emit = defineEmits<{ close: []; saved: [model: Model, previous: Model | undefined] }>()
 const { visible: drawerVisible, close: closeDrawer } = useDrawerClose('.model-form-drawer', () =>
   emit('close'),
 )
-const { t, locale } = useI18n({ messages: pricingFlowMessages })
+const { t, locale } = useI18n()
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canWritePrice = computed(() => user.permissions.includes('model.pricing:write'))

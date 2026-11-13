@@ -1,5 +1,6 @@
-/** Cost P0 has no backend contract yet. Isolated browser mock, through the shared request pipeline. */
+/** Development uses shared server state; the standalone preview keeps its browser fallback. */
 import type { AxiosAdapter } from 'axios'
+import { allocateBudget, budgetDates } from '@/utils/projectBudget'
 import type {
   Bill,
   BillItem,
@@ -18,6 +19,10 @@ export const costMockCapabilities = ['cost.bills', 'cost.budgets'].map((resource
   can_write: true,
 }))
 let actor = 'cost-demo'
+let actorScope = 'hq'
+export function setCostMockScope(scope: string) {
+  actorScope = scope
+}
 export function setCostMockActor(id: string) {
   actor = id
 }
@@ -87,8 +92,16 @@ const users: CostUser[] = Array.from({ length: 48 }, (_, index) => {
     active: index !== 9 && index !== 18,
   }
 })
+export const costDirectory = () => ({ departments, users })
 const levels: Level[] = ['WARNING', 'CRITICAL', 'EXCEEDED']
 const defaults = (): BudgetConfig => ({
+  effective_start: `${new Date().getFullYear()}-01-01`,
+  effective_end: `${new Date().getFullYear()}-12-31`,
+  allocation: 'EVEN',
+  period_amounts: [],
+  member_limit_mode: 'NONE',
+  member_limit: 0,
+  member_limits: [],
   budget_amount: 5000,
   currency: 'CNY',
   period_type: 'MONTHLY',
@@ -103,15 +116,18 @@ function period(type: BudgetConfig['period_type']) {
   const now = new Date()
   const year = now.getFullYear(),
     month = now.getMonth()
-  const startMonth = type === 'QUARTERLY' ? Math.floor(month / 3) * 3 : month
+  const startMonth =
+    type === 'YEARLY' ? 0 : type === 'QUARTERLY' ? Math.floor(month / 3) * 3 : month
   const date = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return {
     current_period_start: date(new Date(year, startMonth, 1)),
-    current_period_end: date(new Date(year, startMonth + (type === 'QUARTERLY' ? 3 : 1), 0)),
+    current_period_end: date(
+      new Date(year, startMonth + (type === 'YEARLY' ? 12 : type === 'QUARTERLY' ? 3 : 1), 0),
+    ),
   }
 }
-function seedBudget(
+export function seedBudget(
   id: string,
   department_id: string,
   amount: number,
@@ -134,10 +150,12 @@ function seedBudget(
     status: 'NORMAL',
     source_department_id: department_id,
     adjustments: [],
-    history: [{ action: 'CREATED', amount, at: '2026-09-06T02:20:00Z', actor: 'cost-demo' }],
+    history: [{ action: 'CREATED', amount, at: '2026-09-06T02:20:00Z', actor: '陈知远' }],
   }
 }
-interface State {
+export interface State {
+  allocations?: Record<string, number>
+  user_costs?: Record<string, { date: string; amount: number }[]>
   departmentBudgets: Budget[]
   userBudgets: Budget[]
   bills: Bill[]
@@ -145,14 +163,15 @@ interface State {
   sequence: number
   archives?: Budget[]
 }
-function seed(): State {
+export function seedCostState(): State {
   const departmentBudgets = [
-    seedBudget('hq', 'hq', 200000, 128450),
+    seedBudget('hq', 'hq', 500000, 128450),
     seedBudget('tech', 'tech', 80000, 52300),
     seedBudget('algorithm', 'algorithm', 40000, 35200),
     seedBudget('product', 'product', 30000, 28100),
     seedBudget('marketing', 'marketing', 20000, 12300),
   ]
+  departmentBudgets[0]!.period_type = 'YEARLY'
   departmentBudgets[1]!.over_budget_action = 'BLOCK_DEPARTMENT'
   departmentBudgets[2]!.budget_mode = 'INDEPENDENT'
   departmentBudgets[2]!.over_budget_action = 'BLOCK_DEPARTMENT'
@@ -219,7 +238,7 @@ function seed(): State {
     period_start: start,
     period_end: end,
     department_id: 'hq',
-    created_by: actor,
+    created_by: 'u-0001',
     task_id: null,
     total_cost: amount,
     total_input_tokens: Math.round(tokens * 0.7),
@@ -229,6 +248,19 @@ function seed(): State {
     status: 'COMPLETED',
     generated_at: `${end}T18:00:00Z`,
   }))
+  bills.push({
+    ...bills[0]!,
+    id: 'bill-failed-june',
+    period_type: 'MONTHLY',
+    period_start: '2026-06-01',
+    period_end: '2026-06-30',
+    total_cost: 0,
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_requests: 0,
+    status: 'FAILED',
+    generated_at: '2026-07-01T02:00:00Z',
+  })
   return { departmentBudgets, userBudgets, bills, tasks: [], sequence: 20 }
 }
 function state(): State {
@@ -239,7 +271,7 @@ function state(): State {
   } catch {
     /* Empty or unavailable storage uses deterministic seeds. */
   }
-  return seed()
+  return seedCostState()
 }
 function persist(data: State) {
   localStorage.setItem(`ais_cost_mock_v1_${actor}`, JSON.stringify(data))
@@ -247,7 +279,7 @@ function persist(data: State) {
 function subtree(id: string): string[] {
   return [id, ...departments.filter((d) => d.parent_id === id).flatMap((d) => subtree(d.id))]
 }
-function effectiveDepartment(s: State, id: string): Budget | undefined {
+export function effectiveDepartment(s: State, id: string): Budget | undefined {
   const own = s.departmentBudgets.find((b) => b.department_id === id)
   if (own) return own
   const parent = departments.find((d) => d.id === id)?.parent_id
@@ -255,7 +287,7 @@ function effectiveDepartment(s: State, id: string): Budget | undefined {
   const source = effectiveDepartment(s, parent)
   return source?.budget_mode === 'SHARED' ? source : undefined
 }
-function viewBudget(s: State, id: string, kind: string): Budget {
+export function viewCostBudget(s: State, id: string, kind: string): Budget {
   const user = kind === 'users' ? users.find((u) => u.id === id) : undefined
   const departmentId = user?.department_id ?? id
   const own = (kind === 'users' ? s.userBudgets : s.departmentBudgets).find((b) => b.id === id)
@@ -266,19 +298,95 @@ function viewBudget(s: State, id: string, kind: string): Budget {
   b.department_id = departmentId
   b.user_id = user?.id ?? null
   b.configured = Boolean(own)
+  if (user && source) b.budget_mode = source.budget_mode
   b.source_department_id = source?.department_id ?? null
   b.currency = hq.currency
-  b.period_type = hq.period_type
-  Object.assign(b, period(hq.period_type))
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
   b.adjustments.forEach((a) => {
-    a.status = Date.parse(a.valid_until) < Date.now() ? 'EXPIRED' : 'ACTIVE'
+    a.status = a.invalidated_at
+      ? 'INVALIDATED'
+      : Date.parse(a.valid_until) < Date.now()
+        ? 'EXPIRED'
+        : 'ACTIVE'
   })
+  if (user && !own) {
+    const dates = budgetDates(b.effective_start ?? '', b.effective_end ?? '', b.period_type)
+    b.budget_amount =
+      source?.member_limit_mode === 'FIXED'
+        ? (source.member_limit ?? 0) * dates.length
+        : source?.member_limit_mode === 'CUSTOM'
+          ? (source.member_limits ?? []).reduce((a, b) => a + b, 0)
+          : 0
+    b.period_amounts =
+      source?.member_limit_mode === 'CUSTOM'
+        ? [...(source.member_limits ?? [])]
+        : allocateBudget(b.budget_amount, dates.length)
+    b.allocation = 'CUSTOM'
+    b.consumed_amount = (s.user_costs?.[user.id] ?? [])
+      .filter(
+        (r) => r.date >= (b.effective_start ?? '') && r.date <= (b.effective_end ?? '9999-12-31'),
+      )
+      .reduce((sum, r) => sum + r.amount, 0)
+    b.adjustments = []
+  }
   b.temporary_amount = b.adjustments
     .filter((a) => a.status === 'ACTIVE' && Date.parse(a.valid_from) <= Date.now())
     .reduce((sum, a) => sum + a.additional_amount, 0)
   b.effective_amount = Math.round((b.budget_amount + b.temporary_amount) * 1e6) / 1e6
   b.remaining_amount = Math.round((b.effective_amount - b.consumed_amount) * 1e6) / 1e6
   b.usage = b.effective_amount ? (b.consumed_amount / b.effective_amount) * 100 : 0
+  const dates = budgetDates(
+    b.effective_start ?? `${today.slice(0, 4)}-01-01`,
+    b.effective_end ?? `${today.slice(0, 4)}-12-31`,
+    b.period_type,
+  )
+  const amounts =
+    b.allocation === 'CUSTOM' && b.period_amounts?.length === dates.length
+      ? b.period_amounts
+      : allocateBudget(b.budget_amount, dates.length)
+  // Consumption remains attached to historical periods when a plan is edited.
+  const historical = own?.periods ?? []
+  const existingTotal = historical.reduce((sum, p) => sum + p.consumed, 0)
+  b.periods = dates.map((p, index) => {
+    const old = historical.find((r) => r.start === p.start && r.end === p.end)
+    const consumed =
+      (user && !own
+        ? (s.user_costs?.[user.id] ?? [])
+            .filter((r) => r.date >= p.start && r.date <= p.end)
+            .reduce((sum, r) => sum + r.amount, 0)
+        : old?.consumed) ??
+      (!historical.length && p.start <= today && p.end >= today ? b.consumed_amount : 0)
+    const temporary = b.adjustments
+      .filter(
+        (a) =>
+          !a.invalidated_at &&
+          a.valid_from.slice(0, 10) <= p.end &&
+          a.valid_until.slice(0, 10) >= p.start &&
+          (p.end < today || a.valid_until.slice(0, 10) >= today),
+      )
+      .reduce((sum, a) => sum + a.additional_amount, 0)
+    const amount = (amounts[index] ?? 0) + temporary
+    return {
+      ...p,
+      index: index + 1,
+      base: amounts[index] ?? 0,
+      temporary,
+      amount,
+      consumed,
+      remaining: amount - consumed,
+      limit:
+        b.member_limit_mode === 'NONE'
+          ? null
+          : b.member_limit_mode === 'CUSTOM'
+            ? (b.member_limits?.[index] ?? 0)
+            : (b.member_limit ?? 0),
+      state: p.end < today ? 'ENDED' : p.start > today ? 'UPCOMING' : 'CURRENT',
+    }
+  })
+  if (own && !historical.length && !existingTotal) own.periods = structuredClone(b.periods)
+  b.current = b.periods.find((p) => p.state === 'CURRENT') ?? null
+  b.current_period_start = b.current?.start ?? b.effective_start ?? ''
+  b.current_period_end = b.current?.end ?? b.effective_end ?? ''
   b.status = !own
     ? !source
       ? 'UNCONFIGURED'
@@ -448,7 +556,7 @@ function sortItems(items: BillItem[], q: Record<string, string>) {
         : r.cost
   return items.sort((a, b) => (metric(a) - metric(b)) * (q.direction === 'asc' ? 1 : -1))
 }
-function handle(
+export function handleCost(
   s: State,
   path: string,
   method: string,
@@ -505,20 +613,36 @@ function handle(
     return {
       departments: departments.filter(
         (d) =>
+          subtree(actorScope).includes(d.id) &&
           (!q.scope_id || subtree(q.scope_id).includes(d.id)) &&
           (q.search
             ? `${d.name} ${d.name_en} ${d.path}`.toLowerCase().includes(q.search.toLowerCase())
-            : d.parent_id === (q.parent_id || null)),
+            : q.parent_id
+              ? d.parent_id === q.parent_id
+              : d.id === actorScope),
       ),
-      users,
-      scope_root_id: 'hq',
-      is_headquarters: true,
+      users: users
+        .filter((u) => subtree(actorScope).includes(u.department_id))
+        .map((u) => {
+          const b = viewCostBudget(s, u.id, 'users')
+          return {
+            ...u,
+            budget_source_id: b.source_department_id,
+            budget_mode: b.budget_mode,
+            period_type: b.period_type,
+            effective_start: b.effective_start,
+            effective_end: b.effective_end,
+          }
+        }),
+      scope_root_id: actorScope,
+      is_headquarters: actorScope === 'hq',
     }
   if (path === '/bills' && method === 'get')
     return rows(
       s.bills
         .filter(
           (b) =>
+            subtree(actorScope).includes(b.department_id) &&
             (!q.period_type || b.period_type === q.period_type) &&
             (!q.period_value || b.period_start.startsWith(q.period_value)) &&
             (!q.department_id || b.department_id === q.department_id),
@@ -530,6 +654,11 @@ function handle(
     const type = body.period_type as Bill['period_type'],
       value = String(body.period_value),
       department_id = String(body.department_id)
+    const scopeIds =
+      Array.isArray(body.department_ids) && body.department_ids.length
+        ? [...new Set(body.department_ids.map(String))].sort()
+        : [department_id]
+    if (scopeIds.some((id) => !departments.some((d) => d.id === id))) fail()
     if (
       !departments.some((d) => d.id === department_id) ||
       !['MONTHLY', 'WEEKLY'].includes(type) ||
@@ -548,7 +677,8 @@ function handle(
     let bill = s.bills.find(
       (b) =>
         b.period_type === type &&
-        b.department_id === department_id &&
+        JSON.stringify([...(b.department_ids ?? [b.department_id])].sort()) ===
+          JSON.stringify(scopeIds) &&
         b.period_start === period_start,
     )
     if (!bill) {
@@ -564,6 +694,7 @@ function handle(
       }
       s.bills.unshift(bill)
     }
+    bill.department_ids = scopeIds
     bill.status = 'GENERATING'
     bill.generated_at = new Date().toISOString()
     bill.created_by = actor
@@ -660,7 +791,6 @@ function handle(
       task = s.tasks.find((t) => t.id === id && t.created_by === actor)
     if (id && !task) return fail('NOT_FOUND')
     if (method === 'delete') {
-      if (!String(body.reason ?? '').trim()) fail()
       s.tasks = s.tasks.filter((t) => t !== task)
       return {}
     }
@@ -696,7 +826,7 @@ function handle(
   }
   const analytics = path.match(/^\/budgets\/(departments|users)\/([^/]+)\/analytics$/)
   if (analytics) {
-    const budget = viewBudget(s, analytics[2]!, analytics[1]!)
+    const budget = viewCostBudget(s, analytics[2]!, analytics[1]!)
     const start = new Date(`${budget.current_period_start}T00:00:00Z`)
     const today = new Date()
     const current = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
@@ -724,16 +854,16 @@ function handle(
     const kind = match[1]!,
       id = match[2]
     if (method === 'get') {
-      if (id) return viewBudget(s, id, kind)
+      if (id) return viewCostBudget(s, id, kind)
       let budgets =
         kind === 'users'
-          ? users.map((u) => viewBudget(s, u.id, kind))
+          ? users.map((u) => viewCostBudget(s, u.id, kind))
           : departments
               .filter(
                 (d) =>
                   d.id !== 'hq' && (q.search || q.status || d.parent_id === (q.parent_id || 'hq')),
               )
-              .map((d) => viewBudget(s, d.id, kind))
+              .map((d) => viewCostBudget(s, d.id, kind))
       budgets = budgets.filter((b) => {
         const user = users.find((u) => u.id === b.user_id),
           dept = departments.find((d) => d.id === b.department_id)
@@ -750,10 +880,18 @@ function handle(
         const order = ['EXCEEDED', 'CRITICAL', 'WARNING', 'NORMAL', 'SHARED', 'UNCONFIGURED']
         budgets.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))
       }
-      return { ...rows(budgets, q), headquarters: viewBudget(s, 'hq', 'departments') }
+      budgets = budgets.filter((b) => subtree(actorScope).includes(b.department_id))
+      return { ...rows(budgets, q), headquarters: viewCostBudget(s, actorScope, 'departments') }
     }
     if (method === 'delete' && id) {
-      if (!String(body.reason ?? '').trim() || id === 'hq') fail()
+      if (id === 'hq') fail()
+      if (
+        kind === 'departments' &&
+        !body.cascade_subtree &&
+        (s.departmentBudgets.some((b) => b.id !== id && subtree(id).includes(b.department_id)) ||
+          s.userBudgets.some((b) => subtree(id).includes(b.department_id)))
+      )
+        fail('STATE_CONFLICT')
       const removed =
         kind === 'users'
           ? s.userBudgets.filter((b) => b.id === id)
@@ -768,8 +906,8 @@ function handle(
       s.archives ??= []
       removed.forEach((budget) => {
         budget.adjustments.forEach((a) => {
-          a.status = 'EXPIRED'
-          a.valid_until = new Date().toISOString()
+          a.status = 'INVALIDATED'
+          a.invalidated_at = new Date().toISOString()
         })
         budget.history.unshift({
           action: 'REMOVED',
@@ -794,15 +932,81 @@ function handle(
       !(data.budget_amount > 0) ||
       !Number.isFinite(data.budget_amount) ||
       data.warning_threshold <= 0 ||
-      data.critical_threshold <= data.warning_threshold ||
-      data.critical_threshold >= 100
+      data.critical_threshold < data.warning_threshold ||
+      data.critical_threshold > 100
     )
       fail()
     const ids: string[] =
       kind === 'users'
         ? ((body.user_ids as string[] | undefined) ?? (id ? [id] : []))
-        : [id ?? String(body.department_id)]
+        : (body.department_ids as string[] | undefined)?.length
+          ? (body.department_ids as string[])
+          : [id ?? String(body.department_id)]
     if (!ids.length) fail()
+    if (new Set(ids).size !== ids.length) fail()
+    const targetParents = ids.map((target) =>
+      kind === 'users'
+        ? effectiveDepartment(s, users.find((u) => u.id === target)?.department_id ?? '')?.id
+        : departments.find((d) => d.id === target)?.parent_id,
+    )
+    if (new Set(targetParents).size !== 1) fail()
+    const dates = budgetDates(
+      String(data.effective_start ?? ''),
+      String(data.effective_end ?? ''),
+      data.period_type,
+    )
+    if (!dates.length || !['MONTHLY', 'QUARTERLY', 'YEARLY'].includes(data.period_type)) fail()
+    const amounts =
+      data.allocation === 'CUSTOM'
+        ? (data.period_amounts ?? [])
+        : allocateBudget(data.budget_amount, dates.length)
+    if (
+      amounts.length !== dates.length ||
+      amounts.some((n) => !Number.isFinite(n) || n < 0) ||
+      Math.abs(amounts.reduce((a, b) => a + b, 0) - data.budget_amount) > 0.000001
+    )
+      fail()
+    const ranks = ['MONTHLY', 'QUARTERLY', 'YEARLY']
+    for (const target of ids) {
+      const user = users.find((u) => u.id === target)
+      const department = user?.department_id ?? departments.find((d) => d.id === target)?.parent_id
+      const source = department ? effectiveDepartment(s, department) : undefined
+      const current = (kind === 'users' ? s.userBudgets : s.departmentBudgets).find(
+        (b) => b.id === target,
+      )
+      if (data.budget_amount < (current?.consumed_amount ?? 0)) fail()
+      if (target !== 'hq') {
+        if (!source) return fail()
+        if (
+          !source ||
+          data.effective_start! < source.effective_start! ||
+          data.effective_end! > source.effective_end! ||
+          ranks.indexOf(data.period_type) > ranks.indexOf(source.period_type)
+        )
+          fail()
+        // The confirmed P0 rule compares only this configuration with the
+        // source balance. Other user or department allocations are not added.
+        const available = source.budget_amount - source.consumed_amount
+        if ((kind === 'users' ? data.budget_amount : data.budget_amount * ids.length) > available)
+          fail()
+      } else if (
+        data.budget_amount < Math.max(s.allocations?.hq ?? 0, current?.consumed_amount ?? 0) ||
+        [...s.departmentBudgets.filter((b) => b.id !== 'hq'), ...s.userBudgets].some(
+          (b) => ranks.indexOf(b.period_type) > ranks.indexOf(data.period_type),
+        )
+      )
+        fail()
+      if (
+        data.member_limit_mode !== 'NONE' &&
+        amounts.some(
+          (n, i) =>
+            (data.member_limit_mode === 'CUSTOM'
+              ? (data.member_limits?.[i] ?? 0)
+              : (data.member_limit ?? 0)) > n,
+        )
+      )
+        fail()
+    }
     for (const level of levels) {
       const recipients = data.notification_recipients[level]
       if (kind === 'departments' && data.notification_channels[level].length && !recipients.length)
@@ -831,7 +1035,11 @@ function handle(
           0,
           user?.id ?? null,
         )
-        budget.history = []
+        const archive = s.archives
+          ?.filter((b) => b.id === target && Boolean(b.user_id) === (kind === 'users'))
+          .slice(-1)[0]
+        budget.history = archive?.history ? structuredClone(archive.history) : []
+        budget.adjustments = archive?.adjustments ? structuredClone(archive.adjustments) : []
         list.push(budget)
       }
       const hq = s.departmentBudgets.find((b) => b.id === 'hq')!
@@ -840,7 +1048,7 @@ function handle(
       )
       Object.assign(budget, configuration, {
         currency: target === 'hq' ? data.currency : hq.currency,
-        period_type: target === 'hq' ? data.period_type : hq.period_type,
+        period_type: data.period_type,
       })
       budget.history.unshift({
         action: isNew ? 'CREATED' : 'UPDATED',
@@ -850,11 +1058,37 @@ function handle(
         configuration: structuredClone(data),
       })
     }
-    return viewBudget(s, ids[0]!, kind)
+    return viewCostBudget(s, ids[0]!, kind)
   }
   return fail('NOT_FOUND')
 }
 export const costMockAdapter: AxiosAdapter = async (config) => {
+  if (import.meta.env.DEV) {
+    const response = await fetch(`${config.baseURL}/cost/shared`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        ...(config.headers.toJSON() as Record<string, string>),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        path: config.url,
+        method: config.method,
+        query: config.params ?? {},
+        body: typeof config.data === 'string' ? JSON.parse(config.data) : (config.data ?? {}),
+      }),
+    })
+    let data = await response.json()
+    if (data.code === 'OK' && data.data?.download !== undefined)
+      data = new Blob([data.data.download], { type: 'text/csv' })
+    return {
+      data,
+      status: response.status,
+      statusText: response.statusText,
+      headers: { 'content-type': data instanceof Blob ? 'text/csv' : 'application/json' },
+      config,
+    }
+  }
   await new Promise((resolve) => setTimeout(resolve, 120))
   const s = state(),
     path = config.url ?? '',
@@ -875,7 +1109,7 @@ export const costMockAdapter: AxiosAdapter = async (config) => {
       if (b.status === 'GENERATING' && Date.now() - Date.parse(b.generated_at) > 600)
         b.status = 'COMPLETED'
     })
-    data = handle(
+    data = handleCost(
       s,
       path,
       method,
@@ -901,4 +1135,43 @@ export const costMockAdapter: AxiosAdapter = async (config) => {
     headers: { 'content-type': data instanceof Blob ? 'text/csv' : 'application/json' },
     config,
   }
+}
+
+export function costUserFor(user: {
+  email?: string | null
+  id: string
+  username: string
+  display_name: string
+  department_id: string | null
+  status: string
+}): CostUser {
+  const map: Record<string, string> = {
+    'd-root': 'hq',
+    'd-algo': 'algorithm',
+    'd-tech': 'tech',
+    'd-platform': 'platform',
+    'd-ops': 'operations',
+    'd-hr': 'hr',
+  }
+  const departmentId = map[user.department_id ?? ''] ?? user.department_id?.replace(/^d-/, '') ?? ''
+  let item = users.find((u) => u.username === user.username)
+  if (!item) {
+    item = {
+      id: user.id,
+      username: user.username,
+      name: user.display_name,
+      department_id: departmentId,
+      email: null,
+      active: true,
+    }
+    users.push(item)
+  }
+  Object.assign(item, {
+    id: user.id,
+    email: user.email ?? null,
+    name: user.display_name,
+    department_id: departmentId,
+    active: user.status === 'ACTIVE',
+  })
+  return item
 }

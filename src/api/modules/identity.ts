@@ -160,6 +160,8 @@ export interface UserItem {
   phone: string | null
   department: UserDepartment | null
   groups: UserGroup[]
+  /** Prototype mock extension; absent until the production project contract is published. */
+  projects?: LocalizedRef[]
   role: UserRole | null
   status: UserStatus
   last_login_at: string | null

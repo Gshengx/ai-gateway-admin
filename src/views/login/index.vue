@@ -83,13 +83,17 @@ const termsStore = useTermsStore()
 async function completeLogin() {
   if (router.currentRoute.value.path !== '/login') return
   const target = route.query.redirect
+  const fallback =
+    import.meta.env.DEV && /^local_approver_[12]$/.test(userStore.context.session?.username ?? '')
+      ? '/personal/work-orders'
+      : '/'
   const redirect =
     typeof target === 'string' &&
     target.startsWith('/') &&
     !target.startsWith('//') &&
     !['/login', '/change-password', '/onboarding/'].some((path) => target.startsWith(path))
       ? target
-      : '/'
+      : fallback
   const failure = await router.replace(redirect)
   if (!failure) MessagePlugin.success(t('login.success'))
 }

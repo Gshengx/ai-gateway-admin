@@ -1,0 +1,48 @@
+/* One visual mask for the entire modal stack; native masks still handle outside clicks. */
+.app-overlay-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--td-mask-active);
+  pointer-events: none;
+  opacity: 0;
+  /* TDesign's mask transition; no equivalent motion CSS variable is exported. */
+  transition: opacity 0.2s cubic-bezier(0.38, 0, 0.24, 1);
+}
+.app-overlay-mask--visible {
+  opacity: 1;
+}
+.app-overlay-managed [data-app-overlay-layer] {
+  z-index: var(--app-overlay-z-index) !important;
+}
+.app-overlay-managed .t-drawer__mask,
+.app-overlay-managed .t-dialog__mask {
+  background: transparent !important;
+}
+
+/* Modal dialogs always use the viewport, including dialogs triggered from a drawer. */
+.app-overlay-managed .t-dialog__ctx:not(.t-dialog__ctx--modeless) {
+  position: fixed;
+  inset: 0;
+}
+.app-overlay-managed .t-dialog__ctx:not(.t-dialog__ctx--modeless) .t-dialog__position {
+  align-items: center;
+  min-height: 100dvh;
+  padding: var(--td-comp-margin-l) 0 !important;
+}
+
+/* Retain the source drawer's mask while its panel uses TDesign's native exit transition. */
+.app-drawer-handoff > .t-drawer__content-wrapper {
+  visibility: hidden !important;
+}
+.app-drawer-handoff.t-drawer--right > .t-drawer__content-wrapper {
+  transform: translateX(100%) !important;
+}
+.app-drawer-handoff.t-drawer--left > .t-drawer__content-wrapper {
+  transform: translateX(-100%) !important;
+}
+.app-drawer-handoff.t-drawer--top > .t-drawer__content-wrapper {
+  transform: translateY(-100%) !important;
+}
+.app-drawer-handoff.t-drawer--bottom > .t-drawer__content-wrapper {
+  transform: translateY(100%) !important;
+}

@@ -1,0 +1,72 @@
+export default {
+  groups: {
+    searchPlaceholder: 'Search user group name',
+    create: 'Create',
+    createTitle: 'Create User Group',
+    editTitle: 'Edit User Group',
+    edit: 'Edit',
+    deleteAction: 'Delete',
+    members: 'Members',
+    createSuccess: 'User group saved',
+    updateSuccess: 'User group saved',
+    deleteSuccess: 'User group deleted',
+    writeBlocked:
+      'This group is read-only: your management scope does not cover all of its members.',
+    columns: {
+      name: 'User group',
+      description: 'Description',
+      members: 'Members',
+      createdAt: 'Created at',
+      createdBy: 'Created by',
+      action: 'Actions',
+    },
+    form: {
+      name: 'Group name',
+      namePlaceholder: 'Enter a user group name',
+      nameRequired: 'Please enter a user group name',
+      description: 'Description',
+      descriptionPlaceholder: 'Enter a description (optional)',
+    },
+    delete: {
+      title: 'Delete user group',
+      content: 'Deleting "{name}" will not delete its members. This action cannot be undone.',
+      referenced:
+        'This user group is referenced by the following policies. After deletion, those policies will no longer apply to this group.',
+      checkingReferences: 'Checking references…',
+      blockedTitle: 'Unable to delete user group',
+      referencedMore: 'Only the first 100 references are shown; there may be more.',
+      modelsLabel: 'Model grants referencing this user group',
+    },
+    membersDrawer: {
+      title: 'Members',
+      sectionTitle: 'Group members',
+      searchPlaceholder: 'Search member name / username',
+      allDepartments: 'All departments',
+      add: 'Add',
+      remove: 'Remove',
+      removeAction: 'Remove',
+      removeTitle: 'Remove Members',
+      removeContent:
+        'Remove {n} member(s) from "{name}". The users themselves and their other groups are not affected.',
+      removeSuccess: 'Members removed',
+      columns: {
+        username: 'Username',
+        displayName: 'Name',
+        department: 'Department',
+        action: 'Actions',
+      },
+    },
+    addMembers: {
+      title: 'Add members',
+      searchPlaceholder: 'Search name or username',
+      allDepartments: 'All departments',
+      submit: 'Add ({n})',
+      success: 'Members added',
+      columns: {
+        username: 'Username',
+        displayName: 'Name',
+        department: 'Department',
+      },
+    },
+  },
+}

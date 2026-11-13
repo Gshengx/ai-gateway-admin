@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import { useUserStore } from '@/stores/modules/user'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
@@ -11,6 +12,7 @@ import {
 const departments = reactive(new Map<string, CostDepartment>())
 const users = reactive<CostUser[]>([])
 let pending: Promise<void> | undefined
+let cachedActor = ''
 const scope = reactive({ root: 'hq', headquarters: true })
 export function useCost() {
   const { t, locale } = useI18n()
@@ -20,6 +22,13 @@ export function useCost() {
     return d ? (english.value ? (path ? d.path_en : d.name_en) : path ? d.path : d.name) : '—'
   }
   async function init() {
+    const actor = useUserStore().userInfo?.id ?? ''
+    if (cachedActor !== actor) {
+      pending = undefined
+      departments.clear()
+      users.splice(0)
+      cachedActor = actor
+    }
     pending ??= getCostContext()
       .then((result) => {
         result.departments.forEach((d) => departments.set(d.id, d))
@@ -31,7 +40,11 @@ export function useCost() {
         pending = undefined
         throw error
       })
-    await pending
+    try {
+      await pending
+    } finally {
+      pending = undefined
+    }
   }
   async function ensureDepartments(ids: string[]) {
     await Promise.all(
@@ -59,7 +72,7 @@ export function useCost() {
       ? 'success'
       : status === 'WARNING' || status === 'CRITICAL'
         ? 'warning'
-        : status === 'EXCEEDED' || status === 'UNCONFIGURED'
+        : status === 'EXCEEDED' || status === 'UNCONFIGURED' || status === 'FAILED'
           ? 'danger'
           : 'default'
   const error = (err: unknown) => {

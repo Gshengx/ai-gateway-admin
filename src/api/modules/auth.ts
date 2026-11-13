@@ -80,7 +80,8 @@ export interface PermissionsResult {
 }
 
 export function loginApi(data: LoginParams) {
-  return request.post<LoginResult>('/auth/login', data)
+  const localApprover = import.meta.env.DEV && data.username.startsWith('local_approver_')
+  return request.post<LoginResult>(localApprover ? '/auth/local-mock-login' : '/auth/login', data)
 }
 
 export async function getAuthContextApi() {

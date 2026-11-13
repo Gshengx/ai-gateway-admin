@@ -1,5 +1,14 @@
 import type { ApiKeyItem } from '../src/api/modules/apiKeys'
 import type { ManagementLog } from '../src/api/modules/systemLogs'
+import type { Capability } from '../src/api/modules/auth'
+
+export interface HybridIdentity {
+  username: string
+  csrfValid: boolean
+  capabilities: Capability[]
+}
+// Only the development middleware can associate a verified identity with a request.
+export const hybridRequests = new WeakMap<object, HybridIdentity>()
 
 // vite-plugin-mock bundles each route file separately. Keep mutable data in the
 // Node process so imports and file reloads cannot create a second database.
@@ -27,6 +36,7 @@ export function nextSequence(key: string, initial = 0): number {
   return ++counter.value
 }
 export interface RuntimeUser {
+  email?: string | null
   id: string
   username: string
   display_name: string

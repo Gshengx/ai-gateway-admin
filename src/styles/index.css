@@ -13,6 +13,36 @@
   --layout-header-height: 64px;
   --layout-aside-width: 232px;
   --layout-aside-width-collapsed: 64px;
+  /* 全局列表基础尺寸：沿用现有模型管理的搜索/筛选标准，TDesign 无业务宽度 token。 */
+  --list-search-width: 280px;
+  --list-filter-width: 144px;
+  --list-department-width: 280px;
+  --confirm-dialog-top: 20dvh;
+}
+
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--td-comp-margin-s);
+}
+.list-toolbar > .list-search {
+  flex: 0 1 var(--list-search-width);
+  width: var(--list-search-width);
+  min-width: 0;
+  max-width: 100%;
+}
+.list-toolbar > .list-filter {
+  flex: 0 1 var(--list-filter-width);
+  width: var(--list-filter-width);
+  min-width: 0;
+  max-width: 100%;
+}
+.list-toolbar > .list-department {
+  flex: 0 1 var(--list-department-width);
+  width: var(--list-department-width);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .model-access-dialog .t-dialog__body {

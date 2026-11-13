@@ -7,9 +7,10 @@
     /></t-tabs>
     <FilterBar class="filters"
       ><template #content
-        ><div class="toolbar">
+        ><div class="toolbar list-toolbar">
           <template v-if="tab === 'bills'">
             <t-select
+              class="list-filter"
               v-model="periodType"
               :options="periodOptions"
               :placeholder="t('cost.allPeriods')"
@@ -17,6 +18,7 @@
               @change="loadFirst"
             />
             <t-select
+              class="list-filter"
               v-model="periodValue"
               :options="monthOptions"
               :placeholder="t('cost.allTime')"
@@ -24,8 +26,9 @@
               @change="loadFirst"
             />
           </template>
-          <DepartmentSelect v-model="departmentId" @change="loadFirst" />
+          <DepartmentSelect class="list-department" v-model="departmentId" @change="loadFirst" />
           <t-select
+            class="list-filter"
             v-if="tab === 'tasks'"
             v-model="status"
             :placeholder="t('cost.allStatus')"
@@ -50,8 +53,8 @@
       @page-change="pageChange"
     >
       <template #period="{ row }"
-        ><t-link theme="primary" :disabled="row.status === 'GENERATING'" @click="detail = row"
-          >{{ row.period_start }} ~ {{ row.period_end }}</t-link
+        ><t-link theme="primary" :disabled="row.status !== 'COMPLETED'" @click="detail = row"
+          >{{ formatDate(row.period_start) }} ~ {{ formatDate(row.period_end) }}</t-link
         ></template
       >
       <template #period_type="{ row }"
@@ -64,7 +67,7 @@
         ><strong>{{ money(row.total_cost, row.currency) }}</strong></template
       >
       <template #tokens="{ row }">{{
-        tokens(row.total_input_tokens + row.total_output_tokens)
+        tokens(row.total_input_tokens + row.total_output_tokens + (row.total_cached_tokens ?? 0))
       }}</template>
       <template #total_requests="{ row }">{{ number(row.total_requests) }}</template>
       <template #status="{ row }"
@@ -154,11 +157,7 @@
         ></template>
         <p v-else class="hint">{{ t('cost.scheduleHint') }}</p>
         <t-form-item :label="t('cost.departmentScope')" required-mark
-          ><DepartmentSelect
-            v-model="form.department_id"
-            :searchable="false"
-            :clearable="false"
-            :placeholder="t('cost.selectDepartment')"
+          ><DepartmentPicker v-model="form.department_ids" unrestricted
         /></t-form-item>
         <p class="hint">{{ t('cost.scopeHint') }}</p>
         <p v-if="tab === 'bills'" class="hint">{{ t('cost.manualHint') }}</p>
@@ -183,17 +182,14 @@
     >
       <div class="form">
         <p>{{ t('cost.taskDelete') }}</p>
-        <t-textarea v-model="reason" :placeholder="t('cost.reason')" /><t-alert
-          v-if="formError"
-          theme="error"
-          :message="formError"
-        />
+        <t-alert v-if="formError" theme="error" :message="formError" />
       </div>
     </t-dialog>
     <BillDetail :bill="detail" @close="detail = null" />
   </t-card>
 </template>
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
   MessagePlugin,
@@ -203,6 +199,7 @@ import {
 } from 'tdesign-vue-next'
 import {
   getBills,
+  getBill,
   generateBill,
   getBillTasks,
   saveBillTask,
@@ -214,9 +211,10 @@ import {
   type PeriodType,
   type Dimension,
 } from '@/api/modules/cost'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDate, formatDateTime } from '@/utils/datetime'
 import FilterBar from '@/components/FilterBar.vue'
 import DepartmentSelect from '../DepartmentSelect.vue'
+import DepartmentPicker from '../budgets/DepartmentPicker.vue'
 import { useCost } from '../useCost'
 import BillDetail from './BillDetail.vue'
 import { downloadBlob } from './download'
@@ -234,6 +232,7 @@ const {
   statusTheme,
   error,
 } = useCost()
+const route = useRoute()
 const tab = ref('bills'),
   periodType = ref(''),
   periodValue = ref(''),
@@ -362,6 +361,7 @@ const form = reactive({
   period_type: 'MONTHLY' as PeriodType,
   period_value: '',
   department_id: '',
+  department_ids: [] as string[],
   email_enabled: false,
   emails: '',
 })
@@ -376,6 +376,7 @@ function openForm(task?: BillTask) {
     period_type: task?.period_type ?? 'MONTHLY',
     period_value: monthOptions.value[0]?.value ?? '',
     department_id: task?.department_id ?? scope.root,
+    department_ids: task?.department_ids ?? [task?.department_id ?? scope.root],
     email_enabled: task?.email_enabled ?? false,
     emails: task?.email_recipients.join(', ') ?? '',
   })
@@ -411,13 +412,15 @@ async function submit() {
       await generateBill({
         period_type: form.period_type,
         period_value: form.period_value,
-        department_id: form.department_id,
+        department_id: form.department_ids[0] ?? form.department_id,
+        department_ids: form.department_ids,
       })
     else
       await saveBillTask(
         {
           period_type: form.period_type,
-          department_id: form.department_id,
+          department_id: form.department_ids[0] ?? form.department_id,
+          department_ids: form.department_ids,
           email_enabled: form.email_enabled,
           email_recipients: [...new Set(emails)],
         },
@@ -438,6 +441,7 @@ async function regenerate(bill: Bill) {
       period_type: bill.period_type,
       period_value: bill.period_start,
       department_id: bill.department_id,
+      department_ids: bill.department_ids,
     })
     await load()
   } catch (err) {
@@ -453,10 +457,6 @@ async function toggleTask(task: BillTask) {
   }
 }
 async function removeTask() {
-  if (!reason.value.trim()) {
-    formError.value = t('cost.reasonRequired')
-    return
-  }
   saving.value = true
   try {
     await deleteBillTask(deleting.value!.id, reason.value)
@@ -471,7 +471,7 @@ async function removeTask() {
 async function exportAll(bill: Bill) {
   exporting.value = bill.id
   try {
-    for (const dimension of ['PROVIDER', 'DEPARTMENT', 'USER', 'MODEL'] as Dimension[])
+    for (const dimension of ['PROJECT', 'DEPARTMENT', 'USER', 'MODEL', 'PROVIDER'] as Dimension[])
       downloadBlob(await exportBill(bill.id, dimension), `${bill.period_start}-${dimension}.csv`)
   } catch (err) {
     error(err)
@@ -487,6 +487,7 @@ onMounted(async () => {
   try {
     await init()
     await load()
+    if (route.query.billId) detail.value = await getBill(String(route.query.billId))
   } catch (err) {
     error(err)
   }

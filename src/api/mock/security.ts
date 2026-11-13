@@ -2,7 +2,7 @@
 import { documentRule, testDocument } from './securityDocument'
 import { handleDiscovery } from './securityDiscovery'
 import type { AxiosAdapter } from 'axios'
-import { securityZh, securityEn } from '@/locales/security'
+import { securityZh, securityEn } from '@/locales/modules/security/messages'
 import {
   emptyAction,
   emptyPolicy,

@@ -1,9 +1,10 @@
 import request from '@/api/request'
 import { costMockAdapter } from '@/api/mock/cost'
+import type { ProjectBudgetPeriod } from './projectBudgets'
 import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 
 export type PeriodType = 'MONTHLY' | 'WEEKLY'
-export type Dimension = 'PROVIDER' | 'DEPARTMENT' | 'USER' | 'MODEL'
+export type Dimension = 'PROVIDER' | 'DEPARTMENT' | 'USER' | 'MODEL' | 'PROJECT'
 export type BudgetStatus =
   'NORMAL' | 'WARNING' | 'CRITICAL' | 'EXCEEDED' | 'INHERITED' | 'SHARED' | 'UNCONFIGURED'
 export type Level = 'WARNING' | 'CRITICAL' | 'EXCEEDED'
@@ -17,6 +18,11 @@ export interface CostDepartment {
   has_children: boolean
 }
 export interface CostUser {
+  budget_source_id?: string | null
+  budget_mode?: 'SHARED' | 'INDEPENDENT'
+  period_type?: BudgetConfig['period_type']
+  effective_start?: string
+  effective_end?: string
   id: string
   username: string
   name: string
@@ -25,6 +31,10 @@ export interface CostUser {
   active: boolean
 }
 export interface Bill {
+  department_ids?: string[]
+  direct_cost?: number
+  project_cost?: number
+  total_cached_tokens?: number
   id: string
   period_type: PeriodType
   period_start: string
@@ -37,10 +47,11 @@ export interface Bill {
   total_output_tokens: number
   total_requests: number
   currency: string
-  status: 'GENERATING' | 'COMPLETED'
+  status: 'GENERATING' | 'COMPLETED' | 'FAILED'
   generated_at: string
 }
 export interface BillTask {
+  department_ids?: string[]
   id: string
   created_by: string
   period_type: PeriodType
@@ -54,6 +65,9 @@ export interface BillTask {
   created_at: string
 }
 export interface BillItem {
+  direct_cost?: number
+  project_cost?: number
+  cached_tokens?: number
   id: string
   dimension: Dimension
   dimension_id: string
@@ -73,26 +87,39 @@ export interface BillItem {
   details: { name: string; cost: number; tokens: number; request_count: number }[]
 }
 export interface Adjustment {
+  invalidated_at?: string
   id: string
   user_id: string
   additional_amount: number
   valid_from: string
   valid_until: string
   source_work_order_id: string
-  status: 'ACTIVE' | 'EXPIRED'
+  status: 'ACTIVE' | 'EXPIRED' | 'INVALIDATED'
 }
 export interface BudgetConfig {
+  effective_start?: string
+  effective_end?: string
+  allocation?: 'EVEN' | 'CUSTOM'
+  period_amounts?: number[]
+  member_limit_mode?: 'NONE' | 'FIXED' | 'CUSTOM'
+  member_limit?: number
+  member_limits?: number[]
   budget_amount: number
   currency: 'CNY' | 'USD'
-  period_type: 'MONTHLY' | 'QUARTERLY'
+  period_type: 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
   budget_mode: 'SHARED' | 'INDEPENDENT'
   warning_threshold: number
   critical_threshold: number
-  over_budget_action: 'ALERT_ONLY' | 'BLOCK_DEPARTMENT' | 'BLOCK_USER'
+  over_budget_action: 'ALERT_ONLY' | 'BLOCK_DEPARTMENT' | 'BLOCK_USER' | 'BLOCK_PROJECT'
   notification_recipients: Record<Level, string[]>
   notification_channels: Record<Level, ('IN_APP' | 'EMAIL')[]>
 }
 export interface Budget extends BudgetConfig {
+  allocated_amount?: number
+  available_amount?: number
+  has_dependents?: boolean
+  periods?: ProjectBudgetPeriod[]
+  current?: ProjectBudgetPeriod | null
   id: string
   department_id: string
   user_id: string | null
@@ -117,9 +144,12 @@ export interface Budget extends BudgetConfig {
   }[]
 }
 export interface BudgetAnalytics {
+  projects?: { id: string; name: string; cost: number; requests: number; tokens: number }[]
+  direct_cost?: number
+  project_cost?: number
   trend: { date: string; cost: number }[]
   models: { name: string; cost: number; requests: number }[]
-  users: { name: string; cost: number }[]
+  users: { id?: string; name: string; cost: number; requests?: number; tokens?: number }[]
 }
 export interface CostQuery extends OffsetPageQuery {
   search?: string
@@ -149,6 +179,7 @@ export const getCostUsers = (
 export const getBills = (params: CostQuery) =>
   request.get<OffsetPageResult<Bill>>('/bills', { ...mock, params })
 export const generateBill = (data: {
+  department_ids?: string[]
   period_type: PeriodType
   period_value: string
   department_id: string
@@ -160,6 +191,15 @@ export const getBillItems = (
     dimension: Dimension
     department_id?: string
     parent_id?: string
+    project_id?: string
+    project_department_id?: string
+    project_department_ids?: string
+    department_ids?: string
+    project_status?: string
+    user_id?: string
+    model_id?: string
+    provider_id?: string
+    cost_owner_type?: string
     sort_by: string
     direction: string
   },
@@ -167,7 +207,10 @@ export const getBillItems = (
 export const getBillTasks = (params: CostQuery) =>
   request.get<OffsetPageResult<BillTask>>('/bill-tasks', { ...mock, params })
 export const saveBillTask = (
-  data: Pick<BillTask, 'period_type' | 'department_id' | 'email_enabled' | 'email_recipients'>,
+  data: Pick<
+    BillTask,
+    'period_type' | 'department_id' | 'email_enabled' | 'email_recipients' | 'department_ids'
+  >,
   id?: string,
 ) =>
   id
@@ -190,7 +233,7 @@ export const getBudgetAnalytics = (kind: 'departments' | 'users', id: string) =>
   request.get<BudgetAnalytics>(`/budgets/${kind}/${id}/analytics`, mock)
 export const saveBudget = (
   kind: 'departments' | 'users',
-  data: BudgetConfig & { department_id?: string; user_ids?: string[] },
+  data: BudgetConfig & { department_id?: string; department_ids?: string[]; user_ids?: string[] },
   id?: string,
 ) =>
   id
@@ -211,10 +254,15 @@ export const getBudgetWarnings = (
     { ...data, kind },
     mock,
   )
-export async function exportBill(id: string, dimension: Dimension, department_id?: string) {
+export async function exportBill(
+  id: string,
+  dimension: Dimension,
+  department_id?: string,
+  filters?: Record<string, string | undefined>,
+) {
   return request.get<Blob>(`/bills/${id}/export`, {
     ...mock,
-    params: { dimension, department_id },
+    params: { dimension, department_id, ...filters },
     responseType: 'blob',
     skipLocale: false,
   })
