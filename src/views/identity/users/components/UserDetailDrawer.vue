@@ -760,7 +760,6 @@ watch(
 
     const userId = props.user.id
     loading.value = true
-    const generation = drawerGeneration
     const results = await Promise.allSettled([
       getUserDetailApi(userId)
         .then((result) => {
@@ -778,12 +777,9 @@ watch(
         .finally(() => {
           if (!stale) termsLoading.value = false
         }),
-      loadModels(userId, generation),
-      ...(canViewKeys.value ? [loadKeys(userId)] : []),
     ])
     if (!stale) {
-      detailFailed.value =
-        results.some((result) => result.status === 'rejected') || !modelsLoaded.value
+      detailFailed.value = results.some((result) => result.status === 'rejected')
       loading.value = false
     }
   },
@@ -807,14 +803,18 @@ async function loadModels(userId: string, generation = drawerGeneration) {
   modelsLoading.value = true
   modelsFailed.value = false
   try {
-    const [sources, accessible] = await Promise.all([
+    const [sources, accessibleTotal] = await Promise.all([
       collectPages((query) => getUserModelGrantSourcesApi(userId, query), current),
-      getUserAccessibleModelsApi(userId, { page: 1, page_size: 1 }),
+      detail.value?.status === 'ACTIVE'
+        ? getUserAccessibleModelsApi(userId, { page: 1, page_size: 1 }).then(
+            (result) => result.total,
+          )
+        : Promise.resolve(0),
       loadModelGrants(userId, generation),
     ])
     if (current()) {
       modelSources.value = sources
-      accessibleModelTotal.value = accessible.total
+      accessibleModelTotal.value = accessibleTotal
       modelsLoaded.value = true
     }
   } catch {

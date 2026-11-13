@@ -1,11 +1,12 @@
 <template>
   <t-drawer
+    class="model-detail-drawer"
     :close-btn="true"
-    :visible="true"
+    :visible="drawerVisible"
     :header="model?.model_id_at_gateway || ' '"
     :footer="false"
     size="large"
-    @close="emit('close')"
+    @close="closeDrawer()"
   >
     <LoadingState :loading="loading" :failed="failed" retryable @retry="loadDetail"
       ><div v-if="model" class="ma-stack">
@@ -32,7 +33,7 @@
             v-permission.write="'model.models'"
             theme="primary"
             v-if="model.status !== 'PENDING_REVIEW'"
-            @click="emit('edit', model.id)"
+            @click="closeDrawer(() => emit('edit', model!.id))"
             >{{ t('ma.edit') }}</t-button
           >
         </div>
@@ -190,6 +191,7 @@ import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
 import { pricingFlowMessages } from '@/locales/modules/modelAccess/pricingFlow'
+import { useDrawerClose } from '@/utils/useDrawerClose'
 const props = defineProps<{ id: string }>()
 const emit = defineEmits<{
   close: []
@@ -198,6 +200,9 @@ const emit = defineEmits<{
   test: [model: Model, purpose: 'HEALTH' | 'ADMISSION', run?: TestRun]
 }>()
 const { t } = useI18n({ messages: pricingFlowMessages })
+const { visible: drawerVisible, close: closeDrawer } = useDrawerClose('.model-detail-drawer', () =>
+  emit('close'),
+)
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canReadChecks = computed(() => user.permissions.includes('model.admission'))

@@ -2,7 +2,7 @@
   <t-drawer
     class="model-form-drawer"
     :close-btn="!saving"
-    :visible="true"
+    :visible="drawerVisible"
     :header="t(modelId ? 'ma.editTitle' : 'ma.createTitle')"
     size="min(100vw, var(--physical-model-form-width))"
     :close-on-overlay-click="false"
@@ -214,7 +214,7 @@
     ></LoadingState>
     <template #footer
       ><div class="ma-footer">
-        <t-button theme="default" @click="emit('close')">{{ t('ma.cancel') }}</t-button>
+        <t-button theme="default" :disabled="saving" @click="close">{{ t('ma.cancel') }}</t-button>
         <t-button
           theme="primary"
           :loading="saving"
@@ -283,11 +283,15 @@ import { pricingFlowMessages } from '@/locales/modules/modelAccess/pricingFlow'
 import InvocationEditor from './InvocationEditor.vue'
 import { invocationConfigurationError } from '@/utils/modelInvocation'
 import { useDrawerTabs } from '@/utils/useDrawerTabs'
+import { useDrawerClose } from '@/utils/useDrawerClose'
 import type { NotifiedError } from '@/api/request'
 import { useUserStore } from '@/stores/modules/user'
 import { normalizeModelId } from '@/utils/modelContract'
 const props = defineProps<{ modelId?: string; providerId?: string }>()
 const emit = defineEmits<{ close: []; saved: [model: Model, previous: Model | undefined] }>()
+const { visible: drawerVisible, close: closeDrawer } = useDrawerClose('.model-form-drawer', () =>
+  emit('close'),
+)
 const { t, locale } = useI18n({ messages: pricingFlowMessages })
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
@@ -393,7 +397,7 @@ async function validateName(): Promise<boolean> {
   }
 }
 function close() {
-  if (!saving.value) emit('close')
+  if (!saving.value) void closeDrawer()
 }
 const tabsRef = useDrawerTabs(tab)
 watch(
@@ -724,7 +728,7 @@ async function save() {
     }
     MessagePlugin.success(t('ma.success'))
     emit('saved', result, originalModel)
-    emit('close')
+    void closeDrawer()
   } catch (e) {
     const failure = e as NotifiedError
     if (
