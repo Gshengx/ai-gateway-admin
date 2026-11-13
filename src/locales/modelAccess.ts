@@ -367,6 +367,8 @@ const labels: Record<string, [string, string]> = {
   apiCheck: ['请求/响应兼容性', 'Request/response compatibility'],
   healthResult: ['健康检查结果', 'Health check results'],
   admissionResult: ['准入检测结果', 'Admission test results'],
+  detectionQueued: ['检测任务已提交，正在等待执行。', 'Test submitted. Waiting to start.'],
+  detectionRunning: ['检测进行中，请稍候。', 'Test in progress. Please wait.'],
   detectionFinished: [
     '检测完成：{n}/{total} 项通过。',
     'Test complete: {n}/{total} checks passed.',

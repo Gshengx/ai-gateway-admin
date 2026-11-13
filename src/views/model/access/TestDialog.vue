@@ -60,17 +60,7 @@
         />
         <t-alert
           :theme="run.status === 'FAILED' ? 'error' : run.status === 'PASSED' ? 'success' : 'info'"
-          :message="
-            t(
-              purpose === 'ADMISSION' && run.status === 'PASSED'
-                ? 'ma.admissionFinished'
-                : 'ma.detectionFinished',
-              {
-                n: run.checks.filter((c) => c.status === 'PASSED').length,
-                total: run.checks.length,
-              },
-            )
-          "
+          :message="resultMessage"
         />
         <p class="test-cost-note">{{ t('ma.testCostNotice') }}</p>
         <TestResultGroups :checks="run.checks" />
@@ -175,6 +165,26 @@ const selected = ref([...available.value]),
   rejectionError = ref(false)
 const polling = ref(false)
 const pollFailed = ref(false)
+const resultMessage = computed(() => {
+  const current = run.value
+  if (!current) return ''
+  if (current.status === 'PENDING' || current.status === 'RUNNING') {
+    return t(
+      current.status === 'PENDING' || current.dto?.status === 'QUEUED'
+        ? 'ma.detectionQueued'
+        : 'ma.detectionRunning',
+    )
+  }
+  return t(
+    props.purpose === 'ADMISSION' && current.status === 'PASSED'
+      ? 'ma.admissionFinished'
+      : 'ma.detectionFinished',
+    {
+      n: current.checks.filter((check) => check.status === 'PASSED').length,
+      total: current.checks.length,
+    },
+  )
+})
 const locked = computed(() => busy.value || polling.value || run.value?.status === 'RUNNING')
 function close() {
   if (!locked.value) emit('close')
