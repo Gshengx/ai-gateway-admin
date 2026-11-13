@@ -183,7 +183,13 @@
             </div>
           </t-form></t-tab-panel
         >
-        <t-tab-panel v-if="canReadPrice" :disabled="saving" value="price" :label="t('ma.pricing')">
+        <t-tab-panel
+          v-if="canReadPrice"
+          :disabled="saving"
+          :destroy-on-hide="false"
+          value="price"
+          :label="t('ma.pricing')"
+        >
           <PricingEditor
             :inert="saving || !canWritePrice"
             :default-price="defaultPrice"
