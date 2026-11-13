@@ -191,12 +191,6 @@
           value="price"
           :label="t('ma.pricing')"
         >
-          <div v-if="!isEditing" class="ma-stack ma-section">
-            <t-checkbox v-model="configurePricing" :disabled="saving || !canWritePrice">{{
-              t('pricingFlow.configure')
-            }}</t-checkbox>
-            <p class="ma-muted">{{ t('pricingFlow.optional') }}</p>
-          </div>
           <PricingEditor
             v-if="isEditing || configurePricing"
             :inert="saving || !canWritePrice"
@@ -301,7 +295,7 @@ const { t, locale } = useI18n()
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canWritePrice = computed(() => user.permissions.includes('model.pricing:write'))
-const configurePricing = ref(canReadPrice.value && canWritePrice.value)
+const configurePricing = computed(() => canReadPrice.value && canWritePrice.value)
 const officialPrice = ref<Pricing>()
 const priceComparison = ref<{ current: Pricing; draft: Pricing }>()
 const model = ref({ ...blankModel(), provider_id: props.providerId ?? '' }),
@@ -717,13 +711,13 @@ async function save() {
       return
     }
     const changedPrice = JSON.stringify(price.value) !== originalPrice
+    const shouldSavePrice =
+      price.value.metric_rates.length > 0 && (!m.id ? configurePricing.value : changedPrice)
     const result = await accessApi.saveModel(m, {
-      ...((!m.id && configurePricing.value) || (m.id && changedPrice)
-        ? { price: price.value }
-        : {}),
+      ...(shouldSavePrice ? { price: price.value } : {}),
     })
     model.value = result
-    if (canReadPrice.value && (changedPrice || (!originalModel && configurePricing.value))) {
+    if (canReadPrice.value && shouldSavePrice) {
       const reads = await Promise.allSettled([
         accessApi.pricing(result.id),
         accessApi.prices(result.id, 1, 5),

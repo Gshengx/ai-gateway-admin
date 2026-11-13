@@ -1,12 +1,7 @@
 const pricingFlow = {
   noMetrics: [
-    '当前调用接口没有可配置的计量项。',
-    'The current invocation APIs have no configurable metrics.',
-  ],
-  configure: ['创建时配置价格', 'Configure pricing on creation'],
-  optional: [
-    '暂不配置价格时，仅创建草稿；准入检测时由后端准备适用价格。',
-    'Without pricing, create a draft only. Admission prepares applicable pricing.',
+    '当前模型暂无可用计费项，暂不计算费用，仅记录用量。',
+    'No billable metrics are available for this model. Usage is recorded without calculating costs.',
   ],
   comparison: ['价格版本已变化，请核对', 'Pricing changed. Review before continuing'],
   comparisonHint: [
