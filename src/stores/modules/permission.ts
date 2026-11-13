@@ -72,14 +72,6 @@ export const usePermissionStore = defineStore('permission', {
         }
         if (item.parent_group_code) groups.get(item.parent_group_code)!.children!.push(menu)
         else menus.push(menu)
-        if (item.route_id === 'logical_models')
-          routes.push({
-            path: '/model/logical-models/:logical_model_id',
-            alias: '/model/logical/:logical_model_id',
-            name: 'ModelLogicalDetail',
-            component: () => import('@/views/model/logical/detail.vue'),
-            meta: { ...meta, hideInMenu: true },
-          })
       }
       const sort = (items: MenuItem[]): MenuItem[] =>
         items

@@ -288,6 +288,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--td-comp-margin-l);
 }
+.provider-validation-summary {
+  margin-top: var(--td-comp-margin-l);
+}
 .provider-form-grid :deep(.t-form__item) {
   margin-bottom: 0;
 }
@@ -312,6 +315,9 @@
 .provider-form-grid > .t-form__item:has(textarea),
 .provider-auth > .t-form__item:has(textarea) {
   grid-column: 1 / -1;
+}
+.provider-balance > .t-checkbox {
+  justify-self: start;
 }
 
 .ma-grant-tags {
@@ -392,6 +398,9 @@
   flex: 1;
   overflow-wrap: anywhere;
 }
+.pricing-cell__error {
+  flex-basis: 100%;
+}
 .pricing-cell > :deep(.t-input-number) {
   flex: 2;
   min-width: 0;
@@ -447,9 +456,18 @@
   top: 0;
   right: 0;
 }
-.provider-alert-channel-error {
+.provider-alert-notifications > p {
   margin-top: var(--td-comp-margin-xs);
-  font-size: var(--td-font-size-body-small);
+}
+.provider-balance-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--td-comp-margin-l);
+}
+.provider-balance-fields > p,
+.provider-balance-fields > .t-form__item:has(textarea) {
+  grid-column: 1 / -1;
 }
 
 .pricing-fixed :deep(.t-input-number) {
@@ -499,4 +517,56 @@
 .pricing-fallback__badge {
   justify-content: center;
   text-align: center;
+}
+
+.invocation-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: var(--td-comp-margin-l);
+}
+
+/* Compact onboarding card follows the confirmed reference; business fields remain unchanged. */
+.onboarding-model-card {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
+}
+.onboarding-model-card__name,
+.onboarding-model-card__metadata {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.onboarding-model-card__name {
+  font-weight: var(--td-font-weight-400);
+}
+.onboarding-model-card__form {
+  grid-column: 1;
+  grid-row: 4;
+  min-width: 0;
+}
+.onboarding-model-card__status {
+  grid-column: 2;
+  grid-row: 4;
+  justify-self: end;
+  padding-top: var(--td-comp-paddingTB-l);
+}
+.onboarding-model-card :deep(.invocation-editor.ma-stack) {
+  margin-bottom: 0;
+  gap: var(--td-comp-margin-s);
+}
+.provider-balance.ma-stack {
+  gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
+}
+.provider-balance-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-comp-margin-xs);
+}
+.provider-balance .provider-balance-fields {
+  row-gap: var(--td-comp-margin-s);
 }

@@ -6,6 +6,7 @@ import { i18n } from '@/locales'
 import { router } from '@/router'
 import { pinia } from '@/stores'
 import { permissionDirective } from '@/directives/permission'
+import { nonnegativeNumberDirective } from '@/directives/nonnegativeNumber'
 
 import 'tdesign-vue-next/es/style/index.css'
 import '@/styles/index.css'
@@ -18,5 +19,6 @@ app.use(i18n)
 app.use(router)
 app.use(TDesign)
 app.directive('permission', permissionDirective)
+app.directive('nonnegative-number', nonnegativeNumberDirective)
 
 app.mount('#app')

@@ -17,7 +17,7 @@
       loading: termsStore.accepting,
     }"
     :cancel-btn="
-      termsStore.requireConfirmation
+      confirmationRequired
         ? null
         : { content: t('terms.gate.skip'), disabled: termsStore.accepting }
     "
@@ -41,6 +41,10 @@ const { t, locale } = useI18n()
 const termsStore = useTermsStore()
 const userStore = useUserStore()
 const checked = ref(false)
+const mandatoryAtConfirm = ref(false)
+const confirmationRequired = computed(() =>
+  termsStore.accepting ? mandatoryAtConfirm.value : termsStore.requireConfirmation,
+)
 watch(
   () => userStore.context.session?.gate,
   async (gate) => {
@@ -81,6 +85,7 @@ watch(
 )
 async function onConfirm() {
   if (!checked.value || termsStore.accepting) return
+  mandatoryAtConfirm.value = termsStore.requireConfirmation
   try {
     await termsStore.accept(async () => {
       const session = userStore.context.session

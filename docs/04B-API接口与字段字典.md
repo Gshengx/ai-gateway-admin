@@ -1,8 +1,12 @@
 # 模型接入 V1.4：设计阶段 API 接口与字段文档
 
-评审状态更新（2026-11-10）：本文件相关原评审及V13增量已明确通过，见[19](19-V1.3评审结论归档.md)；事实待核见20，未来执行顺序见21。尚未实施。
+> **2026-11-12 接入引导最终修订设计（未实施）**：当前正式后端及原 33 项任务已完成；下方带日期的“尚未实现”等文字仅为历史时点。新设计以[40 接入引导与初始化最终修订设计](40-接入引导与初始化最终修订设计.md)为准：D02 创建空接口草稿且不配置价格；D03/C01 在配置接口、解析计量后准备或保留价格并冻结检测事实；D04/M07 APPROVE 复核有效价格或已确认的无metric未定价例外，以及准入结果后上架，不首建价格。F40-01～04及数据库增量已按[本次直接回执](reviews/FLOW40-评审通过与任务接续授权-20261112.md)确认：复杂官方规则无法表达时内部全0并记录UNSUPPORTED_RULE；完全无已适配metric时不建价格版本，允许检测和满足其他条件后上架，前端显示“未匹配的计价模式”。流程已批准但业务尚未实施。此次只同步文档，已发布 OpenAPI、类型、示例和历史证据均保持，不代表当前服务已支持这些新语义。
 
-版本：**1.3 评审决议落实与原型续修稿**；日期：2026-11-09。**当前55项操作均为新模型业务API，尚未实现。V1.2原32项已有用户回执；本版落实决议并列明新增设计，不把设计通过当作运行通过。** 本文可独立用于前端接口评审；业务流程补充见 [04 主文](04-接口API设计评审.md) 与 [07 前端指南](07-前端协同对接指南.md)，机器契约见 [OpenAPI 3.1](04-openapi-review.json)。
+当前设计更新（2026-11-11）：用户已批准M08/M09/M10增加可选不分页查询、默认仍分页，见[本次回执](reviews/M08-M10可选不分页-评审确认-20261111.md)及[规格纳入记录](32-M08-M10可选不分页评审与规格纳入.md)。A01已审语义继续复用；本次不新增API、数据库结构或业务实现，P1/P2完成事实和历史证据保留。
+
+当前设计更新（2026-11-11）：ADJ-01～ADJ-04已按建议通过，且用户确认当前没有历史业务数据，见[本次回执](reviews/ADJ-01～ADJ-04-评审确认-20261111.md)。本次统一A01显式全量查询及有序多星期条件行；不建设旧数据回填、旧格式双读或分组推断。未来价格版本历史、目录版本追溯和检测费用/审计固化继续保留。P1/P2已有8项完成，本次增补尚未实施，不改其完成状态或历史证据。
+
+版本：**1.4 ADJ-01～ADJ-04已审同步稿**；日期：2026-11-11。**当前56项操作均为新模型业务API，尚未实现。V1.2原32项已有用户回执；本版落实决议并列明新增设计，不把设计通过当作运行通过。** 本文可独立用于前端接口评审；业务流程补充见 [04 主文](04-接口API设计评审.md) 与 [07 前端指南](07-前端协同对接指南.md)，机器契约见 [OpenAPI 3.1](04-openapi-review.json)。
 
 ## 1. 新契约边界与公共约定
 
@@ -91,6 +95,7 @@
 | [M11](#api-m11) | `GET /api/v1/model-access/models/{model_id}/lifecycle-events`                       | 无                                                       | [LifecycleEventPage](#schema-lifecycleeventpage)                       | 200  |
 | [M12](#api-m12) | `GET /api/v1/model-access/model-options/model-id-availability`                      | 无                                                       | [ModelIdAvailability](#schema-modelidavailability)                     | 200  |
 | [M13](#api-m13) | `GET /api/v1/model-access/model-options/pricing-preparation`                        | 无                                                       | [PricingPreparation](#schema-pricingpreparation)                       | 200  |
+| [M14](#api-m14) | `GET /api/v1/model-access/model-options/default-pricing`                            | 无                                                       | [DefaultPricingPreparation](#schema-defaultpricingpreparation)         | 200  |
 | [C01](#api-c01) | `POST /api/v1/model-access/models/{model_id}/admission-tests`                       | [CheckInput](#schema-checkinput)                         | [CheckJob](#schema-checkjob)                                           | 202  |
 | [C02](#api-c02) | `GET /api/v1/model-access/models/{model_id}/admission-tests`                        | 无                                                       | [CheckJobPage](#schema-checkjobpage)                                   | 200  |
 | [C03](#api-c03) | `GET /api/v1/model-access/models/{model_id}/admission-tests/{test_id}`              | 无                                                       | [CheckJob](#schema-checkjob)                                           | 200  |
@@ -133,7 +138,7 @@
 
 权限：`model.providers:READ`。
 
-业务、并发与事务规则：只读数据库已发布模板；默认当前批次，可按catalog_release_id固定读取；provider_id模式仅返回该实例绑定模板及原字段/认证规格，显式批次必须匹配。enabled仅指新采用资格，不能据旧版非current禁止普通编辑。运行数据无代码/配置目录兜底；不返回实施排序、研究台账或项目审批状态。
+业务、并发与事务规则：只读数据库已发布模板；默认当前批次，可按catalog_release_id固定读取；provider_id模式仅返回该实例绑定模板及原字段/认证规格，显式批次必须匹配。enabled仅指新采用资格，不能据旧版非current禁止普通编辑。运行数据无代码/配置目录兜底；不返回实施排序、研究台账或项目审批状态。 字段label、description、auth_modes/options.label均按Accept-Language（省略按会话语言）从实例固定版本语言集投影；至少zh-CN/en，缺译按版本fallback_locale回退。key/value/认证协议和实际凭据不翻译，语言变化不改变模板版本或输入值。
 
 | 位置   | 参数                 | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                                           |
 | ------ | -------------------- | ------ | ---- | ---- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -305,7 +310,7 @@
 
 权限：`model.providers:WRITE AND model.models:WRITE；有计量规格并提交pricing对象另需model.pricing:WRITE`。
 
-业务、并发与事务规则：先检查权限及expected_provider_version，首次受理固定实例/目录和预算币种上下文。每个新建项显式提交pricing：有metric为完整对象并验pricing:WRITE，服务端确无metric时仅允许null且不建价版本，expected_price_version=0；价格确认/参考/默认0规则同M03。逐项事务，恢复不按最新目录或币种重解释已受理值；执行某项前币种或实例改变，则该项及尚未执行项安全REJECTED，已完成结果保持。先识别既有上游ID并SKIPPED_EXISTING，不覆盖基础或价格；只对待创建项的规范化调用ID同批查重，重复名项全部REJECTED，不让跳过项虚占新名。最终全局数据库唯一冲突NAME_CONFLICT不披露占用对象。发现模式来源由可信快照固定，显式ID须一致；最终标准或已适配自定义至少一项，返回实际模型/来源/接口/版本。
+业务、并发与事务规则（40修订设计，未实施）：先检查权限、expected_provider_version及固定发现/目录来源，逐项事务创建DRAFT。两接口数组允许同时为空；省略标准接口读取可信固定建议，显式[]不自动补回，自定义省略为[]，null数组拒绝。pricing省略或null均不配置价格，非空对象拒绝，不要求价格READ/WRITE或前置M13；新建price版本为0。已存在上游ID仍SKIPPED_EXISTING，不覆盖其基础、接口或价格；调用ID同批去重及最终全局唯一保持。返回实际保存的模型、接口数组和版本；不猜接口、计量项或免费价。目录缺失不能降级免费。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -330,7 +335,7 @@
 
 权限：`model.models:WRITE,model.admission:WRITE`。
 
-业务、并发与事务规则：逐模型原子保存DRAFT接口和创建任务；所有权限先检查，结果逐项返回 最终标准和已适配自定义接口合计至少一项，允许纯自定义Rerank，不虚选标准接口。 接口变更可能使旧企业价PROFILE_MISMATCH，沿既有规则继续检测并固化UNPRICED事实；不因此新增价格硬门槛，不静默扩指标、填0或重解释旧价。管理员可用M05的base+pricing同事务明确更正。
+业务、并发与事务规则（40修订设计，未实施）：逐模型校验DRAFT、base版本、作用域及准入权限，标准与已适配自定义接口合计至少一项。固定供应商/目录/计量/币种上下文后保留有效内部价；无价时按企业默认、可表达官方参考、真实缺价全0准备首价，F40-01～04已确认，复杂官方规则无法表达且metric非空时全0并保存UNSUPPORTED_RULE；metric确为空时保留未定价、不建价且继续检测。接口保存、初价、冻结检测事实及任务/审计同事务，提交后才调用供应商。自动初价只接纳服务端可信规则，不接受客户端任意费率、不增加人工价格写权限。C01复用同一准备能力。复用任务仍核验源计划、全部项目及探针语义；新增流式不得复用不完整PASS。旧检测费用不因初价/改价重算。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -350,6 +355,8 @@
 <a id="api-d04"></a>
 
 ### D04 引导批量确认上架
+
+> **40修订设计（未实施）**：D04不首建价格。逐项同事务复核当前有效价格或经服务端确认的真实无metric未定价例外，以及当前配置对应的准入PASS，再更新ACTIVE、审计和幂等结果；失败保持本项原状态，其他项按批量契约处理。M07 APPROVE复用相同内部服务，不能绕过价格复核。
 
 `POST /api/v1/model-access/providers/{provider_id}/models/publish`；operationId：`modelAccessV14D04`。
 
@@ -461,7 +468,7 @@
 
 权限：`model.models:WRITE；有计量规格并提交pricing对象需model.pricing:WRITE；提交initial_grants另需model.permissions:WRITE`。
 
-业务、并发与事务规则：全部创建域同一事务，不触发检测。必须提交pricing键及expected_provider_version：有metric为完整内部价，服务端确无metric时仅允许null并保持UNPRICED/不建价版本；价格expected_price_version=0。M13只准备建议，保存才确认内部价；官方参考数字不是换汇或已生效费用。服务端重验目录/可信型号、提供商版本、预算币种及适配指标；有可用官方参考时回传准确参考ID并冻结原币快照。首次有metric、真实缺价且确认FIXED全指标0记BUILT_IN/ENTERPRISE_DEFAULT_ZERO，其他记ENTERPRISE_CUSTOM；复杂价规不自动补0。调用ID同M12规范化、全局区分大小写，由数据库唯一约束兜底409 NAME_CONFLICT；标准或已适配自定义至少一项。
+业务、并发与事务规则：全部创建域同一事务，不触发检测。40修订：expected_provider_version仍必填；pricing省略/null不配置，不再要求必须确无metric；主动提交对象时仍须完整内部价及价格写权限，首次expected_price_version=0。M13只准备建议，保存才确认内部价；官方参考数字不是换汇或已生效费用。服务端重验目录/可信型号、提供商版本、预算币种及适配指标；有可用官方参考时回传准确参考ID并冻结原币快照。首次无适用产品默认、有metric、真实缺价且确认FIXED全指标0记BUILT_IN/ENTERPRISE_DEFAULT_ZERO；有适用默认按本文默认确认规则，其他记ENTERPRISE_CUSTOM；复杂官方规则无法表达且有metric、无适用企业默认时按F40-02形成完整零价，不修改官方事实。调用ID同M12规范化、全局区分大小写，由数据库唯一约束兜底409 NAME_CONFLICT；标准或已适配自定义至少一项。 首次内部价格按M13默认优先规则：适用产品默认及官方参考ID分别回传并冻结；原样确认完整默认可为非零或分时BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED，修改默认仍保留引用而记ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED；不能将默认0当缺配置。 首次是否原样采用默认：先按is_fallback及规范化conditions定位对应时段，再比较完整指标/Decimal费率/模式；name可为该同一时段已发布的任一语言标签，同语言下时段标签发布时必须唯一，不能以当前请求语言变化误判自定义。非已发布别名或改规则/费率记ENTERPRISE_CUSTOM。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -508,7 +515,7 @@
 
 权限：`按提交域model.models/permissions/pricing:WRITE`。
 
-业务、并发与事务规则：仅提交修改域且整体事务；base仅DRAFT，供应商/上游ID变化后重新核实或清理不成立模型来源，不自动重写原价格。pricing明确保存新ENTERPRISE_CUSTOM版本，参考目录ID按PricingInput继承/清除/新选规则，不能借目录绑定绕过分域权限、版本或秘密规则。 调用ID采用与M12相同规范化和全局区分大小写唯一规则，最终保存不依赖预检；并发唯一冲突返回安全NAME_CONFLICT，不返回占用对象。 最终标准和已适配自定义接口合计至少一项，允许纯自定义Rerank，不虚选标准接口。 提交pricing时currency必填，是当前预算币种断言，变化409 BILLING_CURRENCY_CHANGED；明确保存新企业价，不自动将官方原币改标或换汇。pricing_basis冻结依据及完整原币参考，后续改价为ENTERPRISE_CONFIGURED。
+业务、并发与事务规则：仅提交真实修改域且整体事务。base是ModelIdentityInput，仅DRAFT可提交：所属供应商、上游ID、模型名称、支持接口、自定义路径及一致的来源绑定；metadata为ModelMetadataInput六字段完整集合，全部六种生命周期均可提交（含TESTING/PENDING_REVIEW），需expected_metadata_version和models:WRITE。base/metadata分别比较并递增自身版本；元信息不递增base/state或改变admission_epoch，不自动触发/取消/重试检测，不改在途计划及历史结果费用；任务冻结metadata_version，只证明当时快照，之后健康使用新模态/流式标签。供应商/上游ID变更重新核实或清理不成立来源，不自动改价。pricing始终显式保存ENTERPRISE_CUSTOM，完整默认/官方参考按PricingInput继承/清除/新选并固化；currency断言预算币种，变更409 BILLING_CURRENCY_CHANGED。五类字段不能借metadata绕过状态限制；非DRAFT提交base即STATE_CONFLICT。调用ID最终同M12规范化、区分大小写全局唯一，冲突NAME_CONFLICT不披露占用对象。40修订：DRAFT基础修改可两数组同时为空，非空校验适配；非DRAFT基础域仍锁定。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -523,7 +530,7 @@
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`VERSION_CONFLICT`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`、`NAME_CONFLICT`、`BILLING_CURRENCY_CHANGED`、`PRICE_RULE_INVALID`、`METRIC_UNSUPPORTED`；HTTP与恢复语义见§1.2，完整错误体见[Error](#schema-error)。
 
-该接口使用的嵌套组件：[CustomAPIView](#schema-customapiview), [GrantDelta](#schema-grantdelta), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelBase](#schema-modelbase), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput)。
+该接口使用的嵌套组件：[CustomAPIView](#schema-customapiview), [GrantDelta](#schema-grantdelta), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelIdentityInput](#schema-modelidentityinput), [ModelMetadataInput](#schema-modelmetadatainput), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput)。
 
 <a id="api-m06"></a>
 
@@ -556,6 +563,8 @@
 
 ### M07 模型生命周期命令
 
+> **40修订设计（未实施）**：APPROVE与D04共用价格和准入复核，不在上架时首次建价。其他生命周期动作不因本次设计自动扩大范围。
+
 `PUT /api/v1/model-access/models/{model_id}/status`；operationId：`modelAccessV14M07`。
 
 权限：`APPROVE/REJECT:model.review:WRITE；其余model.models:WRITE`。
@@ -585,12 +594,13 @@
 
 权限：`model.models:READ OR model.models:WRITE`。
 
-业务、并发与事务规则：只读数据库固定批次内置型号。默认无provider取当前；provider_id取该可见实例固定模板批次，显式catalog_release_id必须一致；续页回传固定批次，不能混合新发布。返回型号/模板/批次准确关联、元信息和适配计量规格；目录不代表实例型号已VERIFIED。只有pricing READ返回builtin_pricing，其他HIDDEN/null；提交自定义价仍须pricing WRITE。不提供目录管理功能。 builtin_pricing仅官方原币参考，不按总部币种筛选；多币种按目录首选。首次创建另用M13完整准备并显式保存pricing，HIDDEN/null不代表企业免费资格。
+业务、并发与事务规则：只读数据库固定批次内置型号。默认无provider取当前；provider_id取该可见实例固定模板批次，显式catalog_release_id必须一致；续页回传固定批次，不能混合新发布。返回型号/模板/批次准确关联、元信息和适配计量规格；目录不代表实例型号已VERIFIED。只有pricing READ返回builtin_pricing，其他HIDDEN/null；提交自定义价仍须pricing WRITE。不提供目录管理功能。 builtin_pricing仅官方原币参考，不按总部币种筛选；多币种按目录首选。首次创建另用M13完整准备并显式保存pricing，HIDDEN/null不代表企业免费资格。 builtin_pricing严格只投影OFFICIAL_REFERENCE；企业默认规则另由M14读取，M13负责默认优先预填，不以官方null表示无企业默认。 默认paginate=true，page默认1、page_size默认20且上限100，单独page_size合法；paginate=false返回当前合法可见范围及筛选下全部匹配项，不静默截断。false时不得显式提供page/page_size，否则422 VALIDATION_FAILED；paginate空值、非true/false或重复参数为400 MALFORMED_REQUEST。分页与不分页使用同一权限/筛选谓词及稳定排序；items、total及关联展示字段来自同一数据库一致性快照，total不泄露不可见项数量。不分页时page/page_size成对为null且total=items.length，空结果为items=[]、total=0。 两种模式均固定同一catalog_release_id/catalog_revision，稳定按template_key、model_id_at_provider、catalog_model_version_id升序。provider_id继续可选；模型表单建议先选择供应商再读取该实例目录，仅为单型号预填时按model_id_at_provider筛选。只读本地数据库目录，不触发上游模型发现或供应商调用；全量不放宽pricing:READ保护。
 
 | 位置   | 参数                   | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                                 |
 | ------ | ---------------------- | ------- | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| query  | `page`                 | integer | 否   | 否   | minimum=1                              | 页码，从 1 开始；省略为 1。                                                                              |
-| query  | `page_size`            | integer | 否   | 否   | minimum=1；maximum=100                 | 每页条数，省略 20，上限 100。                                                                            |
+| query  | `paginate`             | boolean | 否   | 否   | default=true                           | 只接受true/false；false不分页且禁止同时传page/page_size；不改变权限范围。                                |
+| query  | `page`                 | integer | 否   | 否   | default=1；minimum=1                   | 分页模式页码，从1开始，省略为1；paginate=false时不得显式提供。                                           |
+| query  | `page_size`            | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 分页模式每页条数，省略20，上限100；单独提供按page=1。paginate=false时不得显式提供。                      |
 | query  | `template_key`         | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 供应商模板稳定键；与provider_id同时提供时必须匹配该实例固定模板                                          |
 | query  | `model_id_at_provider` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 按上游模型ID或可信官方绑定筛选该固定批次的内置型号；不从部署名猜官方型号                                 |
 | query  | `provider_id`          | string  | 否   | 否   | format="uuid"                          | 模型表单当前可见供应商实例UUID；仅按模型用途范围校验，不要求完整供应商管理权限；提供时使用其固定模板批次 |
@@ -613,14 +623,15 @@
 
 权限：`model.models:READ OR model.models:WRITE`。
 
-业务、并发与事务规则：满足model.models READ或WRITE任一即可；仍校验当前模型管理范围。只返回ProviderOption的公开字段，不能读取供应商秘密/完整配置，无需providers:READ。按实例名/模板名搜索，稳定分页；已有选中供应商由M04直接回显，不要求选项出现在第一页。；稳定排序为实例name、id升序。
+业务、并发与事务规则：满足model.models READ或WRITE任一即可；仍校验当前模型管理范围。只返回ProviderOption的公开字段，不能读取供应商秘密/完整配置，无需providers:READ。按实例名/模板名搜索，稳定分页；已有选中供应商由M04直接回显，不要求选项出现在第一页。；稳定排序为实例name、id升序。 默认paginate=true，page默认1、page_size默认20且上限100，单独page_size合法；paginate=false返回当前合法可见范围及筛选下全部匹配项，不静默截断。false时不得显式提供page/page_size，否则422 VALIDATION_FAILED；paginate空值、非true/false或重复参数为400 MALFORMED_REQUEST。分页与不分页使用同一权限/筛选谓词及稳定排序；items、total及关联展示字段来自同一数据库一致性快照，total不泄露不可见项数量。不分页时page/page_size成对为null且total=items.length，空结果为items=[]、total=0。 两种模式只读当前模型管理范围的供应商最小展示投影，q过滤继续有效，不返回认证信息、完整配置或余额。全量候选不替代M04已选供应商回显；搜索、空结果或失败均不能清空已有选择。
 
-| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                             |
-| ------ | ----------------- | ------- | ---- | ---- | -------------------------------------- | ---------------------------------------------------- |
-| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                   | 页码，从 1 开始；省略为 1。                          |
-| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 每页条数，省略 20，上限 100。                        |
-| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 搜索本用途可见选项，去首尾空白；空字符串视为未筛选。 |
-| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。   |
+| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                                                            |
+| ------ | ----------------- | ------- | ---- | ---- | -------------------------------------- | ----------------------------------------------------------------------------------- |
+| query  | `paginate`        | boolean | 否   | 否   | default=true                           | 只接受true/false；false不分页且禁止同时传page/page_size；不改变权限范围。           |
+| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                   | 分页模式页码，从1开始，省略为1；paginate=false时不得显式提供。                      |
+| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 分页模式每页条数，省略20，上限100；单独提供按page=1。paginate=false时不得显式提供。 |
+| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 搜索本用途可见选项，去首尾空白；空字符串视为未筛选。                                |
+| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                  |
 
 请求体：无。不要发送 JSON body；DELETE 的版本在 query。
 
@@ -638,14 +649,15 @@
 
 权限：`model.models:READ OR model.models:WRITE`。
 
-业务、并发与事务规则：满足model.models READ或WRITE任一即可。内置标签与当前可见模型的已有自定义标签去重后分页；按value/当前语言label搜索。只读建议目录，新增自定义值仍由原模型保存接受，不创建独立标签维护功能。编辑已选值来自M04.tags，不能仅用当前页选项覆盖原值。；先内置后自定义，同类按value稳定升序。
+业务、并发与事务规则：满足model.models READ或WRITE任一即可。内置标签与当前可见模型的已有自定义标签去重后分页；按value/当前语言label搜索。只读建议目录，新增自定义值仍由原模型保存接受，不创建独立标签维护功能。编辑已选值来自M04.tags，不能仅用当前页选项覆盖原值。；先内置后自定义，同类按value稳定升序。 默认paginate=true，page默认1、page_size默认20且上限100，单独page_size合法；paginate=false返回当前合法可见范围及筛选下全部匹配项，不静默截断。false时不得显式提供page/page_size，否则422 VALIDATION_FAILED；paginate空值、非true/false或重复参数为400 MALFORMED_REQUEST。分页与不分页使用同一权限/筛选谓词及稳定排序；items、total及关联展示字段来自同一数据库一致性快照，total不泄露不可见项数量。不分页时page/page_size成对为null且total=items.length，空结果为items=[]、total=0。 两种模式均先确定内置标签及当前可见模型标签这些合法来源，再按稳定value去重并应用q筛选；不从不可见模型推断自定义标签。内置label按Accept-Language/会话语言投影，自定义value/label保留原文。全量候选不替代M04.tags；候选缺失或失败不删除已选值，自定义新增仍由模型保存完成。
 
-| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                             |
-| ------ | ----------------- | ------- | ---- | ---- | -------------------------------------- | ---------------------------------------------------- |
-| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                   | 页码，从 1 开始；省略为 1。                          |
-| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 每页条数，省略 20，上限 100。                        |
-| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 搜索本用途可见选项，去首尾空白；空字符串视为未筛选。 |
-| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。   |
+| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                                                            |
+| ------ | ----------------- | ------- | ---- | ---- | -------------------------------------- | ----------------------------------------------------------------------------------- |
+| query  | `paginate`        | boolean | 否   | 否   | default=true                           | 只接受true/false；false不分页且禁止同时传page/page_size；不改变权限范围。           |
+| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                   | 分页模式页码，从1开始，省略为1；paginate=false时不得显式提供。                      |
+| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 分页模式每页条数，省略20，上限100；单独提供按page=1。paginate=false时不得显式提供。 |
+| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 搜索本用途可见选项，去首尾空白；空字符串视为未筛选。                                |
+| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                  |
 
 请求体：无。不要发送 JSON body；DELETE 的版本在 query。
 
@@ -684,11 +696,13 @@
 
 ### C01 提交准入检测
 
+> **40修订设计（未实施）**：直接准入复用D03的计量解析、价格准备和检测事实冻结，禁止绕过初价与失败处理；不重复保存无变化的接口配置。
+
 `POST /api/v1/model-access/models/{model_id}/admission-tests`；operationId：`modelAccessV14C01`。
 
 权限：`model.admission:WRITE`。
 
-业务、并发与事务规则：DRAFT、同模型互斥；每接口每项目一次，无自动重试；未执行项 result_detail=null、cost=null；等待项计数按计划返回，不能以空对象假充结果。；triggered_by_display/model_display及每项invocation_api与detail_text/suggestion_text独立于pricing权限，从任务时快照投影。
+业务、并发与事务规则：DRAFT、同模型互斥；每接口每项目一次，无自动重试；未执行项 result_detail=null、cost=null；等待项计数按计划返回，不能以空对象假充结果。；triggered_by_display/model_display及每项invocation_api与detail_text/suggestion_text独立于pricing权限，从任务时快照投影。 显式reuse_job_id还须比较当前所需接口计划、全部检测项目与源任务冻结探针输入语义；新加流式不能复用缺STREAMING的旧完整接口PASS。metadata_version差异本身不使复用或审核失效，纯描述修改可复用；计划/有效探针不同返回409 STATE_CONFLICT，要求管理员明确新检测，不自动补发。 连续复用按内部冻结六字段元信息及实际探针/计划事实验证；内部源快照完整扁平复制，不依赖API最小投影、当前模型或已清理源任务补值。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -907,16 +921,17 @@
 
 权限：`model.permissions:READ`。
 
-业务、并发与事务规则：每页同集合版本，保存传差异不传全量；越界主体名称不泄露
+业务、并发与事务规则：默认paginate=true，page默认1、page_size默认20且上限100，单独page_size合法；paginate=false一次返回本模型当前可见范围及筛选下全部直接授权关系，不展开部门/组成员，不截断。false时不得显式提供page/page_size，否则422 VALIDATION_FAILED；paginate空值、非true/false或重复参数为400 MALFORMED_REQUEST。subject_type可省略表示三类，q只筛选可见集合。items、total、名称展示字段、grant_version及authorization_version来自同一数据库一致性快照；total不泄露隐藏数量。稳定排序DEPARTMENT、USER_GROUP、USER，其后subject_id、id升序。部门/组范围沿T09-02，混合跨界组不得泄漏。保存仍用A02增删差异和expected_grant_version，不以当前筛选/失败/不可见关系替换授权全集。
 
-| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                                 | 参数说明                                                                                                           |
-| ------ | ----------------- | ------- | ---- | ---- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| path   | `model_id`        | string  | 是   | 否   | format="uuid"                             | 当前可见新版物理模型UUID，不接受旧逻辑模型ID                                                                       |
-| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                      | 页码，从 1 开始；省略为 1。                                                                                        |
-| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100        | 每页条数，省略 20，上限 100。                                                                                      |
-| query  | `subject_type`    | string  | 否   | 否   | enum=["DEPARTMENT", "USER_GROUP", "USER"] | 主体类型 DEPARTMENT/USER_GROUP/USER；候选查询必填。                                                                |
-| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则    | 可选搜索关键字；供应商按名称/API地址/备注，模型按两类模型ID/说明，授权主体按显示名。去首尾空白；空字符串等同未传。 |
-| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则    | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                                                 |
+| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                                 | 参数说明                                                                             |
+| ------ | ----------------- | ------- | ---- | ---- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| path   | `model_id`        | string  | 是   | 否   | format="uuid"                             | 当前可见新版物理模型UUID，不接受旧逻辑模型ID                                         |
+| query  | `paginate`        | boolean | 否   | 否   | default=true                              | 只接受true/false；false不分页且禁止同时传page/page_size；不改变权限范围。            |
+| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                      | 分页模式页码，从1开始，省略1；paginate=false时不得显式提供。                         |
+| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100        | 分页模式每页条数，省略20，上限100；单独page_size合法。paginate=false时不得显式提供。 |
+| query  | `subject_type`    | string  | 否   | 否   | enum=["DEPARTMENT", "USER_GROUP", "USER"] | 可选主体类型DEPARTMENT/USER_GROUP/USER；省略返回三类，此处不是候选查询。             |
+| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则    | 主体显示名搜索；去首尾空白，空串同未传；只筛选合法可见集合。                         |
+| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则    | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                   |
 
 请求体：无。不要发送 JSON body；DELETE 的版本在 query。
 
@@ -925,6 +940,8 @@
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`；每项 HTTP 与恢复语义见 §1.2，错误体见 [Error](#schema-error)。
 
 该接口使用的嵌套组件：[Grant](#schema-grant)。
+
+完整编辑区推荐请求`?paginate=false`且不带搜索/类型过滤；成功返回同一快照全部可见直接关系，page/page_size成对null，total等于items长度。失败保留原草稿，不自动清空授权。
 
 <a id="api-a02"></a>
 
@@ -1263,7 +1280,7 @@
 
 权限：`model.pricing:WRITE`。
 
-业务、并发与事务规则：保存ENTERPRISE_CUSTOM新版本；expected_price_version仍控制并发。catalog_price_version_id省略继承当前参考、显式null清除；相同旧参考可保留历史批次，新选参考必须匹配实例固定批次及可信型号。服务端币种/指标，分时无重叠且恰一兜底；仅新发送使用新价，历史显示/来源从本版本快照读取，不查当前目录重释。 提交pricing时currency必填，是当前预算币种断言，变化409 BILLING_CURRENCY_CHANGED；明确保存新企业价，不自动将官方原币改标或换汇。pricing_basis冻结依据及完整原币参考，后续改价为ENTERPRISE_CONFIGURED。
+业务、并发与事务规则：保存ENTERPRISE_CUSTOM新版本；expected_price_version仍控制并发。catalog_price_version_id省略继承当前参考、显式null清除；相同旧参考可保留历史批次，新选参考必须匹配实例固定批次及可信型号。服务端币种/指标，分时无重叠且恰一兜底；仅新发送使用新价，历史显示/来源从本版本快照读取，不查当前目录重释。 提交pricing时currency必填，是当前预算币种断言，变化409 BILLING_CURRENCY_CHANGED；明确保存新企业价，不自动将官方原币改标或换汇。pricing_basis冻结依据及完整原币参考，后续改价为ENTERPRISE_CONFIGURED。 后续保存含恢复默认均为ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED；默认及官方参考各自按PricingInput继承/清除/新选规则保留完整快照，不能因目录更新替换当前值。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -1284,11 +1301,13 @@
 
 ### R03 当前价格及适配计量规格
 
+> **40修订设计（未实施）**：空接口DRAFT返回state=UNPRICED、unpriced_reason=INTERFACES_NOT_CONFIGURED、无当前价；不调用严格非空profile，不把空接口等同无可计量能力。只读不建价。
+
 `GET /api/v1/model-access/models/{model_id}/pricing/current`；operationId：`modelAccessV14R03`。
 
 权限：`model.pricing:READ`。
 
-业务、并发与事务规则：读取模型实际当前价格，不从当前目录价覆盖。已有BUILT_IN和企业价都独立固化；无价返回UNPRICED/null；返回指标来自当前执行所适用的固定规格，价格参考可能为旧批次且不表示仍适配，币种/指标按实际校验。
+业务、并发与事务规则：读取模型实际当前价格，不从当前目录价覆盖。已有BUILT_IN和企业价都独立固化；无价返回UNPRICED/null；返回指标来自当前执行所适用的固定规格，价格参考可能为旧批次且不表示仍适配，币种/指标按实际校验。 完整返回当前价的catalog_default_price_version_id及pricing_basis.default_reference；无引用为null。恢复默认另读取M14；不把当前价伪装为默认，也不通过读取触发改价。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                           |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------- |
@@ -1425,21 +1444,22 @@
 
 <a id="api-b06"></a>
 
-### B06 余额预警接收用户选项
+### B06 余额预警接收用户选项（含部门及子部门搜索）
 
 `GET /api/v1/model-access/balance-recipient-options`；operationId：`modelAccessV14B06`。
 
 权限：`model.providers:READ OR model.providers:WRITE`。
 
-业务、并发与事务规则：满足providers READ或WRITE任一即可，在操作者现有用户管理范围内仅查启用且非system的用户；q匹配显示名/username/邮箱。返回本用途所需最小资料与邮箱有效性。provider_id必须可见；selected_items只来自其已保存配置，失效/越界只给通用占位，不泄露身份是否存在。新建默认当前管理员由会话上下文取得，不能任意查人。；按display_name、username、user_id稳定升序；selected_items保持原配置ID顺序。
+业务、并发与事务规则：满足providers READ或WRITE任一即可；最终只返回操作者现有用户管理范围内启用、非system用户。q同时匹配用户显示名/username/邮箱，或当前可见部门名称及该部门全部后代中的用户，二者OR；只在可见部门集合中做部门名命中，不能先全局搜索再泄露越界部门。可选department_id必须可见，不存在/不可见统一404；按department_closure包含该部门自身及全部子部门，与q和用户管理范围取AND交集，不提供关闭子部门的参数。按user_id去重后分页/计数，稳定按display_name/username/user_id排序；返回用户及现有department_id/name/path，不返回可选择部门对象。只保存具体recipient_user_ids，不保存部门选择或动态订阅；新增成员不自动加入已保存接收人。provider_id可见且selected_items仅补该配置原选用户，失效/越界通用占位不泄露身份存在性；搜索/翻页不能默删选中用户。保存仍重验启用、范围、system及EMAIL邮箱资格；身份变化不由搜索结果自动改配置。
 
-| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                       |
-| ------ | ----------------- | ------- | ---- | ---- | -------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                   | 页码，从 1 开始；省略为 1。                                                                    |
-| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 每页条数，省略 20，上限 100。                                                                  |
-| query  | `q`               | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 搜索本用途可见选项，去首尾空白；空字符串视为未筛选。                                           |
-| query  | `provider_id`     | string  | 否   | 否   | format="uuid"                          | 编辑现配置时可传，用该供应商已选ID补回当前页外selected_items；不能传任意selected_ids查询用户。 |
-| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                             |
+| 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                                           |
+| ------ | ----------------- | ------- | ---- | ---- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| query  | `page`            | integer | 否   | 否   | default=1；minimum=1                   | 页码，从 1 开始；省略为 1。                                                                                        |
+| query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100     | 每页条数，省略 20，上限 100。                                                                                      |
+| query  | `q`               | string  | 否   | 否   | 无静态默认                             | 去首尾空白；空视为未筛选。用户显示名/username/邮箱命中，或可见部门名命中后的自身及全部子部门人员，结果取OR后去重。 |
+| query  | `provider_id`     | string  | 否   | 否   | format="uuid"                          | 编辑现配置时可传，用该供应商已选ID补回当前页外selected_items；不能传任意selected_ids查询用户。                     |
+| query  | `department_id`   | string  | 否   | 否   | format="uuid"                          | 显式可见部门筛选，包含自身及全部子部门；与q取AND，越界/不存在统一404。                                             |
+| header | `Accept-Language` | string  | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                                                 |
 
 请求体：无。不要发送 JSON body；DELETE 的版本在 query。
 
@@ -1475,13 +1495,13 @@
 
 <a id="api-m13"></a>
 
-### M13 创建或导入前价格准备
+### M13 独立价格准备（不再是D02前置，40修订）
 
 `GET /api/v1/model-access/model-options/pricing-preparation`
 
 权限：`model.models:WRITE及供应商模型用途范围；服务端metric_specs非空时另需model.pricing:READ，确空分支不需价格权限`。
 
-业务、并发与事务规则：先model.models:WRITE和实例模型用途范围校验；服务端解析metric_specs，确空时直接返回NOT_APPLICABLE、空指标、reference/prefill=null、prefill_origin=NONE及非秘密实例/目录版本，不读取价格且不需pricing:READ；非空时再验pricing:READ，失败403绝不能当无价或免费。按实例固定目录批次与所选已适配标准/自定义接口解析完整metric_specs；合计至少一项，未适配调用协议拒绝；已适配调用但无计量规格返回metric_specs=[]及NOT_APPLICABLE，不伪造指标、不裁剪手工创建。不调用真实模型、余额或供应商定价API。官方参考按目录preferred_reference_currency选择：单一报价可唯一解析，多币种发布必须指定真实首选；不按内部币种过滤。有可表达且覆盖全部指标的官方原币参考时返回原币参考与仅数字预填的内部价；有已识别指标且PRICE_UNAVAILABLE/NO_PUBLIC_PRICE才预填完整FIXED全0；UNSUPPORTED_RULE不预填。内部币种总部配置缺省CNY。返回provider_version和完整来源；所有响应no-store，不预留/写命令。有指标保存必须完整pricing；服务端确无指标时显式pricing=null且UNPRICED/不建价格版本；保存重验版本、币种、完整指标及参考ID；准备不是授权或保存凭据。
+业务、并发与事务规则：先验model.models:WRITE及实例模型用途范围，再解析完整适配metric_specs。确空时NOT_APPLICABLE，两个reference及prefill均null、origin=NONE，不读取价格且不需pricing:READ；非空另验pricing:READ，403不得解释为免费。实例固定批次、可信型号及接口范围共同确定产品默认和官方参考；不猜部署名。适用ENTERPRISE_DEFAULT完整规则优先预填（包括0及TIME_BASED），不与官方逐项拼价；没有默认才按可表达官方数字预填，再无默认且PRICE_UNAVAILABLE/NO_PUBLIC_PRICE才完整FIXED全0。无默认且UNSUPPORTED_RULE按F40-02预填完整FIXED全指标0并保留真实原因；存在但不完整/不兼容默认不能静默回退，返回目录错误。官方reference_state仍独立反映官方事实；有默认且官方复杂也能预填默认。默认和官方引用可同时冻结，首选官方币种按目录而非预算筛选。内部币种预算配置缺省CNY，默认数值模板亦按此解释，不换汇。【历史创建前置，40修订替代】原创建/导入必须显式提交完整pricing和返回的两个参考ID；新设计D02不提交非空pricing，M03不强制价格；独立手工价格保存仍须完整来源与权限校验。首次完整语义原样采用默认为BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED，修改默认为ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED；无默认才沿官方确认或真实缺价0规则。无指标显式pricing=null且UNPRICED。保存重验provider_version、预算币种、固定批次、完整适配指标和来源；只读no-store，不预留、不写命令、不请求供应商。 默认时段名是产品模板文案：M13/M14的default_reference.periods[].name和内部预填按Accept-Language从固定批次period_name_labels投影，缺译用所属模板fallback_locale。官方参考时段名保持官方原文，管理员已保存的period.name保持确认原文，切语言不重命名既有内部价。
 
 | 位置   | 参数                        | 类型                | 必填 | 可空 | 默认/限制                              | 参数说明                                                              |
 | ------ | --------------------------- | ------------------- | ---- | ---- | -------------------------------------- | --------------------------------------------------------------------- |
@@ -1499,6 +1519,34 @@
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`CUSTOM_API_UNSUPPORTED`、`METRIC_UNSUPPORTED`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`；HTTP与恢复语义见§1.2，完整错误体见[Error](#schema-error)。
 
 所有响应`Cache-Control: no-store`；无Idempotency-Key、检查票据或预留。
+
+<a id="api-m14"></a>
+
+### M14 只读企业内置默认计价规则
+
+`GET /api/v1/model-access/model-options/default-pricing`；operationId：`modelAccessV14M14`。
+
+权限：`现有模型模式：model.pricing:READ及该模型价格管理范围；创建前模式：model.models:WRITE及实例模型用途范围，指标非空另需model.pricing:READ`。
+
+业务、并发与事务规则：两种互斥模式：有model_id时只接受此query参数，其他query均不得混传；先验pricing:READ和该模型价格管理范围，从模型当前供应商/上游ID/启用接口/可信型号来源解析，不要求models READ/WRITE或providers权限。无model_id时provider_id和model_id_at_provider必填，接口参数合计至少一项，按M13先验models:WRITE/实例用途范围，指标非空另验pricing:READ，无指标分支无需价格权限。按实例模型用途范围、固定模板批次及可信型号读取产品/研发预置默认规则；参数与M13一致，标准或已适配自定义接口合计至少一项。先解析指标，确空返回NOT_APPLICABLE/空指标/两个价格对象null且不读价格；非空需pricing:READ，命中完整适配默认返回AVAILABLE及default_reference和内部币种预填，未配置/未可信匹配为NOT_CONFIGURED。默认版本损坏/不兼容不得当未配置，返回目录错误。只读取price_kind=ENTERPRISE_DEFAULT，不读取官方价格、不自动回退官方或免费；M13提供手工价格准备；D03/C01内部采用40规定的自动初始化优先级。内部币种来自预算缺省CNY，时区Asia/Shanghai，默认为数值模板；手工改价需管理员明确保存，D03/C01按40受控自动应用，不要求另行确认。无写接口/管理后台；目录更新不改已有实例、自定义价或历史费用。no-store、不预留、不写命令、不请求供应商。 现有模型模式prefill.expected_price_version取读取时当前价格版本，官方参考键从prefill省略以在R02/M05保留既有参考；创建前模式为0且官方参考null，仅主动在M03提交价格时使用M13准备；D02不以M13为前置。两种模式返回model_id（创建前null），保存仍现时重验版本和币种。 默认时段名是产品模板文案：M13/M14的default_reference.periods[].name和内部预填按Accept-Language从固定批次period_name_labels投影，缺译用所属模板fallback_locale。官方参考时段名保持官方原文，管理员已保存的period.name保持确认原文，切语言不重命名既有内部价。
+
+| 位置   | 参数                        | 类型                | 必填         | 可空 | 默认/限制                              | 参数说明                                                                                                                             |
+| ------ | --------------------------- | ------------------- | ------------ | ---- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| query  | `model_id`                  | string              | 条件，见模式 | 否   | format="uuid"                          | 已有模型价格页读取默认用此模式；只校验pricing:READ及该模型价格管理范围，无需models READ/WRITE或providers权限；不存在/不可见统一404。 |
+| query  | `provider_id`               | string              | 条件，见模式 | 否   | format="uuid"                          | 无model_id的创建前模式必填；有model_id时禁止提交。必须可管理；不存在/越界统一404。                                                   |
+| query  | `model_id_at_provider`      | string              | 条件，见模式 | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 无model_id的创建前模式必填；有model_id时禁止提交。纯手工和目录型号均必填；不从名称猜官方绑定。                                       |
+| query  | `supported_invocation_apis` | array&lt;string&gt; | 条件，见模式 | 否   | uniqueItems=true                       | 仅创建前模式可传；有model_id时禁止提交。重复query参数form/explode；与custom_api_paths合计至少一项。                                  |
+| query  | `custom_api_paths`          | array&lt;string&gt; | 条件，见模式 | 否   | uniqueItems=true                       | 仅创建前模式可传；有model_id时禁止提交。重复query参数form/explode；后端识别协议，不接受客户端适配器键或脚本。                        |
+| query  | `catalog_model_version_id`  | string              | 条件，见模式 | 否   | format="uuid"                          | 仅创建前模式可传；有model_id时禁止提交。选择目录时回传，校验实例固定批次/模板和可信型号；不匹配拒绝。                                |
+| header | `Accept-Language`           | string              | 否           | 否   | 按现有语言协商                         | 当前用户偏好；省略按会话语言，按固定版本fallback_locale回退。                                                                        |
+
+请求体：无。创建前模式没有model_id，provider_id/model_id_at_provider必填、标准/自定义接口合计至少一项；现有模型模式仅model_id，禁止混传其他query。
+
+成功：HTTP200，`data`为[DefaultPricingPreparation](#schema-defaultpricingpreparation)。AVAILABLE/NOT_CONFIGURED/NOT_APPLICABLE不混用；不能从403或目录故障推导免费。
+
+错误：`UNAUTHENTICATED`、`FORBIDDEN`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`CUSTOM_API_UNSUPPORTED`、`METRIC_UNSUPPORTED`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`。
+
+所有响应`Cache-Control: no-store`；无Idempotency-Key/票据/预留。创建/导入调用M13已包含默认优先结果，无需先单独调用M14；现有价格页恢复默认才使用model_id模式，再明确保存R02或M05。
 
 ## 4. 全部请求与响应字段组件
 
@@ -1606,19 +1654,19 @@ HealthInput 字段契约；下列字段含义、必填与空值均是正式设�
 
 DynamicField 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段                | 类型/组件                                                    | 必填 | 可空 | 默认/省略                       | 字段说明                                                    | 约束                                                                                        |
-| ------------------- | ------------------------------------------------------------ | ---- | ---- | ------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `key`               | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端注册的稳定字段或模板键                                | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `label`             | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 按Accept-Language翻译                                       | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `value_type`        | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 字段输入值类型；SECRET 值只写不回显                         | enum=["STRING", "INTEGER", "BOOLEAN", "SECRET", "JSON"]                                     |
-| `required`          | boolean                                                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否无条件必填；条件必填另由 required_when 表达             | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `required_when`     | array&lt;[FieldCondition](#schema-fieldcondition)&gt; / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | null 表示没有条件规则；required=true 时无条件必填           | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `default`           | [JsonValue](#schema-jsonvalue)                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模板给出的默认值；null 表示不设默认，不代表自动清空现值     | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `options`           | array&lt;[DisplayOption](#schema-displayoption)&gt;          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 动态下拉/单选的选项；空数组表示自由输入或无选项             | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `description`       | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象说明文字，按当前用户语言返回或按输入原文保存            | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `validation_schema` | [FieldValidationSchema](#schema-fieldvalidationschema)       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 字段完整校验结构；具体配置实例按模板发布，不能由客户端改写  | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `visible_when`      | array&lt;[FieldCondition](#schema-fieldcondition)&gt; / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | null表示始终可见；隐藏字段不得沿用其不再适用的秘密          | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `control`           | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 前端表单控件；STRING仍可按本字段选择单行/多行，SECRET不回显 | enum=["TEXT", "PASSWORD", "TEXTAREA", "SELECT", "RADIO", "NUMBER", "SWITCH", "JSON_EDITOR"] |
+| 字段                | 类型/组件                                                    | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                    | 约束                                                                                        |
+| ------------------- | ------------------------------------------------------------ | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `key`               | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端注册的稳定字段或模板键                                                                | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `label`             | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 按Accept-Language翻译                                                                       | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `value_type`        | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 字段输入值类型；SECRET 值只写不回显                                                         | enum=["STRING", "INTEGER", "BOOLEAN", "SECRET", "JSON"]                                     |
+| `required`          | boolean                                                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否无条件必填；条件必填另由 required_when 表达                                             | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `required_when`     | array&lt;[FieldCondition](#schema-fieldcondition)&gt; / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | null 表示没有条件规则；required=true 时无条件必填                                           | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `default`           | [JsonValue](#schema-jsonvalue)                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模板给出的默认值；null 表示不设默认，不代表自动清空现值                                     | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `options`           | array&lt;[DisplayOption](#schema-displayoption)&gt;          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 动态下拉/单选的选项；空数组表示自由输入或无选项                                             | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `description`       | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 按Accept-Language从当前实例固定模板版本description_labels投影的帮助说明；不是管理员实例值。 | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `validation_schema` | [FieldValidationSchema](#schema-fieldvalidationschema)       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 字段完整校验结构；具体配置实例按模板发布，不能由客户端改写                                  | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `visible_when`      | array&lt;[FieldCondition](#schema-fieldcondition)&gt; / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | null表示始终可见；隐藏字段不得沿用其不再适用的秘密                                          | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| `control`           | string                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 前端表单控件；STRING仍可按本字段选择单行/多行，SECRET不回显                                 | enum=["TEXT", "PASSWORD", "TEXTAREA", "SELECT", "RADIO", "NUMBER", "SWITCH", "JSON_EDITOR"] |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1631,7 +1679,7 @@ Template 字段契约；下列字段含义、必填与空值均是正式设计�
 | 字段                              | 类型/组件                                                 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                 | 约束                                   |
 | --------------------------------- | --------------------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `key`                             | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端注册的稳定字段或模板键                                                                                                             | 无额外格式限制；仍遵守所属组件业务规则 |
-| `name`                            | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                                                                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
+| `name`                            | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前固定模板版本的本地化显示名称；按Accept-Language/会话语言协商及版本fallback_locale回退。                                              | 无额外格式限制；仍遵守所属组件业务规则 |
 | `revision`                        | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 数据库目录发布批次的可读revision；不可变，与template_version_id所指行一致                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
 | `enabled`                         | boolean                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否可用于当前新建/新绑定；由当前数据库发布批次、模板能力和后端适配代码共同判定。旧实例回读可为false，但不据此禁止该实例按原模板普通编辑 | 无额外格式限制；仍遵守所属组件业务规则 |
 | `unavailable_reason`              | string / null                                             | 否   | 是   | 无静态默认；省略语义见组件/接口 | 当前模板不可用于创建实例的功能原因码，可用时为 null；不返回研发排期、批准延期或项目评审信息                                              | 无额外格式限制；仍遵守所属组件业务规则 |
@@ -1649,17 +1697,17 @@ Template 字段契约；下列字段含义、必填与空值均是正式设计�
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
-<a id="schema-window"></a>
+<a id="schema-conditionrow"></a>
 
-### Window
+### ConditionRow
 
-左闭右开；跨午夜拆行；所有条件不得重叠
+一条原始编辑条件行；每行可勾选多个ISO星期，conditions数组位置为原始行序。时间左闭右开且start_minute<end_minute；跨午夜由前端显式拆行。整体规则禁止重叠；服务端不合并、拆分或按时间重排条件行。
 
-| 字段           | 类型/组件 | 必填 | 可空 | 默认/省略                       | 字段说明                                      | 约束                    |
-| -------------- | --------- | ---- | ---- | ------------------------------- | --------------------------------------------- | ----------------------- |
-| `weekday`      | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | ISO 星期，1 周一至 7 周日                     | minimum=1；maximum=7    |
-| `start_minute` | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当天开始分钟，0 表示 00:00，区间含开始点      | minimum=0；maximum=1439 |
-| `end_minute`   | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当天结束分钟，1440 表示 24:00，区间不含结束点 | minimum=1；maximum=1440 |
+| 字段           | 类型/组件            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                               | 约束                                     |
+| -------------- | -------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `weekdays`     | array&lt;integer&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一行勾选的ISO星期集合：1周一至7周日，非空、无null/重复，按周一至周日严格升序；点击先后不是业务顺序。 | minItems=1；maxItems=7；uniqueItems=true |
+| `start_minute` | integer              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当天开始分钟，0 表示 00:00，区间含开始点                                                               | minimum=0；maximum=1439                  |
+| `end_minute`   | integer              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当天结束分钟，1440 表示 24:00，区间不含结束点                                                          | minimum=1；maximum=1440                  |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1669,12 +1717,12 @@ Template 字段契约；下列字段含义、必填与空值均是正式设计�
 
 PricePeriodInput 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段           | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                         | 约束                                   |
-| -------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------ | -------------------------------------- |
-| `name`         | string                                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                 | minLength=1；maxLength=128             |
-| `is_fallback`  | boolean                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否兜底时段；每个价格版本恰好一个               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `conditions`   | array&lt;[Window](#schema-window)&gt;                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 星期与分钟窗口；兜底或固定价为空，非兜底不得重叠 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `metric_rates` | array&lt;[MetricRateInput](#schema-metricrateinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本时段全部已适配计价项，不得任意增删             | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段           | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                          | 约束                                   |
+| -------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `name`         | string                                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                                                                                                                  | minLength=1；maxLength=128             |
+| `is_fallback`  | boolean                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否兜底时段；每个价格版本恰好一个                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `conditions`   | array&lt;[ConditionRow](#schema-conditionrow)&gt;       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 有序原始条件行，每行支持多个weekdays；保存/读取保持行数、行分组和输入顺序，不合并或展开；兜底为空。非兜底至少一行，所有时段展开后的窗口不得重叠。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `metric_rates` | array&lt;[MetricRateInput](#schema-metricrateinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本时段全部已适配计价项，不得任意增删                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1682,16 +1730,17 @@ PricePeriodInput 字段契约；下列字段含义、必填与空值均是正式
 
 ### PricingInput
 
-管理员确认的完整内部计价规则；创建/导入也必须显式提交。FIXED恰一个无条件fallback，TIME_BASED另有具名条件时段；适配指标及单位不可增删。currency是已展示预算币种的并发断言，不是自选币种或换汇请求。
+独立人工配置时提交的完整内部计价规则；40修订D02不接受非空pricing，M03可省略或null，主动配价才适用本组件。FIXED恰一个无条件fallback，TIME_BASED另有具名条件时段；适配指标及单位不可增删。currency是已展示预算币种的并发断言，不是自选币种或换汇请求。 periods及conditions数组保留输入顺序与分组；星期集合严格升序。完整编辑结构参与幂等摘要，同键只改行顺序或分组也为不同请求并返回409。首次默认来源判定可按展开后的计价语义比较，但不得用其规范化结果替换保存结构。
 
-| 字段                       | 类型/组件                                                 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                                                 | 约束                                   |
-| -------------------------- | --------------------------------------------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `expected_price_version`   | integer                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 读取到的当前价格版本；首次无价为 0                                                                                                                                                                                                                                                                       | minimum=0                              |
-| `currency`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 必填当前M13/R03展示的内部预算币种；总部未配置为CNY。服务端保存时重验，不同返回409 BILLING_CURRENCY_CHANGED，禁止把同一数字改解释为新币种。                                                                                                                                                               | pattern="^[A-Z]{3}$"                   |
-| `pricing_mode`             | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                                                                                                                                                                                                         | enum=["FIXED", "TIME_BASED"]           |
-| `periods`                  | array&lt;[PricePeriodInput](#schema-priceperiodinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整计价时段；固定价恰一个兜底，分时价按规则设置                                                                                                                                                                                                                                                         | minItems=1                             |
-| `reason`                   | string                                                    | 否   | 否   | 无静态默认；省略语义见组件/接口 | 本次改价原因，可省略，用于操作审计；不套用模型暂停或审核拒绝的前端必填规则                                                                                                                                                                                                                               | maxLength=512                          |
-| `catalog_price_version_id` | string / null                                             | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可选官方参考条目UUID，不是可写source或内部计价币种。首次M03/D02如M13返回官方参考必须回传该ID，服务端重验同固定批次/可信型号并冻结原币参考；无参考传null。R02/M05省略继承旧参考、显式null清除；保留同一旧参考允许历史批次，改选另一条须匹配当前实例固定批次。内部费率由本请求明确保存，不自动复制或换汇。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                               | 类型/组件                                                 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 约束                                   |
+| ---------------------------------- | --------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `expected_price_version`           | integer                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 读取到的当前价格版本；首次无价为 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | minimum=0                              |
+| `currency`                         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 必填当前M13/R03展示的内部预算币种；总部未配置为CNY。服务端保存时重验，不同返回409 BILLING_CURRENCY_CHANGED，禁止把同一数字改解释为新币种。                                                                                                                                                                                                                                                                                                                                                                                                      | pattern="^[A-Z]{3}$"                   |
+| `pricing_mode`                     | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | enum=["FIXED", "TIME_BASED"]           |
+| `periods`                          | array&lt;[PricePeriodInput](#schema-priceperiodinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整计价时段；固定价恰一个兜底，分时价按规则设置。时段及其中conditions均按输入顺序保存/返回，保留每行weekdays集合；不合并或拆行。                                                                                                                                                                                                                                                                                                                                                                                                               | minItems=1                             |
+| `reason`                           | string                                                    | 否   | 否   | 无静态默认；省略语义见组件/接口 | 本次改价原因，可省略，用于操作审计；不套用模型暂停或审核拒绝的前端必填规则                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | maxLength=512                          |
+| `catalog_price_version_id`         | string / null                                             | 否   | 是   | 无静态默认；省略语义见组件/接口 | 独立官方参考UUID；首次M13返回官方参考仍须带准确ID，可与企业默认参考同时保存。后续R02/M05省略继承、null清除、新选须同固定批次/可信型号；保留同一旧参考允许历史批次。此字段不决定默认优先级，也不改变内部币种。                                                                                                                                                                                                                                                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_default_price_version_id` | string / null                                             | 否   | 是   | 无静态默认；省略语义见组件/接口 | 默认规则参考，不是可写source。首次M13返回default_reference时必须回传该准确ID；无默认传null。后续R02/M05省略继承、显式null清除，新选须同实例固定批次且可信型号/计量规格一致；保留当前价同一旧参考允许历史批次。提交完整规则后服务端判定是否仍完全等于默认，不能靠ID伪造BUILT_IN。 首次是否原样采用默认：先按is_fallback及规范化conditions定位对应时段，再比较完整指标/Decimal费率/模式；name可为该同一时段已发布的任一语言标签，同语言下时段标签发布时必须唯一，不能以当前请求语言变化误判自定义。非已发布别名或改规则/费率记ENTERPRISE_CUSTOM。 | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1699,30 +1748,170 @@ PricePeriodInput 字段契约；下列字段含义、必填与空值均是正式
 
 ### PricingVersion
 
-不可变内部企业价格版本。source=BUILT_IN仅首次缺价时确认完整默认免费0，ENTERPRISE_CUSTOM为其他管理员显式保存；官方参考另由pricing_basis冻结，不自动复制生效或换汇。目录更新不覆写企业价或历史费用。
+不可变内部价格版本。BUILT_IN为首次原样确认的适用产品默认（可非零/分时），或无默认且真实缺价的首次固定0；其他及后续保存均ENTERPRISE_CUSTOM。完整依据分别冻结默认/官方参考，目录发布不覆盖企业价格或历史费用。
 
-| 字段                       | 类型/组件                                                     | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                      | 约束                                   |
-| -------------------------- | ------------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `id`                       | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                      | format="uuid"                          |
-| `physical_model_id`        | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                      | format="uuid"                          |
-| `version`                  | integer                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                                                        | minimum=1                              |
-| `source`                   | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端来源：BUILT_IN仅首次确认的企业默认免费0；ENTERPRISE_CUSTOM为其他明确企业价。不是官方价格币种/实施优先级，客户端不可写。 | enum=["BUILT_IN", "ENTERPRISE_CUSTOM"] |
-| `currency`                 | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 创建该价格版本时固化的总部内部币种，未配置为CNY；不随后续总部配置变化重写                                                     | 无额外格式限制；仍遵守所属组件业务规则 |
-| `time_zone`                | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | IANA 计费时区，与当前用户的显示时区区分                                                                                       | 无额外格式限制；仍遵守所属组件业务规则 |
-| `pricing_mode`             | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                              | enum=["FIXED", "TIME_BASED"]           |
-| `periods`                  | array&lt;[PricePeriodDisplay](#schema-priceperioddisplay)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该历史版本完整价格规则，不从当前模型目录补显示                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `adapter_revision`         | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端适配器规格版本，保证历史可追溯                                                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_revision`         | string / null                                                 | 否   | 是   | 无静态默认；省略语义见组件/接口 | catalog_binding对应发布批次revision；无目录参考可空，不取当前发布版本填历史                                                   | 无额外格式限制；仍遵守所属组件业务规则 |
-| `rounding`                 | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该版本固化的金额舍入规则，R02已确认HALF_EVEN；历史不随之后规则改变。                                                          | enum=["HALF_EVEN"]                     |
-| `amount_scale`             | integer                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该版本固化的Decimal金额小数位数，R02已确认18位。                                                                              | const=18                               |
-| `created_at`               | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                                                               | format="date-time"                     |
-| `created_by`               | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                      | format="uuid"                          |
-| `created_by_display`       | [IdentitySnapshot](#schema-identitysnapshot)                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从display_snapshot.created_by读的当时创建人；原用户删改不影响历史                                                             | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_price_version_id` | string / null                                                 | 是   | 是   | 无静态默认；省略语义见组件/接口 | 官方价格参考UUID；默认免费0为null，其他企业价可有参考。参考币种与内部currency允许不同，不表示换汇或等值。                     | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_binding`          | [CatalogBinding](#schema-catalogbinding) / null               | 是   | 是   | 无静态默认；省略语义见组件/接口 | 存在catalog_price_version_id时非空并与之对应；无目录来源null。允许与当前供应商模板/模型原来源属于不同历史批次，不据此改价     | 无额外格式限制；仍遵守所属组件业务规则 |
-| `pricing_basis`            | [PricingBasis](#schema-pricingbasis)                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部价生成依据及完整原币参考快照；创建后不可变。                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                               | 类型/组件                                                     | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                          | 约束                                   |
+| ---------------------------------- | ------------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `id`                               | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                          | format="uuid"                          |
+| `physical_model_id`                | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                          | format="uuid"                          |
+| `version`                          | integer                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                                                                                            | minimum=1                              |
+| `source`                           | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端判定：40自动ENTERPRISE_DEFAULT_APPLIED/OFFICIAL_REFERENCE_APPLIED/ZERO_FALLBACK_APPLIED均BUILT_IN；旧CONFIRMED来源保留，管理员显式改价为ENTERPRISE_CUSTOM。 | enum=["BUILT_IN", "ENTERPRISE_CUSTOM"] |
+| `currency`                         | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 创建该价格版本时固化的总部内部币种，未配置为CNY；不随后续总部配置变化重写                                                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
+| `time_zone`                        | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | IANA 计费时区，与当前用户的显示时区区分                                                                                                                           | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing_mode`                     | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                                                                  | enum=["FIXED", "TIME_BASED"]           |
+| `periods`                          | array&lt;[PricePeriodDisplay](#schema-priceperioddisplay)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该历史版本完整价格规则，不从当前模型目录补显示。时段及其中conditions均按输入顺序保存/返回，保留每行weekdays集合；不合并或拆行。                                   | 无额外格式限制；仍遵守所属组件业务规则 |
+| `adapter_revision`                 | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端适配器规格版本，保证历史可追溯                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_revision`                 | string / null                                                 | 否   | 是   | 无静态默认；省略语义见组件/接口 | 仅官方catalog_binding对应的批次revision；无官方参考为空。默认规则版本独立在pricing_basis.default_reference中保存。                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `rounding`                         | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该版本固化的金额舍入规则，R02已确认HALF_EVEN；历史不随之后规则改变。                                                                                              | enum=["HALF_EVEN"]                     |
+| `amount_scale`                     | integer                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该版本固化的Decimal金额小数位数，R02已确认18位。                                                                                                                  | const=18                               |
+| `created_at`                       | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                                                                                                   | format="date-time"                     |
+| `created_by`                       | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                          | format="uuid"                          |
+| `created_by_display`               | [IdentitySnapshot](#schema-identitysnapshot)                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从display_snapshot.created_by读的当时创建人；原用户删改不影响历史                                                                                                 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_price_version_id`         | string / null                                                 | 是   | 是   | 无静态默认；省略语义见组件/接口 | 官方价格参考UUID；默认免费0为null，其他企业价可有参考。参考币种与内部currency允许不同，不表示换汇或等值。                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_binding`                  | [CatalogBinding](#schema-catalogbinding) / null               | 是   | 是   | 无静态默认；省略语义见组件/接口 | 仅官方参考的完整五键目录绑定；存在catalog_price_version_id时非空，无官方参考null。企业默认版本另由default_reference完整保存，两个引用允许追溯各自历史批次。       | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing_basis`                    | [PricingBasis](#schema-pricingbasis)                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部价形成依据及完整企业默认/官方原币参考双快照；创建后不可变。                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_default_price_version_id` | string / null                                                 | 是   | 是   | 无静态默认；省略语义见组件/接口 | 与pricing_basis.default_reference共同空或共同非空且ID一致；来源存在不代表内部费率仍等于默认。默认发布更新不重写此引用。                                           | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "const": "BUILT_IN"
+          }
+        },
+        "required": ["source"]
+      },
+      "then": {
+        "properties": {
+          "pricing_basis": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "ENTERPRISE_DEFAULT_CONFIRMED",
+                  "ENTERPRISE_DEFAULT_ZERO",
+                  "ENTERPRISE_DEFAULT_APPLIED",
+                  "OFFICIAL_REFERENCE_APPLIED",
+                  "ZERO_FALLBACK_APPLIED"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "pricing_basis": {
+            "properties": {
+              "kind": {
+                "enum": ["OFFICIAL_PREFILL_CONFIRMED", "ENTERPRISE_CONFIGURED"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "pricing_basis": {
+            "properties": {
+              "kind": {
+                "enum": ["ENTERPRISE_DEFAULT_ZERO", "ZERO_FALLBACK_APPLIED"]
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["pricing_basis"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "const": "BUILT_IN"
+          },
+          "pricing_mode": {
+            "const": "FIXED"
+          },
+          "catalog_price_version_id": {
+            "type": "null"
+          },
+          "catalog_default_price_version_id": {
+            "type": "null"
+          },
+          "catalog_binding": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "pricing_basis": {
+            "properties": {
+              "kind": {
+                "enum": ["ENTERPRISE_DEFAULT_CONFIRMED", "ENTERPRISE_DEFAULT_APPLIED"]
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["pricing_basis"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "const": "BUILT_IN"
+          },
+          "catalog_default_price_version_id": {
+            "type": "string",
+            "description": "已采用默认规则UUID。",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "pricing_basis": {
+            "properties": {
+              "kind": {
+                "const": "OFFICIAL_REFERENCE_APPLIED"
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["pricing_basis"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "const": "BUILT_IN"
+          },
+          "catalog_price_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "catalog_default_price_version_id": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+40修订：新增`ENTERPRISE_DEFAULT_APPLIED`、`OFFICIAL_REFERENCE_APPLIED`、`ZERO_FALLBACK_APPLIED`，均为`source=BUILT_IN`，schema_version仍为3及原五键；不冒充人工CONFIRMED。官方原数自动应用、复杂规则全0、失配价保护及无计量项未定价例外已按F40-01～04确认。完整条件约束以同步设计JSON为准。
 
 <a id="schema-metricspec"></a>
 
@@ -1730,17 +1919,17 @@ PricePeriodInput 字段契约；下列字段含义、必填与空值均是正式
 
 MetricSpec 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段              | 类型/组件           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                 | 约束                                   |
-| ----------------- | ------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `metric_key`      | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 适配器定义的计量指标键                                                                                   | 无额外格式限制；仍遵守所属组件业务规则 |
-| `unit`            | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该指标计价单位，如 MILLION_TOKENS，取适配器规格                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
-| `unit_divisor`    | integer             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 单价对应的数量分母；百万 Token 为 1000000                                                                | minimum=1                              |
-| `description`     | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象说明文字，按当前用户语言返回或按输入原文保存                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
-| `usage_mapping`   | array&lt;string&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方用量来源的字段路径列表                                                                               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `exclusive_group` | string / null       | 否   | 是   | 无静态默认；省略语义见组件/接口 | 互斥计量组键，防止缓存/模态重复计费；无则 null                                                           | 无额外格式限制；仍遵守所属组件业务规则 |
-| `included_in`     | string / null       | 否   | 是   | 无静态默认；省略语义见组件/接口 | 该指标包含在哪个总量指标中；无则 null                                                                    | 无额外格式限制；仍遵守所属组件业务规则 |
-| `display_name`    | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前规格查询按Accept-Language取发布目录名称；嵌入历史PriceSnapshot时使用当时冻结的名称，不查当前目录重建 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `unit_label`      | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前规格查询取发布目录的本地化计价单位；嵌入历史PriceSnapshot时使用当时冻结标签，不由前端猜unit          | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段              | 类型/组件           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                              | 约束                                   |
+| ----------------- | ------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `metric_key`      | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 适配器定义的计量指标键                                                                                                                                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `unit`            | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该指标计价单位，如 MILLION_TOKENS，取适配器规格                                                                                                                                                                                                                                       | 无额外格式限制；仍遵守所属组件业务规则 |
+| `unit_divisor`    | integer             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 单价对应的数量分母；百万 Token 为 1000000                                                                                                                                                                                                                                             | minimum=1                              |
+| `description`     | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前模板/规格查询按Accept-Language从适用版本description_labels投影；嵌入历史PriceSnapshot.metric_specs时仅冻结当时字符串，不保存description_labels，历史说明保持当时原文且不查新目录补译。历史指标名称/单位仍按display_snapshot冻结语言集投影，产品默认时段名按默认快照私有标签投影。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `usage_mapping`   | array&lt;string&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方用量来源的字段路径列表                                                                                                                                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `exclusive_group` | string / null       | 否   | 是   | 无静态默认；省略语义见组件/接口 | 互斥计量组键，防止缓存/模态重复计费；无则 null                                                                                                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `included_in`     | string / null       | 否   | 是   | 无静态默认；省略语义见组件/接口 | 该指标包含在哪个总量指标中；无则 null                                                                                                                                                                                                                                                 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `display_name`    | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前规格查询按Accept-Language取发布目录名称；嵌入历史PriceSnapshot时使用当时冻结的名称，不查当前目录重建                                                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `unit_label`      | string              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前规格查询取发布目录的本地化计价单位；嵌入历史PriceSnapshot时使用当时冻结标签，不由前端猜unit                                                                                                                                                                                       | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1750,17 +1939,17 @@ MetricSpec 字段契约；下列字段含义、必填与空值均是正式设计
 
 CurrentPricing 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段                | 类型/组件                                       | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                     | 约束                                             |
-| ------------------- | ----------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `state`             | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前取价状态：PRICED 有适用价格，UNPRICED 未定价，CURRENCY_MISMATCH 价格币种与当前内部币种不一致；不是模型生命周期状态       | enum=["PRICED", "UNPRICED", "CURRENCY_MISMATCH"] |
-| `price`             | [PricingVersion](#schema-pricingversion) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 价格对象或价格版本，按所属组件定义解释                                                                                       | 无额外格式限制；仍遵守所属组件业务规则           |
-| `price_version`     | integer                                         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前价格版本号，0表示尚未创建价格版本；只在价变更时递增，可计费性由取价状态判断                                              | minimum=0                                        |
-| `metric_specs`      | array&lt;[MetricSpec](#schema-metricspec)&gt;   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该模型适配器允许的固定计量指标规格                                                                                           | 无额外格式限制；仍遵守所属组件业务规则           |
-| `billing_currency`  | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次/当前总部内部计费币种                                                                                                    | 无额外格式限制；仍遵守所属组件业务规则           |
-| `billing_time_zone` | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版实际计费时区Asia/Shanghai；用户显示时区不影响计价，不新增系统时区设置。                                                  | 无额外格式限制；仍遵守所属组件业务规则           |
-| `currency_source`   | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部币种来源：总部配置或默认 CNY                                                                                             | enum=["HEADQUARTERS", "DEFAULT_CNY"]             |
-| `time_zone_source`  | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版计费时区固定缺省Asia/Shanghai，来源DEFAULT_ASIA_SHANGHAI；不新增系统时区配置。历史快照按事实保存，不随用户显示时区变动。 | enum=["DEFAULT_ASIA_SHANGHAI"]                   |
-| `unpriced_reason`   | string / null                                   | 否   | 是   | 无静态默认；省略语义见组件/接口 | 缺少适用价格的稳定原因码；已定价为空                                                                                         | 无额外格式限制；仍遵守所属组件业务规则           |
+| 字段                | 类型/组件                                       | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                    | 约束                                             |
+| ------------------- | ----------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `state`             | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前取价状态：PRICED 有适用价格，UNPRICED 未定价，CURRENCY_MISMATCH 价格币种与当前内部币种不一致；不是模型生命周期状态                                                                                      | enum=["PRICED", "UNPRICED", "CURRENCY_MISMATCH"] |
+| `price`             | [PricingVersion](#schema-pricingversion) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 价格对象或价格版本，按所属组件定义解释                                                                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则           |
+| `price_version`     | integer                                         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前价格版本号，0表示尚未创建价格版本；只在价变更时递增，可计费性由取价状态判断                                                                                                                             | minimum=0                                        |
+| `metric_specs`      | array&lt;[MetricSpec](#schema-metricspec)&gt;   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该模型适配器允许的固定计量指标规格                                                                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则           |
+| `billing_currency`  | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次/当前总部内部计费币种                                                                                                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则           |
+| `billing_time_zone` | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版实际计费时区Asia/Shanghai；用户显示时区不影响计价，不新增系统时区设置。                                                                                                                                 | 无额外格式限制；仍遵守所属组件业务规则           |
+| `currency_source`   | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部币种来源：总部配置或默认 CNY                                                                                                                                                                            | enum=["HEADQUARTERS", "DEFAULT_CNY"]             |
+| `time_zone_source`  | string                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版计费时区固定缺省Asia/Shanghai，来源DEFAULT_ASIA_SHANGHAI；不新增系统时区配置。历史快照按事实保存，不随用户显示时区变动。                                                                                | enum=["DEFAULT_ASIA_SHANGHAI"]                   |
+| `unpriced_reason`   | string / null                                   | 否   | 是   | 无静态默认；省略语义见组件/接口 | 缺少适用价格的稳定原因；INTERFACES_NOT_CONFIGURED=接口未配置，不能检测；METRIC_SPEC_UNAVAILABLE=至少一个接口已适配但完全无metric，按F40-04允许检测/其他条件满足后上架，显示未匹配的计价模式。已定价为null。 | 无额外格式限制；仍遵守所属组件业务规则           |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1884,7 +2073,7 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 
 ### ModelBase
 
-仅DRAFT可修改；数值为Token整数，未知null；无type字段
+创建模型的完整基础输入；包含身份/协议及元信息。M05不再整体使用本组件，分别使用ModelIdentityInput和ModelMetadataInput。Token整数，未知null；无type字段。
 
 | 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
 | --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
@@ -1898,12 +2087,44 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 | `context_window`            | integer / null                                        | 否   | 是   | 无静态默认；省略语义见组件/接口 | 模型上下文 Token 整数，未知 null，界面 1K=1000                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
 | `max_output_tokens`         | integer / null                                        | 否   | 是   | 无静态默认；省略语义见组件/接口 | 最大输出 Token 整数，未知 null                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
 | `tags`                      | array&lt;string&gt;                                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 能力标签及自定义标签；流式由规范化注册键识别                                                                                                                                  | uniqueItems=true                       |
-| `description`               | string / null                                         | 否   | 是   | 无静态默认；省略语义见组件/接口 | 对象说明文字，按当前用户语言返回或按输入原文保存                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `description`               | string / null                                         | 否   | 是   | 无静态默认；省略语义见组件/接口 | 管理员填写的模型说明原文；未知或未填为null，不按Accept-Language自动翻译。                                                                                                     | 无额外格式限制；仍遵守所属组件业务规则 |
 | `catalog_model_version_id`  | string / null                                         | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可选当前基础来源；显式null清除，省略且供应商/上游ID未变则保留；目标改变时后端重新核实或清除不成立来源。新选择须匹配供应商固定批次，不以型号字符串猜Azure部署身份              | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
-组合约束：标准接口或已适配自定义接口至少一项；不能两者皆空。
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+```json
+{
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "supported_invocation_apis": {
+              "type": "array",
+              "minItems": 1,
+              "description": "标准调用接口至少一项"
+            }
+          },
+          "required": ["supported_invocation_apis"]
+        },
+        {
+          "properties": {
+            "custom_invocation_apis": {
+              "type": "array",
+              "minItems": 1,
+              "description": "已适配自定义接口至少一项"
+            }
+          },
+          "required": ["custom_invocation_apis"]
+        }
+      ],
+      "description": "标准接口或已适配自定义接口合计至少一项；协议适配合法性仍由服务端验证。"
+    }
+  ]
+}
+```
 
 <a id="schema-grantdelta"></a>
 
@@ -1924,30 +2145,62 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 
 ### ModelCreate
 
-全部域一个创建事务，不触发检测。先M13取得适配计量、官方原币参考/缺价0预填及当前内部币种；管理员确认后有计量规格时显式提交完整pricing；确无计量规格则pricing=null。expected_provider_version保护准备至保存的供应商上下文；目录发布不能改既有模型/企业价。
+全部域一个创建事务，不触发检测。M03不强制先M13或提交pricing；主动配置时按适用默认、官方数字及已批准归零规则准备完整建议并检查价格写权限。expected_provider_version固定准备上下文；默认和官方来源分别准确引用，保存后不可因目录更新覆盖。
 
-| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                                                          | 字段说明                                                                                                                                                                      | 约束                                   |
-| --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `provider_id`               | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                    | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
-| `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                    | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
-| `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                    | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
-| `supported_invocation_apis` | array&lt;string&gt;                                   | 是   | 否   | 无静态默认；省略语义见组件/接口                                    | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。                                                                    | uniqueItems=true                       |
-| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 否   | 否   | []                                                                 | 另行启用的自定义相对路径列表，由服务端识别已适配协议；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
-| `input_modalities`          | array&lt;string&gt;                                   | 否   | 否   | []                                                                 | 输入模态集合；未知为空数组，不添加笼统 type                                                                                                                                   | uniqueItems=true                       |
-| `output_modalities`         | array&lt;string&gt;                                   | 否   | 否   | []                                                                 | 输出模态集合；未知为空数组                                                                                                                                                    | uniqueItems=true                       |
-| `context_window`            | integer / null                                        | 否   | 是   | null                                                               | 模型上下文 Token 整数，未知 null，界面 1K=1000                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `max_output_tokens`         | integer / null                                        | 否   | 是   | null                                                               | 最大输出 Token 整数，未知 null                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `tags`                      | array&lt;string&gt;                                   | 否   | 否   | []                                                                 | 能力标签及自定义标签；流式由规范化注册键识别                                                                                                                                  | uniqueItems=true                       |
-| `description`               | string / null                                         | 否   | 是   | null                                                               | 对象说明文字，按当前用户语言返回或按输入原文保存                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
-| `initial_grants`            | array&lt;[Subject](#schema-subject)&gt;               | 否   | 否   | []                                                                 | 创建时的初始直接授权；省略为空                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `health`                    | [HealthInput](#schema-healthinput)                    | 否   | 否   | {"auto_health_check": false, "health_check_interval_minutes": 360} | 自动健康配置或健康配置版本，按组件具体类型解释                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `pricing`                   | [PricingInput](#schema-pricinginput) / null           | 是   | 是   | 无静态默认；省略语义见组件/接口                                    | 必填确认结果：有可配置metric必须提交完整内部价格（包括默认0，expected_price_version=0）；仅服务端确认metric_specs确为空时允许null，保存UNPRICED且不建价格版本，不伪造计量项。 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_model_version_id`  | string                                                | 否   | 否   | 无静态默认；省略语义见组件/接口                                    | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                          |
-| `expected_provider_version` | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口                                    | M13返回的provider_version；创建时与实例当前版本比较，变化返回409 VERSION_CONFLICT，先刷新准备数据再由管理员确认。                                                             | minimum=1                              |
+| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                                                                  | 字段说明                                                                                                                                                                      | 约束                                   |
+| --------------------------- | ----------------------------------------------------- | ---- | ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `provider_id`               | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
+| `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
+| `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
+| `supported_invocation_apis` | array&lt;string&gt;                                   | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。                                                                    | uniqueItems=true                       |
+| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 否   | 否   | default=[]                                                                 | 另行启用的自定义相对路径列表，由服务端识别已适配协议；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
+| `input_modalities`          | array&lt;string&gt;                                   | 否   | 否   | default=[]                                                                 | 输入模态集合；未知为空数组，不添加笼统 type                                                                                                                                   | uniqueItems=true                       |
+| `output_modalities`         | array&lt;string&gt;                                   | 否   | 否   | default=[]                                                                 | 输出模态集合；未知为空数组                                                                                                                                                    | uniqueItems=true                       |
+| `context_window`            | integer / null                                        | 否   | 是   | default=null                                                               | 模型上下文 Token 整数，未知 null，界面 1K=1000                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `max_output_tokens`         | integer / null                                        | 否   | 是   | default=null                                                               | 最大输出 Token 整数，未知 null                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `tags`                      | array&lt;string&gt;                                   | 否   | 否   | default=[]                                                                 | 能力标签及自定义标签；流式由规范化注册键识别                                                                                                                                  | uniqueItems=true                       |
+| `description`               | string / null                                         | 否   | 是   | default=null                                                               | 对象说明文字，按当前用户语言返回或按输入原文保存                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `initial_grants`            | array&lt;[Subject](#schema-subject)&gt;               | 否   | 否   | default=[]                                                                 | 创建时的初始直接授权；省略为空                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `health`                    | [HealthInput](#schema-healthinput)                    | 否   | 否   | default={"auto_health_check": false, "health_check_interval_minutes": 360} | 自动健康配置或健康配置版本，按组件具体类型解释                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing`                   | [PricingInput](#schema-pricinginput) / null           | 否   | 是   | 无静态默认；省略语义见组件/接口                                            | 40修订：省略/null不配置；非空对象仍须完整内部价格、原价格写权限及首次版本0；不因可选价格放宽接口要求。                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_model_version_id`  | string                                                | 否   | 否   | 无静态默认；省略语义见组件/接口                                            | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                          |
+| `expected_provider_version` | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | M13返回的provider_version；创建时与实例当前版本比较，变化返回409 VERSION_CONFLICT，先刷新准备数据再由管理员确认。                                                             | minimum=1                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
-组合约束：标准接口或已适配自定义接口至少一项；不能两者皆空。
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+```json
+{
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "supported_invocation_apis": {
+              "type": "array",
+              "minItems": 1,
+              "description": "标准调用接口至少一项"
+            }
+          },
+          "required": ["supported_invocation_apis"]
+        },
+        {
+          "properties": {
+            "custom_invocation_apis": {
+              "type": "array",
+              "minItems": 1,
+              "description": "已适配自定义接口至少一项"
+            }
+          },
+          "required": ["custom_invocation_apis"]
+        }
+      ],
+      "description": "标准接口或已适配自定义接口合计至少一项；协议适配合法性仍由服务端验证。"
+    }
+  ]
+}
+```
 
 <a id="schema-modelversions"></a>
 
@@ -1955,13 +2208,14 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 
 ModelVersions 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段     | 类型/组件 | 必填 | 可空 | 默认/省略                       | 字段说明                                                       | 约束      |
-| -------- | --------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------- | --------- |
-| `base`   | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模型基础配置版本；只有基础信息保存递增                         | minimum=1 |
-| `state`  | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 生命周期版本；每次状态转换递增                                 | minimum=1 |
-| `grants` | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模型授权集合版本；真实关系变化递增                             | minimum=1 |
-| `health` | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 自动健康配置版本；开关/周期变更递增                            | minimum=1 |
-| `price`  | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前价格版本号；0表示尚未创建价格版本，非0不代表当前一定可计费 | minimum=0 |
+| 字段       | 类型/组件 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                     | 约束      |
+| ---------- | --------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------- | --------- |
+| `base`     | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 仅身份/协议五类字段及其目标来源绑定的版本；生命周期、元信息变化不递增。      | minimum=1 |
+| `state`    | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 生命周期版本；每次状态转换递增                                               | minimum=1 |
+| `grants`   | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模型授权集合版本；真实关系变化递增                                           | minimum=1 |
+| `health`   | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 自动健康配置版本；开关/周期变更递增                                          | minimum=1 |
+| `price`    | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前价格版本号；0表示尚未创建价格版本，非0不代表当前一定可计费               | minimum=0 |
+| `metadata` | integer   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 六项可编辑元信息的独立版本；实际变化递增，不改变base/state/admission_epoch。 | minimum=1 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -1976,7 +2230,7 @@ ModelVersions 字段契约；下列字段含义、必填与空值均是正式设
 | `provider_id`                | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                                      | format="uuid"                                                                 |
 | `model_id_at_gateway`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128                                                    |
 | `model_id_at_provider`       | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512                                                    |
-| `supported_invocation_apis`  | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。                                                                    | uniqueItems=true                                                              |
+| `supported_invocation_apis`  | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存的标准接口；DRAFT草稿可与自定义同时为空，响应不强制非空，检测时另校验。                                                                                               | uniqueItems=true                                                              |
 | `custom_invocation_apis`     | array&lt;[CustomAPIView](#schema-customapiview)&gt;  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 另行启用的自定义相对路径列表，由服务端识别已适配协议；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                          | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `input_modalities`           | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 输入模态集合；未知为空数组，不添加笼统 type                                                                                                                                   | uniqueItems=true                                                              |
 | `output_modalities`          | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 输出模态集合；未知为空数组                                                                                                                                                    | uniqueItems=true                                                              |
@@ -2012,18 +2266,72 @@ ModelVersions 字段契约；下列字段含义、必填与空值均是正式设
 
 ### ModelUpdate
 
-至少一个修改域；base需expected_base_version，health需其version；grants/pricing自带版本；所有提交域一起提交或回滚
+至少提交base/metadata/grants/pricing/health一个修改域，版本参数本身不构成修改。base仅DRAFT并携expected_base_version；metadata所有状态允许并携expected_metadata_version；health携其版本，授权/价格内含版本。所有域按各自权限/版本验证并整体事务。
 
-| 字段                             | 类型/组件                            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                       | 约束                                   |
-| -------------------------------- | ------------------------------------ | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `expected_base_version`          | integer                              | 否   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                         | minimum=1                              |
-| `base`                           | [ModelBase](#schema-modelbase)       | 否   | 否   | 无静态默认；省略语义见组件/接口 | 基础配置域；只有 DRAFT 可以修改                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `grants`                         | [GrantDelta](#schema-grantdelta)     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 授权差异域；与其他提交域整体事务                                                               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `pricing`                        | [PricingInput](#schema-pricinginput) | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选价格修改域；提交则显式保存新企业价格版本并与其他域同事务，currency必填且重验当前总部币种。 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `health`                         | [HealthInput](#schema-healthinput)   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 自动健康配置或健康配置版本，按组件具体类型解释                                                 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `expected_health_config_version` | integer                              | 否   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                         | minimum=1                              |
+| 字段                             | 类型/组件                                        | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                             | 约束                                   |
+| -------------------------------- | ------------------------------------------------ | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `expected_base_version`          | integer                                          | 否   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                               | minimum=1                              |
+| `base`                           | [ModelIdentityInput](#schema-modelidentityinput) | 否   | 否   | 无静态默认；省略语义见组件/接口 | 身份/协议域，仅DRAFT可写，需expected_base_version。                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
+| `grants`                         | [GrantDelta](#schema-grantdelta)                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 授权差异域；与其他提交域整体事务                                                                     | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing`                        | [PricingInput](#schema-pricinginput)             | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选价格修改域；提交则显式保存新企业价格版本并与其他域同事务，currency必填且重验当前总部币种。       | 无额外格式限制；仍遵守所属组件业务规则 |
+| `health`                         | [HealthInput](#schema-healthinput)               | 否   | 否   | 无静态默认；省略语义见组件/接口 | 自动健康配置或健康配置版本，按组件具体类型解释                                                       | 无额外格式限制；仍遵守所属组件业务规则 |
+| `expected_health_config_version` | integer                                          | 否   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                               | minimum=1                              |
+| `metadata`                       | [ModelMetadataInput](#schema-modelmetadatainput) | 否   | 否   | 无静态默认；省略语义见组件/接口 | 六个元信息字段完整集合，任何生命周期均可写，需expected_metadata_version。                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `expected_metadata_version`      | integer                                          | 否   | 否   | 无静态默认；省略语义见组件/接口 | 读取到的versions.metadata；仅提交metadata时必填，失败409 VERSION_CONFLICT且version_domain=METADATA。 | minimum=1                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+```json
+{
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "required": ["base"]
+        },
+        {
+          "required": ["metadata"]
+        },
+        {
+          "required": ["grants"]
+        },
+        {
+          "required": ["pricing"]
+        },
+        {
+          "required": ["health"]
+        }
+      ]
+    },
+    {
+      "if": {
+        "required": ["base"]
+      },
+      "then": {
+        "required": ["expected_base_version"]
+      }
+    },
+    {
+      "if": {
+        "required": ["metadata"]
+      },
+      "then": {
+        "required": ["expected_metadata_version"]
+      }
+    },
+    {
+      "if": {
+        "required": ["health"]
+      },
+      "then": {
+        "required": ["expected_health_config_version"]
+      }
+    }
+  ]
+}
+```
 
 <a id="schema-statuscommand"></a>
 
@@ -2132,16 +2440,16 @@ Discovery 字段契约；下列字段含义、必填与空值均是正式设计�
 
 ### ImportItem
 
-发现元信息/目录由可信快照读取；显式catalog_model_version_id须一致。手工无目录由首次命令固定实例批次匹配或null。省略接口时先解析可信候选/目录，最终标准或已适配自定义至少一项；有指标时pricing必须完整且对应实际启用接口指标；服务端确无指标时显式null。
+40修订：发现元信息/目录由可信快照读取。省略标准接口先解析可信目录建议；显式[]保留空，自定义省略为空。两数组可同时为空，只有D03/C01检测时要求合计至少一项。pricing不再是导入前置。
 
 | 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
 | --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
 | `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `supported_invocation_apis` | array&lt;string&gt;                                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。                                                                    | 无额外格式限制；仍遵守所属组件业务规则 |
+| `supported_invocation_apis` | array&lt;string&gt;                                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 启用的标准接口；省略尝试可信预置，显式[]不预置；与自定义可同时为空，不新增RERANK枚举。                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
 | `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 另行启用的自定义相对路径列表，由服务端识别已适配协议                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
 | `catalog_model_version_id`  | string                                                | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                          |
-| `pricing`                   | [PricingInput](#schema-pricinginput) / null           | 是   | 是   | 无静态默认；省略语义见组件/接口 | 必填确认结果：有可配置metric必须提交完整内部价格（包括默认0，expected_price_version=0）；仅服务端确认metric_specs确为空时允许null，保存UNPRICED且不建价格版本，不伪造计量项。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing`                   | null                                                  | 否   | 是   | 省略与null均不配置价格          | 40修订：不接纳非空PricingInput；兼容键仅表示此次不配置，拒绝非空对象，不静默丢弃；D03/C01再准备初价。                                                                         | 设计态；尚未修改已发布契约             |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -2309,7 +2617,7 @@ CostRecord 字段契约；下列字段含义、必填与空值均是正式设计
 | `purpose`                   | string                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | ADMISSION 准入或 HEALTH 健康；HTTP 摘要组件另用其自身枚举                                                       | enum=["ADMISSION", "HEALTH"]                                    |
 | `api_key`                   | string                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 标准接口枚举或服务端生成的 CUSTOM_UUID 标识；不是供应商访问密钥                                                 | 无额外格式限制；仍遵守所属组件业务规则                          |
 | `check_type`                | string                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 仅 MODEL_REQUEST/PROTOCOL/STREAMING，不开放 Tool/JSON 检测                                                      | enum=["MODEL_REQUEST", "PROTOCOL", "STREAMING"]                 |
-| `model_provider_snapshot`   | [ModelProviderSnapshot](#schema-modelprovidersnapshot)     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商、模型和本项目调用接口的完整安全快照                                                                | 无额外格式限制；仍遵守所属组件业务规则                          |
+| `model_provider_snapshot`   | [ModelProviderSnapshot](#schema-modelprovidersnapshot)     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商、模型和本项目调用接口的最小安全公开快照；内部完整元信息另行冻结，响应不暴露私有字段。              | 无额外格式限制；仍遵守所属组件业务规则                          |
 | `billing_identity_snapshot` | [BillingIdentitySnapshot](#schema-billingidentitysnapshot) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时 system 计费主体与币种/时区来源事实                                                                       | 无额外格式限制；仍遵守所属组件业务规则                          |
 | `department_snapshot`       | [DepartmentSnapshot](#schema-departmentsnapshot)           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时总部费用归属部门事实                                                                                      | 无额外格式限制；仍遵守所属组件业务规则                          |
 | `triggered_by_snapshot`     | [IdentitySnapshot](#schema-identitysnapshot)               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际人工触发人或自动触发来源，不作为费用主体                                                                    | 无额外格式限制；仍遵守所属组件业务规则                          |
@@ -2380,33 +2688,34 @@ CheckItem 字段契约；下列字段含义、必填与空值均是正式设计�
 
 CheckJob 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段                      | 类型/组件                                                         | 必填 | 可空 | 默认/省略                       | 字段说明                                                                         | 约束                                                 |
-| ------------------------- | ----------------------------------------------------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `id`                      | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                         | format="uuid"                                        |
-| `physical_model_id`       | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                         | format="uuid"                                        |
-| `purpose`                 | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | ADMISSION 准入或 HEALTH 健康；HTTP 摘要组件另用其自身枚举                        | enum=["ADMISSION", "HEALTH"]                         |
-| `trigger_type`            | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | MANUAL 人工触发或 AUTO 自动调度                                                  | enum=["MANUAL", "AUTO"]                              |
-| `triggered_by`            | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 人工触发人的 UUID；自动任务可空，费用始终归 system                               | 无额外格式限制；仍遵守所属组件业务规则               |
-| `status`                  | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本组件业务状态，不能仅凭 HTTP 200 判断成功                                       | enum=["QUEUED", "RUNNING", "COMPLETED", "CANCELLED"] |
-| `result`                  | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 任务汇总结果；未结束时 null，不能把 ACCEPTED 当 PASS                             | 无额外格式限制；仍遵守所属组件业务规则               |
-| `base_version`            | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                           | minimum=1                                            |
-| `admission_epoch`         | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                         | format="uuid"                                        |
-| `provider_version`        | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                           | minimum=1                                            |
-| `planned_model_calls`     | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次计划的新模型调用项目数，不含不适用或复用项                                   | minimum=0                                            |
-| `actual_model_calls`      | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 已持久确认进入HTTP调用的次数，不能证明上游收到                                   | minimum=0                                            |
-| `unknown_model_calls`     | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 占用发送权但无法确认调用的数量                                                   | minimum=0                                            |
-| `auxiliary_http_calls`    | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 认证、上传、同任务轮询等辅助 HTTP 动作数                                         | minimum=0                                            |
-| `created_at`              | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                  | format="date-time"                                   |
-| `started_at`              | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 实际开始时间；尚未开始为空时以字段可空定义为准                                   | 无额外格式限制；仍遵守所属组件业务规则               |
-| `deadline_at`             | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                  | format="date-time"                                   |
-| `completed_at`            | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 终态完成时间；未完成为 null                                                      | 无额外格式限制；仍遵守所属组件业务规则               |
-| `items`                   | array&lt;[CheckItem](#schema-checkitem)&gt;                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本页或当前对象的明细集合；元素完整字段见链接组件                                 | 无额外格式限制；仍遵守所属组件业务规则               |
-| `pricing_details_visible` | boolean                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 仅具有model.pricing:READ时返回完整cost和价格快照，否则cost=null且summary不含价费 | 无额外格式限制；仍遵守所属组件业务规则               |
-| `summary`                 | [CheckSummary](#schema-checksummary)                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 检查项目计数及按权限裁剪的费用汇总                                               | 无额外格式限制；仍遵守所属组件业务规则               |
-| `triggered_by_display`    | [IdentitySnapshot](#schema-identitysnapshot)                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当时触发人：MANUAL为冻结用户名字，AUTO为自动任务身份；不要求pricing:READ         | 无额外格式限制；仍遵守所属组件业务规则               |
-| `model_display`           | [ModelDisplaySnapshot](#schema-modeldisplaysnapshot)              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 任务时模型与供应商显示引用，不从CostRecord取值                                   | 无额外格式限制；仍遵守所属组件业务规则               |
-| `check_types`             | array&lt;string&gt;                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本轮计划/历史实际包含的检测类型集合，供列表展示；不以ADMISSION/HEALTH用途代替    | uniqueItems=true                                     |
-| `invocation_apis`         | array&lt;[InvocationAPIDisplay](#schema-invocationapidisplay)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本轮接口去重摘要；历史行不必逐项请求详情以补接口名称                             | 无额外格式限制；仍遵守所属组件业务规则               |
+| 字段                      | 类型/组件                                                         | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                 | 约束                                                 |
+| ------------------------- | ----------------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `id`                      | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                 | format="uuid"                                        |
+| `physical_model_id`       | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                 | format="uuid"                                        |
+| `purpose`                 | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | ADMISSION 准入或 HEALTH 健康；HTTP 摘要组件另用其自身枚举                                                                | enum=["ADMISSION", "HEALTH"]                         |
+| `trigger_type`            | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | MANUAL 人工触发或 AUTO 自动调度                                                                                          | enum=["MANUAL", "AUTO"]                              |
+| `triggered_by`            | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 人工触发人的 UUID；自动任务可空，费用始终归 system                                                                       | 无额外格式限制；仍遵守所属组件业务规则               |
+| `status`                  | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本组件业务状态，不能仅凭 HTTP 200 判断成功                                                                               | enum=["QUEUED", "RUNNING", "COMPLETED", "CANCELLED"] |
+| `result`                  | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 任务汇总结果；未结束时 null，不能把 ACCEPTED 当 PASS                                                                     | 无额外格式限制；仍遵守所属组件业务规则               |
+| `base_version`            | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 提交时身份/协议版本；用于准入复用/审核目标一致性，不与当前元信息版本混为一谈。                                           | minimum=1                                            |
+| `admission_epoch`         | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                 | format="uuid"                                        |
+| `provider_version`        | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                                                   | minimum=1                                            |
+| `planned_model_calls`     | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次计划的新模型调用项目数，不含不适用或复用项                                                                           | minimum=0                                            |
+| `actual_model_calls`      | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 已持久确认进入HTTP调用的次数，不能证明上游收到                                                                           | minimum=0                                            |
+| `unknown_model_calls`     | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 占用发送权但无法确认调用的数量                                                                                           | minimum=0                                            |
+| `auxiliary_http_calls`    | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 认证、上传、同任务轮询等辅助 HTTP 动作数                                                                                 | minimum=0                                            |
+| `created_at`              | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                                                          | format="date-time"                                   |
+| `started_at`              | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 实际开始时间；尚未开始为空时以字段可空定义为准                                                                           | 无额外格式限制；仍遵守所属组件业务规则               |
+| `deadline_at`             | string                                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                                                          | format="date-time"                                   |
+| `completed_at`            | string / null                                                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 终态完成时间；未完成为 null                                                                                              | 无额外格式限制；仍遵守所属组件业务规则               |
+| `items`                   | array&lt;[CheckItem](#schema-checkitem)&gt;                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本页或当前对象的明细集合；元素完整字段见链接组件                                                                         | 无额外格式限制；仍遵守所属组件业务规则               |
+| `pricing_details_visible` | boolean                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 仅具有model.pricing:READ时返回完整cost和价格快照，否则cost=null且summary不含价费                                         | 无额外格式限制；仍遵守所属组件业务规则               |
+| `summary`                 | [CheckSummary](#schema-checksummary)                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 检查项目计数及按权限裁剪的费用汇总                                                                                       | 无额外格式限制；仍遵守所属组件业务规则               |
+| `triggered_by_display`    | [IdentitySnapshot](#schema-identitysnapshot)                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当时触发人：MANUAL为冻结用户名字，AUTO为自动任务身份；不要求pricing:READ                                                 | 无额外格式限制；仍遵守所属组件业务规则               |
+| `model_display`           | [ModelDisplaySnapshot](#schema-modeldisplaysnapshot)              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 任务时模型与供应商显示引用，不从CostRecord取值                                                                           | 无额外格式限制；仍遵守所属组件业务规则               |
+| `check_types`             | array&lt;string&gt;                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本轮计划/历史实际包含的检测类型集合，供列表展示；不以ADMISSION/HEALTH用途代替                                            | uniqueItems=true                                     |
+| `invocation_apis`         | array&lt;[InvocationAPIDisplay](#schema-invocationapidisplay)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本轮接口去重摘要；历史行不必逐项请求详情以补接口名称                                                                     | 无额外格式限制；仍遵守所属组件业务规则               |
+| `metadata_version`        | integer                                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 提交时冻结的模型元信息版本；历史任务只证明当时快照。之后改模态/标签不改本任务计划、次数、结果或费用，也不自动复验/取消。 | minimum=1                                            |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -2642,16 +2951,16 @@ Deleted 字段契约；下列字段含义、必填与空值均是正式设计要
 
 仅已注册安全键；不包含原始请求/认证/秘密
 
-| 字段                | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                        | 约束                                                                                        |
-| ------------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `fields`            | object                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 字段路径到稳定字段错误码的映射                  | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `current_version`   | integer                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生冲突时的当前可见版本                        | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `version_domain`    | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生版本冲突的配置域                            | enum=["PROVIDER", "BASE", "STATE", "GRANTS", "HEALTH", "PRICE", "BALANCE", "AUTHORIZATION"] |
-| `allowed_actions`   | array&lt;string&gt;                                     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 当前状态允许的管理动作，仅提示，不授予权限      | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `job_id`            | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                        | format="uuid"                                                                               |
-| `reason_code`       | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定、可本地化的原因码，不含上游秘密原文        | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `retryable_by_user` | boolean                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 是否允许用户明确修正/重新发起，绝不表示自动重试 | 无额外格式限制；仍遵守所属组件业务规则                                                      |
-| `details`           | array&lt;[SafeErrorDetail](#schema-safeerrordetail)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可安全显示的细分错误列表；无细节时可省略        | 无额外格式限制；仍遵守所属组件业务规则                                                      |
+| 字段                | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                        | 约束                                                                                                    |
+| ------------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `fields`            | object                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 字段路径到稳定字段错误码的映射                  | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `current_version`   | integer                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生冲突时的当前可见版本                        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `version_domain`    | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生版本冲突的配置域                            | enum=["PROVIDER", "BASE", "STATE", "GRANTS", "HEALTH", "PRICE", "BALANCE", "AUTHORIZATION", "METADATA"] |
+| `allowed_actions`   | array&lt;string&gt;                                     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 当前状态允许的管理动作，仅提示，不授予权限      | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `job_id`            | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                        | format="uuid"                                                                                           |
+| `reason_code`       | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定、可本地化的原因码，不含上游秘密原文        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `retryable_by_user` | boolean                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 是否允许用户明确修正/重新发起，绝不表示自动重试 | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `details`           | array&lt;[SafeErrorDetail](#schema-safeerrordetail)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可安全显示的细分错误列表；无细节时可省略        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -2704,18 +3013,53 @@ ModelPage 字段契约；下列字段含义、必填与空值均是正式设计�
 
 ### ModelTemplatePage
 
-ModelTemplatePage 字段契约；下列字段含义、必填与空值均是正式设计要求
+M08固定目录批次的内置规格，支持默认分页和显式全量。paginate=false时page/page_size成对为null，items为全部可见匹配项且total=items.length；分页时两字段为整数。两种模式保持相同权限、筛选、稳定排序及一致性快照。
 
-| 字段                 | 类型/组件                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                     | 约束                                   |
-| -------------------- | --------------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------- |
-| `items`              | array&lt;[ModelTemplate](#schema-modeltemplate)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本页或当前对象的明细集合；元素完整字段见链接组件                             | 无额外格式限制；仍遵守所属组件业务规则 |
-| `page`               | integer                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从 1 开始的当前页码，默认 1                                                  | minimum=1                              |
-| `page_size`          | integer                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 每页条数，默认 20，上限 100                                                  | minimum=1；maximum=100                 |
-| `total`              | integer                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前相同范围/筛选下总数，不是当前页条数                                      | minimum=0                              |
-| `catalog_release_id` | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次读取固定的数据库目录发布批次；同一页及续页保持同批，不随当前指针变化混合 | format="uuid"                          |
-| `catalog_revision`   | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该固定发布批次的唯一可读版本                                                 | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                 | 类型/组件                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                  | 约束                                                                   |
+| -------------------- | --------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `items`              | array&lt;[ModelTemplate](#schema-modeltemplate)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 分页时当前页、全量时全部可见匹配项；空结果返回[]，全量不静默截断。                        | 无额外格式限制；仍遵守所属组件业务规则                                 |
+| `page`               | integer / null                                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时当前页码，从1开始；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。 | minimum=1（仅整数分支）；与另一分页字段成对为空或成对整数              |
+| `page_size`          | integer / null                                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时每页条数1～100；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。    | minimum=1；maximum=100（仅整数分支）；与另一分页字段成对为空或成对整数 |
+| `total`              | integer                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一合法可见范围及筛选条件下的总数；不分页等于items.length，不泄露不可见项数量。          | minimum=0                                                              |
+| `catalog_release_id` | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次读取固定的数据库目录发布批次；同一页及续页保持同批，不随当前指针变化混合              | format="uuid"                                                          |
+| `catalog_revision`   | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该固定发布批次的唯一可读版本                                                              | 无额外格式限制；仍遵守所属组件业务规则                                 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件约束（与OpenAPI一致）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "page": {
+            "type": "null"
+          }
+        },
+        "required": ["page"]
+      },
+      "then": {
+        "properties": {
+          "page_size": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  ]
+}
+```
 
 <a id="schema-pricingversionpage"></a>
 
@@ -2782,18 +3126,53 @@ SubjectViewPage 字段契约；下列字段含义、必填与空值均是正式�
 
 ### GrantPage
 
-GrantPage 字段契约；下列字段含义、必填与空值均是正式设计要求
+A01分页或全量读取的直接授权关系。paginate=false时page/page_size成对为null，items为全部可见匹配关系且total=items.length；分页模式保持原整数元数据。两种模式均使用同一权限谓词及一致性快照，不展开成员。
 
 | 字段                    | 类型/组件                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                               | 约束                                   |
 | ----------------------- | ----------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `items`                 | array&lt;[Grant](#schema-grant)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本页或当前对象的明细集合；元素完整字段见链接组件                                                                       | 无额外格式限制；仍遵守所属组件业务规则 |
-| `page`                  | integer                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从 1 开始的当前页码，默认 1                                                                                            | minimum=1                              |
-| `page_size`             | integer                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 每页条数，默认 20，上限 100                                                                                            | minimum=1；maximum=100                 |
-| `total`                 | integer                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前相同范围/筛选下总数，不是当前页条数                                                                                | minimum=0                              |
+| `items`                 | array&lt;[Grant](#schema-grant)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 分页时当前页、全量时所有可见匹配Grant；无结果为[]。完整返回主体名称、用户名、可见部门路径和可管理标记。                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `page`                  | integer / null                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时当前页码，从1开始；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `page_size`             | integer / null                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时每页条数1～100；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。                                 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `total`                 | integer                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前相同权限范围/筛选下的直接关系总数；不分页等于items.length；不返回隐藏关系数量。                                    | minimum=0                              |
 | `grant_version`         | integer                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                                                 | minimum=1                              |
 | `authorization_version` | integer                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 全新 ma_grant_state 单例 revision；仅保护模型直接授权集合的并发，不能冻结身份成员/部门等有效授权来源；保存时仍需重校验 | minimum=1                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件约束（与OpenAPI一致）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "page": {
+            "type": "null"
+          }
+        },
+        "required": ["page"]
+      },
+      "then": {
+        "properties": {
+          "page_size": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  ]
+}
+```
 
 <a id="schema-subjectgrantpage"></a>
 
@@ -2918,20 +3297,20 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### BuiltinPricingTemplate
 
-数据库官方原币参考价投影，保留真实币种、计价单位、完整可表达规则和官方来源。不是物理模型内部价格；不按预算币种筛选，不因官方USD而判无CNY价。目录发布不改变已有企业价格。预填只借用数字，管理员确认内部价后才创建。
+官方原币参考价投影，仅price_kind=OFFICIAL_REFERENCE。保留真实币种及官方来源，不是企业默认规则。产品默认由M14/default_reference读取且优先；无默认时M13才以官方数字预填，仍须管理员确认。
 
-| 字段                       | 类型/组件                                                 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                          | 约束                                   |
-| -------------------------- | --------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `currency`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原始价的币种；不能把外币改标成总部币种                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
-| `time_zone`                | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方参考规则本身的生效时区，不取内部Asia/Shanghai替换；若不能无歧义表达则标UNSUPPORTED_RULE，不生成可用参考条目。 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `pricing_mode`             | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                  | enum=["FIXED", "TIME_BASED"]           |
-| `periods`                  | array&lt;[PricePeriodInput](#schema-priceperiodinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整计价时段；固定价恰一个兜底，分时价按规则设置                                                                  | minItems=1                             |
-| `catalog_revision`         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所属数据库目录发布批次revision，与catalog_price_version_id及外层型号来源一致                                      | 无额外格式限制；仍遵守所属组件业务规则 |
-| `adapter_revision`         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 适配器计量规格版本                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `source_uris`              | array&lt;string&gt;                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该已发布内置价条目的公开定价依据；无可公开来源时为空数组，不返回调研清单或项目审批链接                            | 无额外格式限制；仍遵守所属组件业务规则 |
-| `rounding`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版参考结构的Decimal舍入约定HALF_EVEN；不声称复刻供应商最终账单。                                                | enum=["HALF_EVEN"]                     |
-| `amount_scale`             | integer                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版Decimal金额精度18位；实际内部价另有独立快照。                                                                 | const=18                               |
-| `catalog_price_version_id` | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | ma_catalog_prices不可变条目UUID；与外层ModelTemplate同一批次和型号，表单预填时可作为自定义价参考来源              | format="uuid"                          |
+| 字段                       | 类型/组件                                                 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                          | 约束                                   |
+| -------------------------- | --------------------------------------------------------- | ---- | ---- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `currency`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原始价的币种；不能把外币改标成总部币种                                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `time_zone`                | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方参考规则本身的生效时区，不取内部Asia/Shanghai替换；若不能无歧义表达则标UNSUPPORTED_RULE，不生成可用参考条目。                 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing_mode`             | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                                  | enum=["FIXED", "TIME_BASED"]           |
+| `periods`                  | array&lt;[PricePeriodInput](#schema-priceperiodinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整计价时段；固定价恰一个兜底，分时价按规则设置。时段及其中conditions均按输入顺序保存/返回，保留每行weekdays集合；不合并或拆行。 | minItems=1                             |
+| `catalog_revision`         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所属数据库目录发布批次revision，与catalog_price_version_id及外层型号来源一致                                                      | 无额外格式限制；仍遵守所属组件业务规则 |
+| `adapter_revision`         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 适配器计量规格版本                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `source_uris`              | array&lt;string&gt;                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该已发布内置价条目的公开定价依据；无可公开来源时为空数组，不返回调研清单或项目审批链接                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `rounding`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版参考结构的Decimal舍入约定HALF_EVEN；不声称复刻供应商最终账单。                                                                | enum=["HALF_EVEN"]                     |
+| `amount_scale`             | integer                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版Decimal金额精度18位；实际内部价另有独立快照。                                                                                 | const=18                               |
+| `catalog_price_version_id` | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | ma_catalog_prices不可变条目UUID；与外层ModelTemplate同一批次和型号，表单预填时可作为自定义价参考来源                              | format="uuid"                          |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3004,30 +3383,31 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### ModelProviderSnapshot
 
-检测单项事件快照；无秘密；供应商/模型删除后仍可解释费用
+检测单项事件内部完整快照的最小安全公开投影；无秘密，供应商/模型删除后仍可解释费用。内部DBModelProviderSnapshot另冻结六项元信息和presentation；公开投影仅保留本组件声明字段，不据公开字段不足回查当前模型补齐。
 
-| 字段                       | 类型/组件                                            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
-| -------------------------- | ---------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `schema_version`           | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 快照格式版本                                                                                                                                                                  | const=1                                |
-| `physical_model_id`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时物理模型 UUID                                                                                                                                                           | format="uuid"                          |
-| `model_id_at_gateway`      | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `model_id_at_provider`     | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时上游模型/部署 ID                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
-| `provider_id`              | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商实例 UUID                                                                                                                                                         | format="uuid"                          |
-| `provider_name`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商实例名称                                                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_key`             | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时模板键                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_revision`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时模板规格版本                                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
-| `base_url`                 | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时不含秘密的供应商 Base URL                                                                                                                                               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `public_config`            | [ProviderPublicConfig](#schema-providerpublicconfig) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商非秘密配置，按当时模板白名单解释                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
-| `official_model_binding`   | [OfficialModelBinding](#schema-officialmodelbinding) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读官方型号/部署绑定；代次不一致派生 STALE                                                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则 |
-| `base_version`             | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时模型基础版本                                                                                                                                                            | minimum=1                              |
-| `provider_version`         | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商版本                                                                                                                                                              | minimum=1                              |
-| `connection_revision`      | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商连接身份版本                                                                                                                                                      | minimum=1                              |
-| `invocation_api`           | [InvocationAPI](#schema-invocationapi)               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此费用执行项使用的接口及适配器版本快照                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
-| `tags`                     | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模型能力标签                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_name`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从冻结模板标签按请求语言投影的名称；不得读取当前目录冒充历史                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_icon_key`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时受控模板图标键，未知用通用图标                                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_catalog_binding` | [CatalogBinding](#schema-catalogbinding)             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次执行/显示所冻结供应商模板来源；model/price两键为null，不能混入模型或价格另一历史批次                                                                                      | 无额外格式限制；仍遵守所属组件业务规则 |
-| `model_catalog_binding`    | [CatalogBinding](#schema-catalogbinding) / null      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模型原内置规格的独立历史来源；无来源null，price键为null。供应商改绑后可与template_catalog_binding不同批，不表示当前适配承诺                                                   | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                       | 类型/组件                                            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                            | 约束                                   |
+| -------------------------- | ---------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `schema_version`           | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 快照格式版本                                                                                                                                                                        | const=1                                |
+| `physical_model_id`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时物理模型 UUID                                                                                                                                                                 | format="uuid"                          |
+| `model_id_at_gateway`      | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。       | 无额外格式限制；仍遵守所属组件业务规则 |
+| `model_id_at_provider`     | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时上游模型/部署 ID                                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `provider_id`              | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商实例 UUID                                                                                                                                                               | format="uuid"                          |
+| `provider_name`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商实例名称                                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `template_key`             | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时模板键                                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `template_revision`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时模板规格版本                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
+| `base_url`                 | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时不含秘密的供应商 Base URL                                                                                                                                                     | 无额外格式限制；仍遵守所属组件业务规则 |
+| `public_config`            | [ProviderPublicConfig](#schema-providerpublicconfig) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商非秘密配置，按当时模板白名单解释                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `official_model_binding`   | [OfficialModelBinding](#schema-officialmodelbinding) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读官方型号/部署绑定；代次不一致派生 STALE                                                                                                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
+| `base_version`             | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时模型基础版本                                                                                                                                                                  | minimum=1                              |
+| `provider_version`         | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商版本                                                                                                                                                                    | minimum=1                              |
+| `connection_revision`      | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时供应商连接身份版本                                                                                                                                                            | minimum=1                              |
+| `invocation_api`           | [InvocationAPI](#schema-invocationapi)               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此费用执行项使用的接口及适配器版本快照                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `tags`                     | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模型能力标签                                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `template_name`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从冻结模板标签按请求语言投影的名称；不得读取当前目录冒充历史                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `template_icon_key`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 事件时受控模板图标键，未知用通用图标                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `template_catalog_binding` | [CatalogBinding](#schema-catalogbinding)             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次执行/显示所冻结供应商模板来源；model/price两键为null，不能混入模型或价格另一历史批次                                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `model_catalog_binding`    | [CatalogBinding](#schema-catalogbinding) / null      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模型原内置规格的独立历史来源；无来源null，price键为null。供应商改绑后可与template_catalog_binding不同批，不表示当前适配承诺                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
+| `metadata_version`         | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原检测内部完整六项元信息快照的版本；公开仅返回本组件最小字段（含tags），不表示公开携带完整模态/上下文/描述。连续复用按内部冻结六字段及实际探针/计划判断，不依赖公开投影或当前模型。 | minimum=1                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3037,12 +3417,12 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 命中的唯一计费时段
 
-| 字段          | 类型/组件                             | 必填 | 可空 | 默认/省略                       | 字段说明                   | 约束                                   |
-| ------------- | ------------------------------------- | ---- | ---- | ------------------------------- | -------------------------- | -------------------------------------- |
-| `name`        | string                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 命中时段名称               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `is_fallback` | boolean                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否命中兜底时段           | 无额外格式限制；仍遵守所属组件业务规则 |
-| `conditions`  | array&lt;[Window](#schema-window)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 命中时段条件；兜底为空     | 无额外格式限制；仍遵守所属组件业务规则 |
-| `matched_at`  | string                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 价格选择依据的请求开始时刻 | format="date-time"                     |
+| 字段          | 类型/组件                                         | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                          | 约束                                   |
+| ------------- | ------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `name`        | string                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 命中时段名称                                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则 |
+| `is_fallback` | boolean                                           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否命中兜底时段                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
+| `conditions`  | array&lt;[ConditionRow](#schema-conditionrow)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 有序原始条件行，每行支持多个weekdays；保存/读取保持行数、行分组和输入顺序，不合并或展开；兜底为空。非兜底至少一行，所有时段展开后的窗口不得重叠。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `matched_at`  | string                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 价格选择依据的请求开始时刻                                                                                                                        | format="date-time"                     |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3050,11 +3430,11 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### PriceSnapshot
 
-完整价快照。PRICED 时 price/matched_period 非空；未定价时 price=null，币种不匹配时允许保留原价 price 用于解释，matched_period=null；本次计费仍为 UNPRICED/CURRENCY_MISMATCH，不换标或换汇。所有规则不依赖价格表存续。
+完整价快照。PRICED 时 price/matched_period 非空；未定价时 price=null，币种不匹配时允许保留原价 price 用于解释，matched_period=null；本次计费仍为 UNPRICED/CURRENCY_MISMATCH，不换标或换汇。所有规则不依赖价格表存续。 条件行按发送时完整结构固化；当前仅新格式2，不增旧格式兼容分支。
 
 | 字段                | 类型/组件                                                   | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                         | 约束                                             |
 | ------------------- | ----------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| `schema_version`    | integer                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 快照格式版本                                                                                                                                                                                     | const=1                                          |
+| `schema_version`    | integer                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 价格快照格式版本，当前2；price及matched_period保留原始条件行，PricingBasis为3。                                                                                                                  | const=2                                          |
 | `state`             | string                                                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 取价状态                                                                                                                                                                                         | enum=["PRICED", "UNPRICED", "CURRENCY_MISMATCH"] |
 | `reason_code`       | string / null                                               | 是   | 是   | 无静态默认；省略语义见组件/接口 | 稳定、可本地化的原因码，不含上游秘密原文                                                                                                                                                         | 无额外格式限制；仍遵守所属组件业务规则           |
 | `billing_currency`  | string                                                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次总部内部计费币种                                                                                                                                                                             | 无额外格式限制；仍遵守所属组件业务规则           |
@@ -3115,7 +3495,7 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### CostRuleSnapshot
 
-不可变单项算式与依据；保留全部输入，不从当前价格重新计算历史
+不可变单项算式与依据；保留全部输入，不从当前价格重新计算历史。period完整保存有序ConditionRow；与父CostRecord.price_snapshot格式2同事务固化且一致，不从当前目录补行，不新增自身版本字段。
 
 | 字段              | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                    | 约束                                   |
 | ----------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------- | -------------------------------------- |
@@ -3267,18 +3647,19 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### ReuseSourceSnapshot
 
-准入接口复用来源快照；本版只复用满足同模型/周期/基础版本的终态完整通过接口。源价格/费用不计入本次，源秘密绝不复制到 API。 source_result 仅是 CheckResultDetail，不包含 reuse_source；若直接来源也是 REUSED，则把原实际 PASS 的结果/配置扁平复制在此一层，source_job_id/source_item_id仍记录直接来源，不递归嵌套。
+准入接口复用来源快照；本版只复用满足同模型/周期/基础版本的终态完整通过接口。源价格/费用不计入本次，源秘密绝不复制到 API。 source_result 仅是 CheckResultDetail，不包含 reuse_source；若直接来源也是 REUSED，则把原实际 PASS 的结果/配置扁平复制在此一层，source_job_id/source_item_id仍记录直接来源，不递归嵌套。 还需当前所需接口计划及有效探针输入与原快照语义匹配；新需流式不得复用缺STREAMING的旧完整接口结果。纯描述变化不机械拒绝，差异不自动补发。
 
-| 字段                             | 类型/组件                                              | 必填 | 可空 | 默认/省略                       | 字段说明                                                         | 约束                                   |
-| -------------------------------- | ------------------------------------------------------ | ---- | ---- | ------------------------------- | ---------------------------------------------------------------- | -------------------------------------- |
-| `source_job_id`                  | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原准入任务 UUID；源记录清理后仍保留                              | format="uuid"                          |
-| `source_item_id`                 | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原检查项目 UUID；只是历史线索，不需要可 JOIN                     | format="uuid"                          |
-| `source_base_version`            | integer                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原模型基础配置版本                                               | minimum=1                              |
-| `source_admission_epoch`         | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原准入周期 UUID，须与复用资格匹配                                | format="uuid"                          |
-| `source_provider_version`        | integer                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原检测冻结的供应商版本；可能不同于本次供应商版本                 | minimum=1                              |
-| `source_completed_at`            | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原项目完成时间                                                   | format="date-time"                     |
-| `source_model_provider_snapshot` | [ModelProviderSnapshot](#schema-modelprovidersnapshot) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原实际检测所用供应商、模型、接口及公开配置快照，不含秘密         | 无额外格式限制；仍遵守所属组件业务规则 |
-| `source_result`                  | [CheckResultDetail](#schema-checkresultdetail)         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 复制的原 PASS 完整断言和协议结果，不重新执行、不依赖旧 item 存续 | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                             | 类型/组件                                              | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                         | 约束                                   |
+| -------------------------------- | ------------------------------------------------------ | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `source_job_id`                  | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原准入任务 UUID；源记录清理后仍保留                                                                                                                              | format="uuid"                          |
+| `source_item_id`                 | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原检查项目 UUID；只是历史线索，不需要可 JOIN                                                                                                                     | format="uuid"                          |
+| `source_base_version`            | integer                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原模型基础配置版本                                                                                                                                               | minimum=1                              |
+| `source_admission_epoch`         | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原准入周期 UUID，须与复用资格匹配                                                                                                                                | format="uuid"                          |
+| `source_provider_version`        | integer                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原检测冻结的供应商版本；可能不同于本次供应商版本                                                                                                                 | minimum=1                              |
+| `source_completed_at`            | string                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原项目完成时间                                                                                                                                                   | format="date-time"                     |
+| `source_model_provider_snapshot` | [ModelProviderSnapshot](#schema-modelprovidersnapshot) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原实际检测内部完整快照的最小安全公开投影，不含秘密或额外私有元信息。内部DBReuseSourceSnapshot扁平复制完整DBModelProviderSnapshot，连续复用验证不依赖此公开投影。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `source_result`                  | [CheckResultDetail](#schema-checkresultdetail)         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 复制的原 PASS 完整断言和协议结果，不重新执行、不依赖旧 item 存续                                                                                                 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `source_metadata_version`        | integer                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 原实际检测内部六字段元信息快照的版本，与内部源快照一致；差异只用于解释，不单独作为复用失效条件。                                                                 | minimum=1                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3429,16 +3810,51 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### ProviderOptionPage
 
-模型创建/编辑供应商选项；分页搜索，按实例名/模板名检索。
+M09模型创建/编辑供应商候选，支持默认分页搜索和显式全量。paginate=false时page/page_size成对为null，items为全部可见匹配项且total=items.length；分页时两字段为整数。两种模式保持相同权限、筛选、稳定排序及一致性快照。
 
-| 字段        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                     | 约束                                   |
-| ----------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------- | -------------------------------------- |
-| `items`     | array&lt;[ProviderOption](#schema-provideroption)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前页结果，空页返回[]       | 无额外格式限制；仍遵守所属组件业务规则 |
-| `page`      | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前页，从1开始              | minimum=1                              |
-| `page_size` | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前页大小，默认20、最大100  | minimum=1；maximum=100                 |
-| `total`     | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一权限范围和筛选条件下总数 | minimum=0                              |
+| 字段        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                  | 约束                                                                   |
+| ----------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `items`     | array&lt;[ProviderOption](#schema-provideroption)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 分页时当前页、全量时全部可见匹配项；空结果返回[]，全量不静默截断。                        | 无额外格式限制；仍遵守所属组件业务规则                                 |
+| `page`      | integer / null                                        | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时当前页码，从1开始；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。 | minimum=1（仅整数分支）；与另一分页字段成对为空或成对整数              |
+| `page_size` | integer / null                                        | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时每页条数1～100；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。    | minimum=1；maximum=100（仅整数分支）；与另一分页字段成对为空或成对整数 |
+| `total`     | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一合法可见范围及筛选条件下的总数；不分页等于items.length，不泄露不可见项数量。          | minimum=0                                                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件约束（与OpenAPI一致）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "page": {
+            "type": "null"
+          }
+        },
+        "required": ["page"]
+      },
+      "then": {
+        "properties": {
+          "page_size": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  ]
+}
+```
 
 <a id="schema-tagoption"></a>
 
@@ -3458,16 +3874,51 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 ### TagOptionPage
 
-现有标签去重分页目录，用户可搜索后选择或按既有表单新输入标签。
+M10当前可见标签去重候选，支持默认分页搜索和显式全量。paginate=false时page/page_size成对为null，items为全部可见匹配项且total=items.length；分页时两字段为整数。两种模式保持相同权限、筛选、稳定排序及一致性快照。
 
-| 字段        | 类型/组件                                   | 必填 | 可空 | 默认/省略                       | 字段说明                     | 约束                                   |
-| ----------- | ------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------- | -------------------------------------- |
-| `items`     | array&lt;[TagOption](#schema-tagoption)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前页结果，空页返回[]       | 无额外格式限制；仍遵守所属组件业务规则 |
-| `page`      | integer                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前页，从1开始              | minimum=1                              |
-| `page_size` | integer                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前页大小，默认20、最大100  | minimum=1；maximum=100                 |
-| `total`     | integer                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一权限范围和筛选条件下总数 | minimum=0                              |
+| 字段        | 类型/组件                                   | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                  | 约束                                                                   |
+| ----------- | ------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `items`     | array&lt;[TagOption](#schema-tagoption)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 分页时当前页、全量时全部可见匹配项；空结果返回[]，全量不静默截断。                        | 无额外格式限制；仍遵守所属组件业务规则                                 |
+| `page`      | integer / null                              | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时当前页码，从1开始；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。 | minimum=1（仅整数分支）；与另一分页字段成对为空或成对整数              |
+| `page_size` | integer / null                              | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时每页条数1～100；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。    | minimum=1；maximum=100（仅整数分支）；与另一分页字段成对为空或成对整数 |
+| `total`     | integer                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一合法可见范围及筛选条件下的总数；不分页等于items.length，不泄露不可见项数量。          | minimum=0                                                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件约束（与OpenAPI一致）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "page": {
+            "type": "null"
+          }
+        },
+        "required": ["page"]
+      },
+      "then": {
+        "properties": {
+          "page_size": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  ]
+}
+```
 
 <a id="schema-lifecycleevent"></a>
 
@@ -3619,12 +4070,12 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 完整读取价格时段。业务时段名原文；各计量显示标签来自对应价格版本快照。
 
-| 字段           | 类型/组件                                                   | 必填 | 可空 | 默认/省略                       | 字段说明                                         | 约束                                   |
-| -------------- | ----------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------ | -------------------------------------- |
-| `name`         | string                                                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                 | minLength=1；maxLength=128             |
-| `is_fallback`  | boolean                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否兜底时段；每个价格版本恰好一个               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `conditions`   | array&lt;[Window](#schema-window)&gt;                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 星期与分钟窗口；兜底或固定价为空，非兜底不得重叠 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `metric_rates` | array&lt;[MetricRateDisplay](#schema-metricratedisplay)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前时段完整指标与费率                           | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段           | 类型/组件                                                   | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                          | 约束                                   |
+| -------------- | ----------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `name`         | string                                                      | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                                                                                                                  | minLength=1；maxLength=128             |
+| `is_fallback`  | boolean                                                     | 是   | 否   | 无静态默认；省略语义见组件/接口 | 是否兜底时段；每个价格版本恰好一个                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `conditions`   | array&lt;[ConditionRow](#schema-conditionrow)&gt;           | 是   | 否   | 无静态默认；省略语义见组件/接口 | 有序原始条件行，每行支持多个weekdays；保存/读取保持行数、行分组和输入顺序，不合并或展开；兜底为空。非兜底至少一行，所有时段展开后的窗口不得重叠。 | 无额外格式限制；仍遵守所属组件业务规则 |
+| `metric_rates` | array&lt;[MetricRateDisplay](#schema-metricratedisplay)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前时段完整指标与费率                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3673,7 +4124,7 @@ ma_price_versions.display_snapshot的完整不可变结构；费用复制至Pric
 | `provider_name`             | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商实例名                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `status`                    | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本组件业务状态，不能仅凭 HTTP 200 判断成功                                                                                                                                    | enum=["DRAFT", "TESTING", "PENDING_REVIEW", "ACTIVE", "SUSPENDED", "RETIRED"] |
 | `versions`                  | [ModelVersions](#schema-modelversions)              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存后的全部版本；后续检测/发布必须回传，禁止猜初值1                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `supported_invocation_apis` | array&lt;string&gt;                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。                                                                    | uniqueItems=true                                                              |
+| `supported_invocation_apis` | array&lt;string&gt;                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存的标准接口；DRAFT草稿可与自定义同时为空，响应不强制非空，检测时另校验。                                                                                               | uniqueItems=true                                                              |
 | `custom_invocation_apis`    | array&lt;[CustomAPIView](#schema-customapiview)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 另行启用的自定义相对路径列表，由服务端识别已适配协议；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                          | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `invocation_apis`           | array&lt;[InvocationAPI](#schema-invocationapi)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端解析的所有已启用标准及自定义接口                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `catalog_model_version_id`  | string / null                                       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 该对象实际采用的内置型号来源；没有可信匹配为null。历史来源不随目录发布或供应商改绑自动更新，不表示当前仍可适配                                                                | 无额外格式限制；仍遵守所属组件业务规则                                        |
@@ -3757,7 +4208,7 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 
 ### BalanceRecipientOptionPage
 
-余额配置选人专用搜索/分页，仅返回当前管理范围启用用户；不需identity.users或model.permissions权限。
+余额配置选人搜索/分页；q包含可见部门及所有后代人员搜索，department_id固定包含子部门，按user_id去重后分页；只返回当前用户管理范围启用、非system人员，不返回部门接收对象，不需identity.users或model.permissions权限。
 
 | 字段             | 类型/组件                                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                 | 约束                                   |
 | ---------------- | ----------------------------------------------------------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------- |
@@ -3826,13 +4277,13 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 
 不可变数据库目录来源绑定；同一对象内五键必须指向同一完整发布批次。运行模板、模型原来源、价格来源分别保存对象，允许它们属于不同历史批次；引用只用于追溯，不代表当前可采用/可适配，也不能替代已固化的完整内容。
 
-| 字段                       | 类型/组件     | 必填 | 可空 | 默认/省略                       | 字段说明                                                 | 约束                                   |
-| -------------------------- | ------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------- | -------------------------------------- |
-| `catalog_release_id`       | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | ma_catalog_releases.id，准确目录发布批次UUID             | format="uuid"                          |
-| `catalog_revision`         | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对应发布批次唯一可读revision；与ID一致，不是项目评审版本 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_version_id`      | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该批次ma_catalog_provider_templates.id                   | format="uuid"                          |
-| `catalog_model_version_id` | string / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模型目录条目UUID；仅模板来源或未匹配型号时null           | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_price_version_id` | string / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 内置价格目录条目UUID；无价格参考时null                   | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                       | 类型/组件     | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                  | 约束                                   |
+| -------------------------- | ------------- | ---- | ---- | ------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `catalog_release_id`       | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | ma_catalog_releases.id，准确目录发布批次UUID                                                              | format="uuid"                          |
+| `catalog_revision`         | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对应发布批次唯一可读revision；与ID一致，不是项目评审版本                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
+| `template_version_id`      | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该批次ma_catalog_provider_templates.id                                                                    | format="uuid"                          |
+| `catalog_model_version_id` | string / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模型目录条目UUID；仅模板来源或未匹配型号时null                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_price_version_id` | string / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 仅OFFICIAL_REFERENCE官方价格目录UUID；无官方参考null。企业默认通过独立default_reference追溯，不复用此键。 | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3853,40 +4304,446 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 
 ### PricingBasis
 
-每一内部价格版本固化的计价依据；服务端判定，不接收客户端source/kind。官方参考完整保存原币原费率及来源，不能只JOIN可删除的业务表解释历史。
+每一内部价格版本固化的schema3计价依据；服务端判定，客户端不能写source/kind。完整保存产品默认与官方原币参考，实际计费使用已持久化内部价；40新增自动APPLIED，旧管理员CONFIRMED历史保留，不能通过JOIN当前目录重建历史。 数据库中的default_reference以DBEnterpriseDefaultPricingSnapshot保全period_name_labels和fallback_locale；公开EnterpriseDefaultPricingTemplate去掉这两个私有键，再从冻结语言集投影periods[].name。价格/费用/审计保全私有快照，不查当前目录重建历史，公开响应仍拒绝额外字段。 当前仅使用有序ConditionRow新结构，不提供此次升级前旧格式读取。
 
-| 字段                  | 类型/组件                                                       | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                   | 约束                                                                                    |
-| --------------------- | --------------------------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `schema_version`      | integer                                                         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 计价依据快照结构版本，固定1。                                                                                                                                                                              | const=1                                                                                 |
-| `kind`                | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | OFFICIAL_PREFILL_CONFIRMED=首次创建/导入带可信官方参考并明确保存内部价；ENTERPRISE_CONFIGURED=其他企业配置/后续改价；ENTERPRISE_DEFAULT_ZERO=首次真实缺价且完整固定0。参考后确认不保证数字未改或经济等值。 | enum=["OFFICIAL_PREFILL_CONFIRMED", "ENTERPRISE_CONFIGURED", "ENTERPRISE_DEFAULT_ZERO"] |
-| `default_zero_reason` | string / null                                                   | 是   | 是   | 无静态默认；省略语义见组件/接口 | 仅ENTERPRISE_DEFAULT_ZERO非空，其他kind为null。                                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则                                                  |
-| `official_reference`  | [BuiltinPricingTemplate](#schema-builtinpricingtemplate) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 有catalog_price_version_id必须非空且ID一致，包括后续改价继承的旧参考；无参考为null。                                                                                                                       | 无额外格式限制；仍遵守所属组件业务规则                                                  |
+| 字段                  | 类型/组件                                                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 约束                                                                                                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `schema_version`      | integer                                                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 计价依据快照结构版本，当前3；官方/默认规则均保留有序ConditionRow。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | const=3                                                                                                                                                                                                      |
+| `kind`                | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | ENTERPRISE_DEFAULT_CONFIRMED=首次创建/导入提交与适用产品默认规则语义完全相同；OFFICIAL_PREFILL_CONFIRMED=无默认时首次官方参考后确认；ENTERPRISE_DEFAULT_ZERO=无默认且真实缺价时首次完整FIXED零价；ENTERPRISE_CONFIGURED=修改默认后的自定义价或后续任何改价（包括恢复默认）。由服务端判定，不能仅凭数字碰巧相同伪造来源。 首次是否原样采用默认：先按is_fallback及规范化conditions定位对应时段，再比较完整指标/Decimal费率/模式；name可为该同一时段已发布的任一语言标签，同语言下时段标签发布时必须唯一，不能以当前请求语言变化误判自定义。非已发布别名或改规则/费率记ENTERPRISE_CUSTOM。 40修订新增ENTERPRISE_DEFAULT_APPLIED=服务端自动采用企业默认、OFFICIAL_REFERENCE_APPLIED=自动采用官方原数（F40-01已确认，不换汇）、ZERO_FALLBACK_APPLIED=真实缺价或官方复杂规则无法表达时自动全0；三者source均BUILT_IN，不冒充CONFIRMED。 | enum=["OFFICIAL_PREFILL_CONFIRMED", "ENTERPRISE_CONFIGURED", "ENTERPRISE_DEFAULT_ZERO", "ENTERPRISE_DEFAULT_CONFIRMED", "ENTERPRISE_DEFAULT_APPLIED", "OFFICIAL_REFERENCE_APPLIED", "ZERO_FALLBACK_APPLIED"] |
+| `default_zero_reason` | string / null                                                                       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 仅ENTERPRISE_DEFAULT_ZERO或ZERO_FALLBACK_APPLIED非空，新ZERO_FALLBACK_APPLIED允许PRICE_UNAVAILABLE/NO_PUBLIC_PRICE/UNSUPPORTED_RULE；旧ENTERPRISE_DEFAULT_ZERO仍只允许前两项；其他kind为null。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则                                                                                                                                                                       |
+| `official_reference`  | [BuiltinPricingTemplate](#schema-builtinpricingtemplate) / null                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 有catalog_price_version_id必须非空且ID一致，包括后续改价继承的旧参考；无参考为null。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 无额外格式限制；仍遵守所属组件业务规则                                                                                                                                                                       |
+| `default_reference`   | [EnterpriseDefaultPricingTemplate](#schema-enterprisedefaultpricingtemplate) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 独立完整产品默认规则快照；与catalog_default_price_version_id共同为空或共同非空且ID一致。可以与official_reference并存，后者只供参考；默认未被原样采用时仍能保留形成依据。 历史公开读取时使用其内部冻结标签投影时段名；私有标签/回退键不暴露，不从当前目录补译。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则                                                                                                                                                                       |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件约束（与OpenAPI一致）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "description": "旧人工真实缺价零价或新自动缺价/复杂规则零价。",
+            "enum": ["ENTERPRISE_DEFAULT_ZERO", "ZERO_FALLBACK_APPLIED"]
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "default_zero_reason": {
+            "type": "string",
+            "enum": ["PRICE_UNAVAILABLE", "NO_PUBLIC_PRICE", "UNSUPPORTED_RULE"],
+            "description": "真实归零理由必填非null；复杂官方规则使用UNSUPPORTED_RULE。"
+          },
+          "official_reference": {
+            "type": "null",
+            "description": "默认免费不是官方报价。"
+          },
+          "default_reference": {
+            "type": "null",
+            "description": "缺价/复杂规则零价不是已发布产品默认。"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "default_zero_reason": {
+            "type": "null",
+            "description": "非零价兜底来源没有归零理由。"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "description": "首次官方参考后明确确认。",
+            "enum": ["OFFICIAL_PREFILL_CONFIRMED", "OFFICIAL_REFERENCE_APPLIED"]
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "official_reference": {
+            "$ref": "#/components/schemas/BuiltinPricingTemplate",
+            "description": "完整原币官方参考必须存在。"
+          },
+          "default_reference": {
+            "type": "null",
+            "description": "官方预填确认仅在没有适用产品默认时形成。"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": ["ENTERPRISE_DEFAULT_CONFIRMED", "ENTERPRISE_DEFAULT_APPLIED"]
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "default_reference": {
+            "$ref": "#/components/schemas/EnterpriseDefaultPricingTemplate"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ENTERPRISE_DEFAULT_ZERO"
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "default_zero_reason": {
+            "type": "string",
+            "enum": ["PRICE_UNAVAILABLE", "NO_PUBLIC_PRICE"],
+            "description": "历史人工确认零价保持原原因集合；复杂规则自动归零使用ZERO_FALLBACK_APPLIED。"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+40修订：新增`ENTERPRISE_DEFAULT_APPLIED`、`OFFICIAL_REFERENCE_APPLIED`、`ZERO_FALLBACK_APPLIED`，均为`source=BUILT_IN`，schema_version仍为3及原五键；不冒充人工CONFIRMED。官方原数自动应用、复杂规则全0、失配价保护及无计量项未定价例外已按F40-01～04确认。完整条件约束以同步设计JSON为准。
 
 <a id="schema-pricingpreparation"></a>
 
 ### PricingPreparation
 
-创建/导入前只读价格准备。先验模型WRITE及实例范围；真实计量集合非空才需价格READ，无计量项可返回NOT_APPLICABLE及非秘密版本供null创建。不预留、不产生模型/价格/命令、不请求供应商。保存重新校验当前权限和事实。
+独立只读价格准备，适用企业默认优先于官方数字；无默认且真实缺价或官方复杂规则无法表达时完整零价建议。无metric返回NOT_APPLICABLE/null预填并允许F40-04检测和上架例外；不在读取时建价，不替代D03的事务准备。
 
-| 字段                       | 类型/组件                                                       | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                                              | 约束                                                                                             |
-| -------------------------- | --------------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `provider_id`              | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次可管理的供应商实例UUID。                                                                                                                                                                                                                                                                          | format="uuid"                                                                                    |
-| `provider_version`         | integer                                                         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 准备时供应商实例版本；创建/导入回传expected_provider_version。                                                                                                                                                                                                                                        | minimum=1                                                                                        |
-| `model_id_at_provider`     | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 规范化上游模型ID/部署名；不凭部署名推断官方型号。                                                                                                                                                                                                                                                     | 无额外格式限制；仍遵守所属组件业务规则                                                           |
-| `catalog_binding`          | [CatalogBinding](#schema-catalogbinding)                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例固定模板批次及可信型号/选中官方参考的完整关联；未匹配型号时model/price ID为null。                                                                                                                                                                                                                 | 无额外格式限制；仍遵守所属组件业务规则                                                           |
-| `metric_specs`             | array&lt;[MetricSpec](#schema-metricspec)&gt;                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所选已适配调用接口的完整计量指标全集及显示单位；尚无已识别计量规格时为空，不造request指标或阻止原PRD允许的手工创建。调用协议不支持与无计量规格分开处理。                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则                                                           |
-| `billing_currency`         | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前总部内部币种；未配置为CNY，不是官方参考币种。                                                                                                                                                                                                                                                     | 无额外格式限制；仍遵守所属组件业务规则                                                           |
-| `currency_source`          | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部币种来源。                                                                                                                                                                                                                                                                                        | enum=["HEADQUARTERS", "DEFAULT_CNY"]                                                             |
-| `billing_time_zone`        | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版内部计费时区固定Asia/Shanghai。                                                                                                                                                                                                                                                                   | const="Asia/Shanghai"                                                                            |
-| `time_zone_source`         | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版不新增系统时区设置。                                                                                                                                                                                                                                                                              | enum=["DEFAULT_ASIA_SHANGHAI"]                                                                   |
-| `reference_state`          | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方参考事实：AVAILABLE有可表达官方参考且适用已知指标；PRICE_UNAVAILABLE无法获取定价；NO_PUBLIC_PRICE无公开单价；UNSUPPORTED_RULE复杂或不完整规则。metric_specs为空是无可配置计量项，不能借本状态伪造免费单价。 NOT_APPLICABLE仅服务端确定metric_specs=[]，无需准备价格参考；不是无法获取定价或免费。 | enum=["AVAILABLE", "PRICE_UNAVAILABLE", "NO_PUBLIC_PRICE", "UNSUPPORTED_RULE", "NOT_APPLICABLE"] |
-| `official_reference`       | [BuiltinPricingTemplate](#schema-builtinpricingtemplate) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | AVAILABLE非空；NOT_APPLICABLE/其他状态为null。NOT_APPLICABLE仅表示实际没有计量规格，不读取/泄露价格参考；无价原因不能来自权限隐藏。                                                                                                                                                                   | 无额外格式限制；仍遵守所属组件业务规则                                                           |
-| `prefill_origin`           | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 仅说明待确认表单建议来源，不代表生效；metric_specs为空或参考规则不支持时NONE，不能自动补0或构造指标。                                                                                                                                                                                                 | enum=["OFFICIAL_NUMERIC_REFERENCE", "ENTERPRISE_DEFAULT_ZERO", "NONE"]                           |
-| `internal_pricing_prefill` | [PricingInput](#schema-pricinginput) / null                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | 有metric且AVAILABLE：原币官方数字预填至内部币种，不换汇；有metric且真实缺价：完整FIXED全指标0；UNSUPPORTED_RULE或metric_specs为空：null。确无metric时创建显式pricing=null，不建价版本。 NOT_APPLICABLE时始终null，调用方不需要pricing:READ即可继续原手工流程。                                        | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| 字段                       | 类型/组件                                                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                                                                                                                           | 约束                                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `provider_id`              | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次可管理的供应商实例UUID。                                                                                                                                                                                                                                                                                                                                                       | format="uuid"                                                                                    |
+| `provider_version`         | integer                                                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 准备时供应商实例版本；创建/导入回传expected_provider_version。                                                                                                                                                                                                                                                                                                                     | minimum=1                                                                                        |
+| `model_id_at_provider`     | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 规范化上游模型ID/部署名；不凭部署名推断官方型号。                                                                                                                                                                                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| `catalog_binding`          | [CatalogBinding](#schema-catalogbinding)                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例固定模板批次及可信型号/选中官方参考的完整关联；未匹配型号时model/price ID为null。                                                                                                                                                                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| `metric_specs`             | array&lt;[MetricSpec](#schema-metricspec)&gt;                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所选已适配调用接口的完整计量指标全集及显示单位；尚无已识别计量规格时为空，不造request指标或阻止原PRD允许的手工创建。调用协议不支持与无计量规格分开处理。                                                                                                                                                                                                                           | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| `billing_currency`         | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前总部内部币种；未配置为CNY，不是官方参考币种。                                                                                                                                                                                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| `currency_source`          | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部币种来源。                                                                                                                                                                                                                                                                                                                                                                     | enum=["HEADQUARTERS", "DEFAULT_CNY"]                                                             |
+| `billing_time_zone`        | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版内部计费时区固定Asia/Shanghai。                                                                                                                                                                                                                                                                                                                                                | const="Asia/Shanghai"                                                                            |
+| `time_zone_source`         | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版不新增系统时区设置。                                                                                                                                                                                                                                                                                                                                                           | enum=["DEFAULT_ASIA_SHANGHAI"]                                                                   |
+| `reference_state`          | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方参考事实：AVAILABLE有可表达官方参考且适用已知指标；PRICE_UNAVAILABLE无法获取定价；NO_PUBLIC_PRICE无公开单价；UNSUPPORTED_RULE复杂或不完整规则。metric_specs为空是无可配置计量项，不能借本状态伪造免费单价。 NOT_APPLICABLE仅服务端确定metric_specs=[]，无需准备价格参考；不是无法获取定价或免费。                                                                              | enum=["AVAILABLE", "PRICE_UNAVAILABLE", "NO_PUBLIC_PRICE", "UNSUPPORTED_RULE", "NOT_APPLICABLE"] |
+| `official_reference`       | [BuiltinPricingTemplate](#schema-builtinpricingtemplate) / null                     | 是   | 是   | 无静态默认；省略语义见组件/接口 | AVAILABLE非空；NOT_APPLICABLE/其他状态为null。NOT_APPLICABLE仅表示实际没有计量规格，不读取/泄露价格参考；无价原因不能来自权限隐藏。                                                                                                                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| `prefill_origin`           | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 待确认内部表单建议来源：适用ENTERPRISE_DEFAULT优先，其次OFFICIAL_NUMERIC_REFERENCE，再符合真实缺价或复杂规则归零条件的ENTERPRISE_DEFAULT_ZERO，否则NONE；此预填来源不等于落库PricingBasis.kind。不是已生效价格。                                                                                                                                                                   | enum=["ENTERPRISE_DEFAULT", "OFFICIAL_NUMERIC_REFERENCE", "ENTERPRISE_DEFAULT_ZERO", "NONE"]     |
+| `internal_pricing_prefill` | [PricingInput](#schema-pricinginput) / null                                         | 是   | 是   | 无静态默认；省略语义见组件/接口 | 完整待确认内部规则。适用产品默认优先（0有效，不与官方逐字段混合）；无默认才按可表达官方数字/真实缺价全0；无默认且官方复杂规则时为完整FIXED零价建议，只有无计量项时null。币种取当前预算缺省CNY；首次expected_price_version=0；官方与默认参考ID分别准确带回。                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                                           |
+| `default_reference`        | [EnterpriseDefaultPricingTemplate](#schema-enterprisedefaultpricingtemplate) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 固定批次可信型号命中的完整产品默认；优先用于预填。无默认或真实无计量项null；不完整/不兼容默认不得当成未配置静默回退。 默认时段名是产品模板文案：M13/M14的default_reference.periods[].name和内部预填按Accept-Language从固定批次period_name_labels投影，缺译用所属模板fallback_locale。官方参考时段名保持官方原文，管理员已保存的period.name保持确认原文，切语言不重命名既有内部价。 | 无额外格式限制；仍遵守所属组件业务规则                                                           |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "reference_state": {
+            "const": "NOT_APPLICABLE",
+            "description": "真实无计量规格分支。"
+          }
+        },
+        "required": ["reference_state"]
+      },
+      "then": {
+        "properties": {
+          "metric_specs": {
+            "type": "array",
+            "maxItems": 0,
+            "description": "真实空计量集合。"
+          },
+          "official_reference": {
+            "type": "null",
+            "description": "不读取价格参考。"
+          },
+          "internal_pricing_prefill": {
+            "type": "null",
+            "description": "无可配置价。"
+          },
+          "prefill_origin": {
+            "const": "NONE",
+            "description": "没有预填。"
+          },
+          "default_reference": {
+            "type": "null",
+            "description": "真实无计量项不读取默认价格。"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metric_specs": {
+            "type": "array",
+            "minItems": 1,
+            "description": "准备价格时必须有真实非空计量规格。"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reference_state": {
+            "const": "AVAILABLE"
+          }
+        },
+        "required": ["reference_state"]
+      },
+      "then": {
+        "properties": {
+          "official_reference": {
+            "$ref": "#/components/schemas/BuiltinPricingTemplate"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "official_reference": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "default_reference": {
+            "type": "object"
+          }
+        },
+        "required": ["default_reference"]
+      },
+      "then": {
+        "properties": {
+          "prefill_origin": {
+            "const": "ENTERPRISE_DEFAULT"
+          },
+          "internal_pricing_prefill": {
+            "$ref": "#/components/schemas/PricingInput"
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "reference_state": {
+              "const": "AVAILABLE"
+            }
+          },
+          "required": ["reference_state"]
+        },
+        "then": {
+          "properties": {
+            "prefill_origin": {
+              "const": "OFFICIAL_NUMERIC_REFERENCE"
+            },
+            "internal_pricing_prefill": {
+              "$ref": "#/components/schemas/PricingInput"
+            }
+          }
+        },
+        "else": {
+          "if": {
+            "properties": {
+              "reference_state": {
+                "enum": ["PRICE_UNAVAILABLE", "NO_PUBLIC_PRICE", "UNSUPPORTED_RULE"]
+              }
+            },
+            "required": ["reference_state"]
+          },
+          "then": {
+            "properties": {
+              "prefill_origin": {
+                "const": "ENTERPRISE_DEFAULT_ZERO"
+              },
+              "internal_pricing_prefill": {
+                "$ref": "#/components/schemas/PricingInput"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "prefill_origin": {
+                "const": "NONE"
+              },
+              "internal_pricing_prefill": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+<a id="schema-modelidentityinput"></a>
+
+### ModelIdentityInput
+
+M05身份及协议完整修改域，仅DRAFT允许。供应商、供应商侧标识、模型名称、支持接口、自定义路径五类字段锁定；catalog_model_version_id仅是与目标一致的来源绑定，不能在非DRAFT借此改目标。
+
+| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
+| --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `provider_id`               | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
+| `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
+| `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
+| `supported_invocation_apis` | array&lt;string&gt;                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | DRAFT基础修改可与自定义接口同时为空；非空接口仍须合法适配，检测时至少一项。                                                                                                   | uniqueItems=true                       |
+| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整自定义相对路径集合；无项明确[]，编辑必须回传希望保留的全部路径。                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_model_version_id`  | string / null                                         | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可选当前基础来源；显式null清除，省略且供应商/上游ID未变则保留；目标改变时后端重新核实或清除不成立来源。新选择须匹配供应商固定批次，不以型号字符串猜Azure部署身份              | 无额外格式限制；仍遵守所属组件业务规则 |
+
+未声明字段：拒绝（`additionalProperties=false`）。
+
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+40修订：DRAFT接口集合可同时为空；检测才要求非空，非DRAFT基础域仍禁止提交。
+
+<a id="schema-modelmetadatainput"></a>
+
+### ModelMetadataInput
+
+M05可编辑元信息完整域；DRAFT/TESTING/PENDING_REVIEW/ACTIVE/SUSPENDED/RETIRED均可保存。六个键必填：未知集合[]、未知数值及描述null，不省略清空。编辑不修改身份、接口、准入周期或生命周期，不自动触发/取消检测。
+
+| 字段                | 类型/组件           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                  | 约束                                   |
+| ------------------- | ------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
+| `input_modalities`  | array&lt;string&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 输入模态集合；未知为空数组，不添加笼统 type                               | uniqueItems=true                       |
+| `output_modalities` | array&lt;string&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 输出模态集合；未知为空数组                                                | uniqueItems=true                       |
+| `context_window`    | integer / null      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模型上下文 Token 整数，未知 null，界面 1K=1000                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `max_output_tokens` | integer / null      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 最大输出 Token 整数，未知 null                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `tags`              | array&lt;string&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 能力标签及自定义标签；流式由规范化注册键识别                              | uniqueItems=true                       |
+| `description`       | string / null       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 管理员填写的模型说明原文；未知或未填为null，不按Accept-Language自动翻译。 | 无额外格式限制；仍遵守所属组件业务规则 |
+
+未声明字段：拒绝（`additionalProperties=false`）。
+
+<a id="schema-enterprisedefaultpricingtemplate"></a>
+
+### EnterpriseDefaultPricingTemplate
+
+产品/研发按型号预置、随不可变数据库目录批次发布的只读企业默认规则。FIXED/TIME_BASED及非零/零单价均可；必须覆盖适用的完整计量项。不是官方报价，没有产品管理写接口；发布更新不覆盖已保存价格/费用。 默认时段名是产品模板文案：M13/M14的default_reference.periods[].name和内部预填按Accept-Language从固定批次period_name_labels投影，缺译用所属模板fallback_locale。官方参考时段名保持官方原文，管理员已保存的period.name保持确认原文，切语言不重命名既有内部价。 数据库中的default_reference以DBEnterpriseDefaultPricingSnapshot保全period_name_labels和fallback_locale；公开EnterpriseDefaultPricingTemplate去掉这两个私有键，再从冻结语言集投影periods[].name。价格/费用/审计保全私有快照，不查当前目录重建历史，公开响应仍拒绝额外字段。
+
+| 字段                               | 类型/组件                                                 | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                  | 约束                                   |
+| ---------------------------------- | --------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `catalog_default_price_version_id` | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | price_kind=ENTERPRISE_DEFAULT的不可变ma_catalog_prices条目UUID。                                                                                                                                                          | format="uuid"                          |
+| `catalog_model_version_id`         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该默认规则适用的准确ma_catalog_models条目；不凭部署名猜型号。                                                                                                                                                             | format="uuid"                          |
+| `catalog_release_id`               | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一完整目录批次UUID。                                                                                                                                                                                                    | format="uuid"                          |
+| `catalog_revision`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同批次不可变发布revision；不代表项目评审版本。                                                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则 |
+| `adapter_revision`                 | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该型号计量映射对应的后端适配器版本。                                                                                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则 |
+| `currency_mode`                    | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 产品默认数值模板不携带官方币种；使用保存时的内部预算币种，缺省CNY，不换汇。                                                                                                                                               | const="SYSTEM_BILLING_CURRENCY"        |
+| `pricing_mode`                     | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 固定价 FIXED 或分时价 TIME_BASED                                                                                                                                                                                          | enum=["FIXED", "TIME_BASED"]           |
+| `time_zone`                        | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部默认分时规则固定按Asia/Shanghai解释。                                                                                                                                                                                 | const="Asia/Shanghai"                  |
+| `periods`                          | array&lt;[PricePeriodInput](#schema-priceperiodinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整固定/分时默认规则；periods[].name按当前请求语言从该版本冻结标签投影，规则条件、单位及费率不随语言改变。不是管理员已保存价格时段名称。 时段及其中conditions均按输入顺序保存/返回，保留每行weekdays集合；不合并或拆行。 | minItems=1                             |
+| `rounding`                         | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部Decimal舍入规则。                                                                                                                                                                                                     | const="HALF_EVEN"                      |
+| `amount_scale`                     | integer                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部金额小数精度。                                                                                                                                                                                                        | const=18                               |
+
+未声明字段：拒绝（`additionalProperties=false`）。
+
+<a id="schema-defaultpricingpreparation"></a>
+
+### DefaultPricingPreparation
+
+M14只读产品/研发按型号发布的企业默认规则，固定实例目录批次。现有模型模式仅读取当前价格版本用于并发断言，不把当前价当默认、不修改价格；不查询官方报价。M13负责创建优先级和完整参考事实，二者解析同一适用默认。
+
+| 字段                       | 类型/组件                                                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                                                                                                                                                                                                           | 约束                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------- | ---- | ---- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `provider_id`              | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次可管理的供应商实例UUID。                                                                                                                                                                                                                                                                                                                                                       | format="uuid"                                          |
+| `provider_version`         | integer                                                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 准备时供应商实例版本；创建/导入回传expected_provider_version。                                                                                                                                                                                                                                                                                                                     | minimum=1                                              |
+| `model_id_at_provider`     | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 规范化上游模型ID/部署名；不凭部署名推断官方型号。                                                                                                                                                                                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                 |
+| `catalog_binding`          | [CatalogBinding](#schema-catalogbinding)                                            | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例固定模板批次及可信型号；本接口不读取官方参考，所以catalog_price_version_id恒null。企业默认独立完整来源在default_reference中，不能把默认ID填入官方参考键。                                                                                                                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则                 |
+| `metric_specs`             | array&lt;[MetricSpec](#schema-metricspec)&gt;                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所选已适配调用接口的完整计量指标全集及显示单位；尚无已识别计量规格时为空，不造request指标或阻止原PRD允许的手工创建。调用协议不支持与无计量规格分开处理。                                                                                                                                                                                                                           | 无额外格式限制；仍遵守所属组件业务规则                 |
+| `billing_currency`         | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前总部内部币种；未配置为CNY，不是官方参考币种。                                                                                                                                                                                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                 |
+| `currency_source`          | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 内部币种来源。                                                                                                                                                                                                                                                                                                                                                                     | enum=["HEADQUARTERS", "DEFAULT_CNY"]                   |
+| `billing_time_zone`        | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版内部计费时区固定Asia/Shanghai。                                                                                                                                                                                                                                                                                                                                                | const="Asia/Shanghai"                                  |
+| `time_zone_source`         | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本版不新增系统时区设置。                                                                                                                                                                                                                                                                                                                                                           | enum=["DEFAULT_ASIA_SHANGHAI"]                         |
+| `state`                    | string                                                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | AVAILABLE=完整适用产品默认；NOT_CONFIGURED=可信型号未预置默认或未匹配可信型号；NOT_APPLICABLE=确无计量项。已存在但失配/损坏不是NOT_CONFIGURED，应返回目录错误。                                                                                                                                                                                                                    | enum=["AVAILABLE", "NOT_CONFIGURED", "NOT_APPLICABLE"] |
+| `default_reference`        | [EnterpriseDefaultPricingTemplate](#schema-enterprisedefaultpricingtemplate) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 固定批次可信型号命中的完整产品默认；优先用于预填。无默认或真实无计量项null；不完整/不兼容默认不得当成未配置静默回退。 默认时段名是产品模板文案：M13/M14的default_reference.periods[].name和内部预填按Accept-Language从固定批次period_name_labels投影，缺译用所属模板fallback_locale。官方参考时段名保持官方原文，管理员已保存的period.name保持确认原文，切语言不重命名既有内部价。 | 无额外格式限制；仍遵守所属组件业务规则                 |
+| `internal_pricing_prefill` | [PricingInput](#schema-pricinginput) / null                                         | 是   | 是   | 无静态默认；省略语义见组件/接口 | AVAILABLE为完整默认数值按当前内部币种形成的待确认规则，默认参考ID准确带回。现有模型模式expected_price_version取实际当前值，官方参考键省略以保留已有参考；创建前模式expected_price_version=0且官方参考null，最终创建用M13取得完整官方/默认上下文。其他state为null，不自行回退官方价或免费。                                                                                         | 无额外格式限制；仍遵守所属组件业务规则                 |
+| `model_id`                 | string / null                                                                       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 现有模型模式返回该模型UUID；创建前模式null。不接受任意无权模型作为查询上下文。                                                                                                                                                                                                                                                                                                     | 无额外格式限制；仍遵守所属组件业务规则                 |
+
+未声明字段：拒绝（`additionalProperties=false`）。
+
+条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
+
+```json
+{
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "AVAILABLE"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "metric_specs": {
+            "minItems": 1
+          },
+          "default_reference": {
+            "$ref": "#/components/schemas/EnterpriseDefaultPricingTemplate"
+          },
+          "internal_pricing_prefill": {
+            "$ref": "#/components/schemas/PricingInput"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "default_reference": {
+            "type": "null"
+          },
+          "internal_pricing_prefill": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "NOT_APPLICABLE"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "metric_specs": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metric_specs": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}
+```
 
 ## 5. 条件必填、空值和省略的补充规则
 
@@ -3895,10 +4752,10 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 | ProviderCreate            | 无 expected_version；name/template_key/template_version_id/base_url/security_level/public_config 必填；notes 省略为 null，balance_config 省略则余额 NONE；秘密按模板条件必填。                                                                                                    |
 | ProviderUpdate            | expected_version及template_version_id必填；基础配置完整替换；notes 省略保持、null 清空；balance_config 省略保持；secrets 省略/空字符串保留，clear_secret_fields 明确清除；必需秘密清除且无替换返回 422。                                                                          |
 | ModelCreate               | 基础四项必填；其余元信息按字段默认；health 默认关闭/360；initial_grants 默认空；pricing 省略尝试已核实且币种相符的内置价，否则未定价，不填假零价。                                                                                                                                |
-| ModelUpdate               | 至少提交 base/grants/pricing/health 一域；base 必须 DRAFT 和 expected_base_version；health 需 expected_health_config_version；授权和价格自带版本；只提交版本不含业务域 422。                                                                                                      |
-| ModelUpdate.base          | 完整基础表单；缺可选模态/标签/自定义接口清为空，缺可选上下文/说明清为 null；不提交 base 才表示整个基础域不变。                                                                                                                                                                    |
+| ModelUpdate               | 至少提交base/metadata/grants/pricing/health一域；base仅DRAFT且expected_base_version，metadata全状态且expected_metadata_version；health需其版本；授权/价格自带版本；仅版本参数422。                                                                                                |
+| ModelUpdate.base          | 仅完整身份/协议域，必填五类字段含完整自定义接口集合；不提交base表示该域不变。模态/标签/上下文/最大输出/描述改用metadata完整六字段，null/[]显式清空，不接受跨域字段。                                                                                                              |
 | 自定义接口 id             | 创建条目时省略或 null，由后端分配；更新时既有条目带 id，必须属于本模型；不得传其他模型 ID。                                                                                                                                                                                       |
-| 标准调用接口              | R03已批准标准或已适配自定义合计至少一项；标准集合可为空，两者不能皆空。自定义路径匹配不到适配协议时明确拒绝，不猜协议、不要求用户写脚本。                                                                                                                                         |
+| 标准调用接口              | 40修订中D02及空草稿响应允许两者皆空；D03/C01检测仍要求标准或已适配自定义合计至少一项。M03仍要求接口非空；M05仅DRAFT基础编辑允许空集合。自定义路径匹配不到适配协议时明确拒绝，不猜协议、不要求用户写脚本。                                                                         |
 | BalanceConfigInput/Update | 首次 config version=0；独立 B02 必传 expected_version；嵌入已有 provider 配置时也必传，首次可为 0。mode NONE 时禁用告警，query_config={}，currency/threshold 为 null，recipient/channels 可空；TEMPLATE 单位按模板；CUSTOM 新建省略币种默认 CNY，显式 null 不合法；编辑省略保持。 |
 | CUSTOM 余额查询           | method/url/auth_type/calculation_mode 必填；DIRECT 必填 value_path；SUBTRACT 必填 total_path/used_path，以 Decimal 计算总额减已用；两值同币种/单位，任一路径缺失/非法均失败，不能补 0 或再次调用接口。GET body=null；POST body 可为空对象；字段路径不执行脚本。                   |
 | 余额认证秘密              | NONE 无秘密；BEARER 使用 secrets.token；HEADER 使用 auth_header_name 与 secrets.header_value；TEMPLATE 的键取 P01.balance_fields。秘密不准出现在公开 query_config/body/url。                                                                                                      |
@@ -3992,17 +4849,17 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 
 模板/内置型号/价格目录的权威来源为数据库完整不可变发布批次；后端代码仅提供已允许的适配执行逻辑。新目录包是导入介质，不能作为运行时兜底。P01/M08仍为现有只读接口，不新增目录CRUD、管理后台或版本选择页面。
 
-| 场景           | 请求及响应规则                                                                                                                                                                                                    |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 新建供应商     | P01取当前批次；P03提交准确template_version_id+template_key。当前批次已变化且该版本不再允许新绑定时409 CATALOG_CHANGED，保留草稿重新读取，不静默按新规则保存。                                                     |
-| 编辑已有供应商 | 先P04取原绑定，再P01?provider_id读取旧规格；P05普通编辑回传原ID，目录发布不影响。通过既有模板选择明确改选当前模板版本（可同key）才改绑定；无新升级按钮，不自动复验/下架。                                         |
-| 模型目录读取   | M08提供provider_id时固定该实例模板批次；响应带catalog_release_id/catalog_revision，续页回传批次。无provider时默认当前，明确历史批次只读不授予新绑定资格。                                                         |
-| 发现与导入     | D01首次固定配置/模板/目录批次；D05和D02从快照读取，续页和幂等恢复不重取current。显式型号ID与服务器候选一致；手工无选择首次受理固定可信匹配或null。                                                                |
-| 模型来源       | catalog_model_version_id表示实际采用来源，不代表已通过检测或当前仍适配。DRAFT基础改目标须重核或清除，目录发布/供应商改绑不自动回写旧模型元信息。                                                                  |
-| 价格参考输入   | PricingInput.catalog_price_version_id省略：R02/M05继承当前参考，无旧价/M03为null；显式null清除。保留同当前价旧参考允许历史批次；改选另一ID须实例固定批次及可信型号匹配。保存始终ENTERPRISE_CUSTOM，无可写source。 |
-| 创建价格确认   | M13只准备官方原币参考/内部数字建议；M03/D02有metric时显式提交完整pricing，真实缺价预填0后由管理员保存确认。确无metric允许pricing=null且不建价格版本；目录不自动覆盖既有BUILT_IN或企业自定义价。                   |
-| 历史关联       | CatalogBinding五键同批一致；template_catalog_binding、model_catalog_binding和价格catalog_binding分别保存，允许各自历史批次不同。费用和任务仍完整自持事实，不JOIN当前目录重释。                                    |
-| 目录并发与幂等 | 首次命令受理固化catalog_context；同key重放、逐项恢复、后台发送不得重新解析当前发布指针。CATALOG_CHANGED为409，CATALOG_INCOMPATIBLE为422，CATALOG_UNAVAILABLE为503；均不得自动换版本重发。                         |
+| 场景                   | 请求及响应规则                                                                                                                                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新建供应商             | P01取当前批次；P03提交准确template_version_id+template_key。当前批次已变化且该版本不再允许新绑定时409 CATALOG_CHANGED，保留草稿重新读取，不静默按新规则保存。                                                     |
+| 编辑已有供应商         | 先P04取原绑定，再P01?provider_id读取旧规格；P05普通编辑回传原ID，目录发布不影响。通过既有模板选择明确改选当前模板版本（可同key）才改绑定；无新升级按钮，不自动复验/下架。                                         |
+| 模型目录读取           | M08提供provider_id时固定该实例模板批次；响应带catalog_release_id/catalog_revision，续页回传批次。无provider时默认当前，明确历史批次只读不授予新绑定资格。                                                         |
+| 发现与导入             | D01首次固定配置/模板/目录批次；D05和D02从快照读取，续页和幂等恢复不重取current。显式型号ID与服务器候选一致；手工无选择首次受理固定可信匹配或null。                                                                |
+| 模型来源               | catalog_model_version_id表示实际采用来源，不代表已通过检测或当前仍适配。DRAFT基础改目标须重核或清除，目录发布/供应商改绑不自动回写旧模型元信息。                                                                  |
+| 价格参考输入           | PricingInput.catalog_price_version_id省略：R02/M05继承当前参考，无旧价/M03为null；显式null清除。保留同当前价旧参考允许历史批次；改选另一ID须实例固定批次及可信型号匹配。保存始终ENTERPRISE_CUSTOM，无可写source。 |
+| 创建价格前置（40修订） | D02不配置价格；M03不强制价格，显式对象仍按原权限保存。D03/C01初价准备规则与F40已确认边界见40；目录不自动覆盖已有有效BUILT_IN或企业自定义价。                                                                      |
+| 历史关联               | CatalogBinding五键同批一致；template_catalog_binding、model_catalog_binding和价格catalog_binding分别保存，允许各自历史批次不同。费用和任务仍完整自持事实，不JOIN当前目录重释。                                    |
+| 目录并发与幂等         | 首次命令受理固化catalog_context；同key重放、逐项恢复、后台发送不得重新解析当前发布指针。CATALOG_CHANGED为409，CATALOG_INCOMPATIBLE为422，CATALOG_UNAVAILABLE为503；均不得自动换版本重发。                         |
 
 价格隐藏权限、秘密隔离、Decimal、单次模型请求、DRAFT基础限制和其余已确认范围保持。目录版本ID均为服务端校验的关联，不是客户端扩大权限或伪造BUILT_IN/VERIFIED的凭据。V1.2数据库专项和32项已获用户回执；本版新增设计仍须按变更范围核对，未实施。
 
@@ -4028,20 +4885,75 @@ R03的接口集合规则已同步请求、响应及组合约束；ImportItem省�
 
 官方目录只存真实原币参考及官方来源，不用内部手册价格。M08/M13不按总部币种过滤官方价；单一报价唯一解析，多币种目录发布须明确preferred_reference_currency，只决定参考选择，不新增币种下拉框。目录pricing_unavailable_reason仅PRICE_UNAVAILABLE、NO_PUBLIC_PRICE、UNSUPPORTED_RULE或null；无参考且无明确理由的发布包不合格。
 
-| 阶段/条件    | 契约                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 准备         | M13先需models:WRITE及实例范围；真实metric非空才需pricing:READ，确空走NOT_APPLICABLE；传provider_id、上游ID、所选标准/自定义接口及可选可信目录型号。解析已适配metric全集；纯手工无目录也必须可解析，未知调用协议拒绝；调用已适配但无计量规格时metric_specs=[]，不造request单价。                                                                                                     |
-| 有官方参考   | 显示原币原单位/官方来源；internal_pricing_prefill仅借用数值，currency采用预算币种缺省CNY。管理员可调整并在现创建/导入表单保存完整内部price；不是换汇，不承诺相同购买力或复刻官方账单。官方复杂规则/参考指标不完整不能自动选最低档或填0。                                                                                                                                            |
-| 无价默认免费 | 仅服务端确认存在非空计量指标且PRICE_UNAVAILABLE/NO_PUBLIC_PRICE时准备完整FIXED全指标0；管理员仍在创建/导入保存中提交完整pricing。缺权限导致HIDDEN/null不能转为免费，复杂规则UNSUPPORTED_RULE不预填，可明确配置受支持的内部规则。                                                                                                                                                    |
-| 首次保存     | M03及D02每个待创建项pricing键必填：有指标为完整对象且expected_price_version=0；仅服务端确无指标可null，不建价格版本并保持UNPRICED；expected_provider_version必填。有官方参考需带准确catalog_price_version_id；没有参考显式null。缺字段422；确无计量规格是原PRD允许的无价创建，不静默补价。提交价格对象需要pricing:WRITE，确无指标null分支不扩大价格权限，不自动授予READ/WRITE权限。 |
-| 并发         | PricingInput.currency必填，是已展示的预算币种断言。保存币种不同409 BILLING_CURRENCY_CHANGED，实例版本不同409 VERSION_CONFLICT；刷新准备并让管理员确认，禁止原CNY数字自动当USD。目录选择固定，保存重新验可信绑定，准备不发预留票据。                                                                                                                                                 |
-| 批量恢复     | D02先记录固定上下文，逐项事务；未执行项遇实例/币种变化安全REJECTED，已提交项不回滚不重算。重放同命令读取既有结果，不改用最新目录/币种解释已接受数值。                                                                                                                                                                                                                               |
-| 来源         | 首次已有非空指标+真实缺价+无官方参考+FIXED全指标0才BUILT_IN/ENTERPRISE_DEFAULT_ZERO；首次带官方参考为ENTERPRISE_CUSTOM/OFFICIAL_PREFILL_CONFIRMED；其他/后续改价为ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED。source/kind均只读，不接受confirmed或客户端声明已二次确认。                                                                                                               |
-| 历史         | PricingBasis四键必填；默认0理由非空且reference=null，其他理由null；存在catalog_price_version_id时完整official_reference必须非空且ID相同。企业数字、币种、规则与官方原币参考分别冻结，后续目录/预算/模型删除不能改检测费用快照。                                                                                                                                                     |
-| 未知事实     | 已知内部单价0不自动补齐缺失usage、未知发送结果或计算溢出；这些仍以UNKNOWN/null事实记录，不把未知费用改为已算0。                                                                                                                                                                                                                                                                     |
+| 阶段/条件                              | 契约                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 准备                                   | M13先需models:WRITE及实例范围；真实metric非空才需pricing:READ，确空走NOT_APPLICABLE；传provider_id、上游ID、所选标准/自定义接口及可选可信目录型号。解析已适配metric全集；纯手工无目录也必须可解析，未知调用协议拒绝；调用已适配但无计量规格时metric_specs=[]，不造request单价。                                                                                                                                                                           |
+| 有官方参考                             | 始终独立显示原币原单位/官方来源；只有无适用产品默认且官方规则完整可表达时，internal_pricing_prefill才借用官方数值，currency采用预算币种缺省CNY。有完整产品默认则按默认预填，不混入官方值。管理员仍须确认保存；不是换汇，不承诺相同购买力或复刻官方账单。无默认且官方复杂/指标不完整时不选最低档、不自动填0。                                                                                                                                              |
+| 无价默认免费                           | 无适用产品默认、服务端确认非空计量指标且PRICE_UNAVAILABLE/NO_PUBLIC_PRICE/UNSUPPORTED_RULE时准备完整FIXED全指标0；D03自动应用，手工价格配置仍明确保存。缺权限HIDDEN/null、目录或运行错误不能转免费；已有完整适用默认时按默认预填（包括非零或分时），不能因官方无价/复杂而改为免费。                                                                                                                                                                       |
+| 首次保存（历史契约；40已替代创建前置） | 原M03及D02每个待创建项pricing键必填：有指标为完整对象且expected_price_version=0；仅服务端确无指标可null，不建价格版本并保持UNPRICED；expected_provider_version必填。有官方参考需带准确catalog_price_version_id，有产品默认需带准确catalog_default_price_version_id；两类引用独立，无对应参考显式null。缺字段422；确无计量规格是原PRD允许的无价创建，不静默补价。提交价格对象需要pricing:WRITE，确无指标null分支不扩大价格权限，不自动授予READ/WRITE权限。 |
+| 并发                                   | PricingInput.currency必填，是已展示的预算币种断言。保存币种不同409 BILLING_CURRENCY_CHANGED，实例版本不同409 VERSION_CONFLICT；刷新准备并让管理员确认，禁止原CNY数字自动当USD。目录选择固定，保存重新验可信绑定，准备不发预留票据。                                                                                                                                                                                                                       |
+| 批量恢复                               | D02先记录固定上下文，逐项事务；未执行项遇实例/币种变化安全REJECTED，已提交项不回滚不重算。重放同命令读取既有结果，不改用最新目录/币种解释已接受数值。                                                                                                                                                                                                                                                                                                     |
+| 来源                                   | 首次语义原样确认完整产品默认为BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED（可非零/分时）；无默认且非空指标+真实缺价+无官方参考+FIXED全0才BUILT_IN/ENTERPRISE_DEFAULT_ZERO；无默认首次带官方参考为ENTERPRISE_CUSTOM/OFFICIAL_PREFILL_CONFIRMED；修改默认或其他/后续改价为ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED。source/kind均只读，不接受confirmed或客户端声明已二次确认。                                                                                     |
+| 历史                                   | PricingBasis schema3五键必填，default_reference与official_reference独立。真实缺价0理由非空且两参考null；其他理由null。两个目录ID分别与各自完整参考配对。企业数字/币种/规则、产品默认及官方原币参考分别冻结，默认私有语言集完整保留；后续目录/预算/模型删除不能改检测费用快照。                                                                                                                                                                            |
+| 未知事实                               | 已知内部单价0不自动补齐缺失usage、未知发送结果或计算溢出；这些仍以UNKNOWN/null事实记录，不把未知费用改为已算0。                                                                                                                                                                                                                                                                                                                                           |
 
 BILLING_CURRENCY_CHANGED归409（预算配置在读写间变化），PRICE_RULE_INVALID/METRIC_UNSUPPORTED归422，M13未知接口CUSTOM_API_UNSUPPORTED归422；对象越界与不存在统一404。模型调用ID输入须在框架字段长度校验之前按固定Unicode White_Space 25码点规范化；x-normalize-before-validation标注此要求，规范化后1～128且拒绝U+0000。
 
-计量边界：M13不是新准入门槛。原PRD允许的非内置手工模型若暂无已识别计量项，metric_specs=[]、reference_state=NOT_APPLICABLE、prefill_origin=NONE、internal_pricing_prefill=null，价格入口隐藏；创建/导入显式pricing=null，仅服务端验证真实无指标才接受，不生成伪免费价。已识别指标时null拒绝，必须管理员确认完整价。D03后改接口导致PROFILE_MISMATCH仍按既有规则执行检测并记录UNPRICED；不自动改价或新增阻断。
+计量边界：M13保留独立价格准备，无已识别计量项时metric_specs=[]、reference_state=NOT_APPLICABLE、prefill_origin=NONE、internal_pricing_prefill=null，不生成伪免费价。40修订中D02不配置价格、M03不强制价格；F40-04已确认无计量项仍可检测并在满足其他条件后上架，不生成空价，前端显示“未匹配的计价模式”，金额保持未定价。历史实现D03改接口后PROFILE_MISMATCH继续检测；F40-03仅针对有metric而已有价失配改为准备失败，不自动覆盖或归零。
 
 M13条件权限：先校验models:WRITE和供应商模型用途范围、解析非秘密计量规格。metric_specs=[]时返回NOT_APPLICABLE、reference/prefill=null、prefill_origin=NONE及provider_version，不读取或泄露任何官方/企业价，不要求pricing:READ/WRITE；用户仍可显式pricing=null保存原PRD允许的手工模型。metric非空才要求pricing:READ，403不可冒充空集合/缺价，保存价对象仍需pricing:WRITE。NOT_APPLICABLE必须空指标且无预填；其他reference_state必须非空指标。PricingBasis与source/参考是否存在的条件已编码OpenAPI组合约束；全部0、相同目录ID及指标完整性仍由保存事务校验。
+
+## 11. 2026-11-10前端协同四项确认
+
+本节与上方字段契约共同为当前设计；旧版本回执保留历史，全部任务仍pending。
+
+| 事项        | 当前明确规则                                                                                                                                                                                                                                                                                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M05编辑     | 非DRAFT只锁五类身份/协议字段；metadata六字段在TESTING/PENDING_REVIEW/ACTIVE/SUSPENDED/RETIRED同样可改，版本独立。身份域DRAFT、元信息任意状态，复合请求全事务。                                                                                                                                                                                                         |
+| 检测并发    | 任务冻结metadata_version及输入/计划，不因编辑重算费用或偷偷增加调用。元信息编辑不强制下架/复验；准入审核不以metadata版本差异一律阻断。显式复用则检查当前有效计划/探针完整性，新流式不能复用缺流式的旧接口结果；纯描述变更不机械失效。                                                                                                                                  |
+| 默认优先    | 按型号随数据库目录批次发布的只读产品默认优先；不存在时才官方数字，再符合真缺价规则的0。0是有效默认。默认和官方参考独立版本/完整快照，已有企业价格和费用不随目录发布变化。M14只读无管理写接口；创建M13包含优先级，无需重复M14。                                                                                                                                         |
+| 保存来源    | 首次原样默认为BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED；首次编辑默认、后续含恢复默认均为ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED并保留真实来源。先按is_fallback与规范化conditions定位默认时段，再比Decimal费率、完整指标和模式；name允许该同一时段已发布任一语言标签（同语言必须唯一），不把语言切换误记CUSTOM。自定义时段名或规则变化记CUSTOM；不允许来源ID替代规则校验。 |
+| B06部门找人 | q用户命中OR可见部门名命中后含全部子部门人员；显式department_id再AND约束。去重后分页，只返回/保存具体用户，部门是筛选条件。新增成员不自动成为接收人；不新增部门收件关系或邮件投递。                                                                                                                                                                                     |
+| 多语言      | P01认证字段和选项、M13/M14/R03计量指标/单位等按Accept-Language；省略按会话语言，缺译用该版本fallback_locale。技术key/value/路径/枚举不译；固定产品枚举由前端国际化；管理员原文不译。历史名称从冻结语言集投影，切换语言不采用新目录版本。                                                                                                                               |
+
+供应商编辑以`P01?provider_id=…`读取原固定模板的本地化标签；例如同一字段`key=api_key`在zh-CN返回“API密钥”、en返回“API key”，提交键始终为api_key。价格模板同一`metric_key=input_tokens`可返回“输入Token”/“Input tokens”，`unit=MILLION_TOKENS`不变；默认费率与币种不因语言切换变化。模板端点响应缓存必须按当前用户/语言及固定目录版本隔离，不能跨语言复用显示文案。
+
+默认计价的时段名同样属于模板多语言范围。产品发布时在source_detail.period_name_labels按稳定目录时段名保存语言集；M13/M14仅投影所选语言的periods[].name和预填名。默认历史快照内部保全period_name_labels/fallback_locale，公开去掉两个私有键并只从冻结语言集选择；已有企业价格的period.name是管理员确认原文，不因切换语言或目录更新而重命名。默认采用比较以is_fallback/规范化conditions对应时段，接受其发布的任一语言标签；同语言下重名默认时段不得发布，以免混淆。官方参考时段名保持原始来源文案。
+
+检测历史的公开ModelProviderSnapshot是最小投影，metadata_version指向内部实际冻结的完整六项元信息。DBModelProviderSnapshot内部另存输入/输出模态、上下文、最大输出及描述（tags已存在），响应去掉这五项私有字段和presentation。连续复用从DBReuseSourceSnapshot已扁平复制的内部完整快照核对有效探针/计划，不依赖公开投影或当前模型，不因源任务清理而丢验证事实。
+
+## 12. ADJ-01～ADJ-04已审调整（2026-11-11）
+
+该次ADJ评审仅为A01增加显式paginate=false，其他分页接口在当时未改变；本轮另获批准的M08/M09/M10调整见§13。价格条件组件由Window改为ConditionRow，weekdays为严格升序的多选星期集合，conditions数组保留原始行序和分组。直接/递归受影响接口为D02、M03、M05、M08、M13、M14、R01/R02/R03、C01/C03/C04、H01/H03/H05，共15个；不向原本无价格内容的M04追加价格字段。
+
+当前无历史业务数据，因此仅设计当前新结构：PricingBasis=3、PriceSnapshot=2、CostRuleSnapshot随父费用快照保持条件行；不新增LegacyWindow或旧版本兼容读取。新旧审阅原件和P1/P2完成证据由项目保留，未来产生的价格历史与检测费用仍按固化事实读取。
+
+保存的有序编辑结构进入幂等HMAC，不能按时间或星期排序、不能合并/展开条件后计算摘要；相同键但不同分组/行序返回409 IDEMPOTENCY_CONFLICT。首次默认来源判定另用临时展开后的计价语义比较，不改变真实保存结构。字段非法与重叠仍使用422 PRICE_RULE_INVALID/VALIDATION_FAILED，并按原始periods[i].conditions[j]定位。
+
+## 13. M08/M09/M10可选不分页查询（2026-11-11已批准）
+
+三个接口复用A01的分页开关契约：默认paginate=true、page=1、page_size=20且最大100；单独page_size仍合法。paginate=false禁止显式page/page_size（422 VALIDATION_FAILED），开关空值/非true或false/重复为400 MALFORMED_REQUEST。不接受page_size=0、-1或超大页长表示全量。
+
+响应继续使用ModelTemplatePage/ProviderOptionPage/TagOptionPage：page/page_size始终必返且成对null或整数；非分页total=items.length，空结果items=[]/total=0；全量不静默截断。同一次响应的items、total和关联展示字段来自同一数据库一致性快照，权限与筛选不因全量放宽。筛选后的“全部”只指全部合法匹配候选，不是全局对象全集。
+
+- M08两种模式均固定目录批次；按template_key、model_id_at_provider、catalog_model_version_id升序。provider_id仍可省略，无provider默认当前批次的原语义保持；表单建议选定供应商后加载，单型号预填用既有型号筛选，不要求读取全部供应商目录。pricing权限、官方参考/企业默认分工不变；不调用上游。
+- M09保持q按实例名/模板名搜索及name、id排序，只返ProviderOption最小投影；M10保持内置优先、同类value排序及value去重，q按value/当前语言label搜索。两者当前范围、语言和秘密边界不变。
+- 三者是候选/预填目录，M04仍是已有供应商与标签的回显来源；搜索、未加载候选、空结果及失败均不能清空已有选择。前端可按需全量或继续分页搜索，不强制全量加载。
+
+不新增数据库字段、索引、迁移、管理后台或API路径；56操作/42路径/136组件不变。已批准规格纳入待办V14-18及关联组合/交付验收；业务和前端联调仍为not_run，不修改P1/P2完成状态。
+
+## 12. 40修订字段和发布边界
+
+本次同步设计字典、04-openapi-review.json及04-operation-index.json作为未实施目标；contracts/releases/model-access-v14下正式OpenAPI、client、operation-index、示例均保留原发布事实。旧生成契约尚不能发送本节新输入，实施后由源定义生成并同版发布，不手工改JSON制造已实现。
+
+- D02：`ImportItem.supported_invocation_apis/custom_invocation_apis`允许合计0；`pricing`可省略/null，非空拒绝。D02响应接口数组保持真实[]，price版本0。
+- D03/C01：不新增客户端价格对象；服务端准备价格，返回实际任务与版本。目录缺失/故障明确失败；无metric未定价例外、复杂规则零价、已有失配价拒绝分别按F40已确认规则处理，不混为免费。
+- R03：补充`INTERFACES_NOT_CONFIGURED`未定价原因；无接口与确无计量分别表达。
+- M03：价格不强制；若显式提供仍按原价格权限及完整参数校验，不能一并放宽接口数。
+- 价格来源/自动采用形成依据及对应错误码最终随40数据库和API契约实施生成；不能把自动准备记作管理员确认。
+
+### F40-04 已确认的无计量项展示与费用边界（未实施）
+
+至少一个接口真实可适配，但完整解析结果metric_specs=[]时，D03/C01允许继续检测；D04/M07 APPROVE在其他准入、权限、版本及状态条件满足后允许上架。不创建rates=[]价格或虚构零价版本；R03为state=UNPRICED、unpriced_reason=METRIC_SPEC_UNAVAILABLE、metric_specs=[]，从未建价时price=null/price_version=0，有历史价格时保留历史而不作为本次适用价。前端计价模式显示“未匹配的计价模式”（按当前用户语言翻译）；不新增PricingMode枚举，实际价格模式仍只有FIXED/TIME_BASED。空接口草稿的INTERFACES_NOT_CONFIGURED与本例不同，不能藉此绕过D03接口非空校验。
+
+检测保存可取得的原始usage、调用事实和system/总部费用归属；无法计算的金额为null/UNPRICED，不记0、不标COMPLETE，未知用量不得补0。控制面负责本系统管理检测事实；实际用户请求的数据面系统须遵守同一事实语义，但外部获取/投递协议仍属后续规划，本轮不新增数据面实现或宣称已验。后续补齐计量适配后，经获授权的检测准备或独立价格配置采用实际指标；目录发布、读取和健康检查不自动改价，不回算历史或覆盖已有企业价。

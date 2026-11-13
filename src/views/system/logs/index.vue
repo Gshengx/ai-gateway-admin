@@ -283,6 +283,7 @@
           <t-form-item :label="t('logs.operationDays')" :help="t('logs.operationRange')"
             ><t-space
               ><t-input-number
+                v-nonnegative-number
                 v-model="draft.operation_days"
                 :min="180"
                 :max="730"
@@ -294,6 +295,7 @@
           <t-form-item :label="t('logs.runtimeDays')" :help="t('logs.runtimeRange')"
             ><t-space
               ><t-input-number
+                v-nonnegative-number
                 v-model="draft.runtime_days"
                 :min="30"
                 :max="365"

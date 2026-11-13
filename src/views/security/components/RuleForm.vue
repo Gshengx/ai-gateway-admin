@@ -143,6 +143,7 @@
             v-if="method === 'KEYWORD' || method === 'REGEX'"
             :label="label('matchThreshold')"
             ><t-input-number
+              v-nonnegative-number
               v-model="form.config.match_threshold"
               :min="1"
               :decimal-places="0"
@@ -150,6 +151,7 @@
           /></t-form-item>
           <t-form-item v-else :label="label('threshold')"
             ><t-input-number
+              v-nonnegative-number
               v-model="form.config.threshold"
               :min="0"
               :max="1"
@@ -181,11 +183,13 @@
             <div v-if="form.config.mask_config.mode === 'PARTIAL_MASK'" class="security-grid">
               <t-form-item :label="label('keepPrefix')"
                 ><t-input-number
+                  v-nonnegative-number
                   v-model="form.config.mask_config.keep_prefix"
                   :min="0"
                   :decimal-places="0" /></t-form-item
               ><t-form-item :label="label('keepSuffix')"
                 ><t-input-number
+                  v-nonnegative-number
                   v-model="form.config.mask_config.keep_suffix"
                   :min="0"
                   :decimal-places="0"

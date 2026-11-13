@@ -1,23 +1,15 @@
-import {
-  runtimeState,
-  nextSequence,
-  directory,
-  apiKeys,
-  preferencesFor,
-  subjectName,
-} from './_runtime'
+import { runtimeState, nextSequence, directory, apiKeys, preferencesFor } from './_runtime'
 import { mockAccounts, mockRoles } from './_accounts'
 import { CAPABILITIES, CAPABILITY_NAMES } from './_capabilities'
 import { getPasswordRules } from './settings'
 import { termsAcceptances, userTermsInfo } from './terms'
-import { modelAccessState } from './_modelAccessState'
+import { removeModelSubject } from './_modelAccessState'
 import { createHash } from 'node:crypto'
 import {
   checkToken,
   auditedMock,
   revokeUserTokens,
   setMockPasswordRequired,
-  checkCsrf,
   mockId,
   fail,
   pathId,
@@ -406,11 +398,7 @@ function cleanUser(user: MockUser) {
   for (const group of GROUPS) group.member_ids = group.member_ids.filter((id) => id !== user.id)
   for (let i = apiKeys.length - 1; i >= 0; i--)
     if (apiKeys[i].user_id === user.id) apiKeys.splice(i, 1)
-  for (const [model, grants] of modelAccessState.permissions)
-    modelAccessState.permissions.set(
-      model,
-      grants.filter((g) => g.subject_type !== 'USER' || g.subject_id !== user.id),
-    )
+  removeModelSubject('USER', user.id)
 }
 
 function str(value: unknown): string {
@@ -1051,158 +1039,7 @@ function batchDeleteDigest(
     .digest('hex')
 }
 
-function logicalSources(user: MockUser, locale: string) {
-  return [...modelAccessState.permissions.values()]
-    .flat()
-    .filter(
-      (g) =>
-        (g.subject_type === 'USER' && g.subject_id === user.id) ||
-        (g.subject_type === 'USER_GROUP' &&
-          GROUPS.some(
-            (group) => group.id === g.subject_id && group.member_ids.includes(user.id),
-          )) ||
-        (g.subject_type === 'DEPARTMENT' &&
-          !!user.department_id &&
-          descendantDepartmentIds(g.subject_id).includes(user.department_id)),
-    )
-    .flatMap((g) => {
-      const model = modelAccessState.models.find((m) => m.id === g.physical_model_id)
-      if (!model) return []
-      return [
-        {
-          model: {
-            id: model.id,
-            display_name: model.model_id_at_gateway,
-            localized_name: model.model_id_at_gateway,
-            logical_name: model.model_id_at_gateway,
-            description: model.description,
-            localized_description: model.description,
-            requested_locale: locale,
-            resolved_locale: null,
-            selectable: true,
-            status: model.status,
-          },
-          source_type: g.subject_type,
-          source_id: g.subject_id,
-          source_display_name: subjectName(g.subject_type, g.subject_id, g.subject_name),
-          source_in_scope: true,
-          scope_mode: g.subject_type === 'DEPARTMENT' ? 'SUBTREE' : 'SELF',
-        },
-      ]
-    })
-}
 export default auditedMock([
-  {
-    url: '/api/v1/users/:user_id/accessible-models',
-    method: 'get',
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      const user = users.find((u) => u.id === pathSegmentBefore(req, 'accessible-models'))
-      if (!user) return fail('NOT_FOUND', '')
-      const sources = logicalSources(user, requestLocale(req)).filter(
-        (s) => s.model.status === 'ACTIVE',
-      )
-      const ids = [...new Set(sources.map((s) => s.model.id))]
-      return success(
-        groupOffsetPage(
-          ids.map((id) => ({
-            id,
-            model_id_at_gateway: sources.find((s) => s.model.id === id)!.model.display_name,
-            permission_sources: sources
-              .filter((s) => s.model.id === id)
-              .map((s) => ({
-                subject_type: s.source_type,
-                subject_id: s.source_id,
-                subject_name: s.source_display_name,
-              })),
-          })),
-          req,
-        ),
-      )
-    },
-  },
-  {
-    url: '/api/v1/logical-models/options',
-    method: 'get',
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      return success(
-        groupOffsetPage(
-          modelAccessState.models
-            .filter((m) =>
-              m.model_id_at_gateway
-                .toLowerCase()
-                .includes(firstOf(req.query?.search).trim().toLowerCase()),
-            )
-            .map((l) => ({
-              id: l.id,
-              logical_name: l.model_id_at_gateway,
-              display_name: l.model_id_at_gateway,
-              localized_name: l.model_id_at_gateway,
-              status: l.status,
-              workload_kind: '',
-            })),
-          req,
-        ),
-      )
-    },
-  },
-  {
-    url: '/api/v1/users/:user_id/model-grants',
-    method: 'get',
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      const user = users.find((u) => u.id === pathSegmentBefore(req, 'model-grants'))
-      if (!user) return fail('NOT_FOUND', '')
-      const items = logicalSources(user, requestLocale(req))
-        .filter((g) => g.source_type === 'USER')
-        .map((g) => ({
-          id: mockId(`direct-${user.id}-${g.model.id}`),
-          granted_at: '2026-11-03T00:00:00Z',
-          source_type: 'USER',
-          source_id: user.id,
-          scope_mode: 'SELF',
-          model: g.model,
-        }))
-      return success(groupOffsetPage(items, req))
-    },
-  },
-  {
-    url: '/api/v1/users/:user_id/model-grants',
-    method: 'put',
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      if (!checkCsrf(req)) return fail('CSRF_INVALID', '')
-      const id = pathSegmentBefore(req, 'model-grants')
-      if (!users.some((u) => u.id === id)) return fail('NOT_FOUND', '')
-      const ids = req.body?.model_ids as string[]
-      if (!Array.isArray(ids) || ids.some((x) => !modelAccessState.models.some((m) => m.id === x)))
-        return fail('VALIDATION_FAILED', '')
-      const user = users.find((u) => u.id === id)!
-      for (const m of modelAccessState.models) {
-        const list = (modelAccessState.permissions.get(m.id) ?? []).filter(
-          (g) => !(g.subject_type === 'USER' && g.subject_id === id),
-        )
-        if (ids.includes(m.id))
-          list.push({
-            id: mockId(`grant-${m.id}-${id}`),
-            physical_model_id: m.id,
-            subject_type: 'USER',
-            subject_id: id,
-            subject_name: user.display_name || user.username,
-            created_at: new Date().toISOString(),
-          })
-        modelAccessState.permissions.set(m.id, list)
-      }
-      return success({
-        applied: true,
-        changed: true,
-        replayed: false,
-        subject_id: id,
-        subject_type: 'USER',
-      })
-    },
-  },
   {
     url: '/api/v1/audit/terms-acceptances',
     method: 'get',
@@ -1224,18 +1061,6 @@ export default auditedMock([
       const user = users.find((u) => u.id === pathId(req))
       if (!user) return fail('NOT_FOUND', '用户不存在')
       return success({ user: toApiUser(user, locale), terms: userTermsInfo(user.username) })
-    },
-  },
-  {
-    url: '/api/v1/users/:user_id/model-grant-sources',
-    method: 'get',
-    timeout: 150,
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      const locale = requestLocale(req)
-      const user = users.find((u) => u.id === pathSegmentBefore(req, 'model-grant-sources'))
-      if (!user) return fail('NOT_FOUND', '用户不存在')
-      return success(groupOffsetPage(logicalSources(user, locale), req))
     },
   },
   {
@@ -1485,11 +1310,7 @@ export default auditedMock([
       }
 
       // 就地删除，保持 DEPARTMENTS 引用不变
-      for (const [model, grants] of modelAccessState.permissions)
-        modelAccessState.permissions.set(
-          model,
-          grants.filter((g) => g.subject_type !== 'DEPARTMENT' || g.subject_id !== department.id),
-        )
+      removeModelSubject('DEPARTMENT', department.id)
       DEPARTMENTS.splice(
         DEPARTMENTS.findIndex((d) => d.id === department.id),
         1,
@@ -1750,53 +1571,8 @@ export default auditedMock([
       if (index < 0) return fail('NOT_FOUND', '用户组不存在')
       // 就地删除，保持 GROUPS 引用不变
       const [removed] = GROUPS.splice(index, 1)
-      for (const [model, grants] of modelAccessState.permissions)
-        modelAccessState.permissions.set(
-          model,
-          grants.filter((g) => g.subject_type !== 'USER_GROUP' || g.subject_id !== removed.id),
-        )
+      removeModelSubject('USER_GROUP', removed.id)
       return success({ applied: true, group_id: removed.id, replayed: false })
-    },
-  },
-  {
-    url: '/api/v1/groups/:group_id/model-grants',
-    method: 'get',
-    timeout: 150,
-    response: (req: MockRequest) => {
-      if (!checkToken(req)) return unauthorized()
-      const group = GROUPS.find((item) => item.id === pathSegmentBefore(req, 'model-grants'))
-      if (!group) return fail('NOT_FOUND', '用户组不存在')
-      const locale = requestLocale(req)
-      const items = [...modelAccessState.permissions.values()]
-        .flat()
-        .filter((grant) => grant.subject_type === 'USER_GROUP' && grant.subject_id === group.id)
-        .flatMap((grant) => {
-          const model = modelAccessState.models.find((m) => m.id === grant.physical_model_id)
-          return model
-            ? [
-                {
-                  id: grant.id,
-                  granted_at: grant.created_at,
-                  source_type: 'GROUP',
-                  source_id: group.id,
-                  scope_mode: 'SELF',
-                  model: {
-                    id: model.id,
-                    display_name: model.model_id_at_gateway,
-                    localized_name: model.model_id_at_gateway,
-                    logical_name: model.model_id_at_gateway,
-                    description: model.description,
-                    localized_description: model.description,
-                    requested_locale: locale,
-                    resolved_locale: locale,
-                    selectable: model.status === 'ACTIVE',
-                    status: model.status,
-                  },
-                },
-              ]
-            : []
-        })
-      return success(groupOffsetPage(items, req))
     },
   },
   {

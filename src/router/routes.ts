@@ -22,48 +22,41 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
     component: () => import('@/views/dashboard/index.vue'),
     meta: { icon: 'dashboard' },
   },
-  providers: {
+  model_providers: {
     path: '/model/providers',
     name: 'ModelProviders',
     component: () => import('@/views/model/providers/index.vue'),
     meta: { permission: 'model.providers', icon: 'app' },
   },
-  physical_models: {
+  model_models: {
     path: '/model/models',
     name: 'ModelModels',
     component: () => import('@/views/model/models/index.vue'),
     meta: { permission: 'model.models', icon: 'app' },
   },
-  logical_models: {
-    path: '/model/logical-models',
-    alias: '/model/logical',
-    name: 'ModelLogical',
-    component: () => import('@/views/model/logical/index.vue'),
-    meta: { permission: 'model.logical', icon: 'app' },
-  },
-  model_admission: {
-    path: '/model/admission',
-    name: 'ModelAdmission',
+  identity_projects: {
+    path: '/identity/projects',
+    name: 'IdentityProjects',
     component: placeholder,
-    meta: { permission: 'model.admission' },
+    meta: { permission: 'identity.projects', icon: 'folder' },
   },
-  model_permissions: {
-    path: '/model/permissions',
-    name: 'ModelPermissions',
-    component: placeholder,
-    meta: { permission: 'model.permissions' },
+  cost_bills: {
+    path: '/cost/bills',
+    name: 'CostBills',
+    component: () => import('@/views/cost/bills/index.vue'),
+    meta: { permission: 'cost.bills', icon: 'file' },
   },
-  model_pricing: {
-    path: '/model/pricing',
-    name: 'ModelPricing',
+  cost_expenses: {
+    path: '/cost/expenses',
+    name: 'CostExpenses',
     component: placeholder,
-    meta: { permission: 'model.pricing' },
+    meta: { permission: 'cost.expenses', icon: 'file' },
   },
-  model_review: {
-    path: '/model/review',
-    name: 'ModelReview',
-    component: placeholder,
-    meta: { permission: 'model.review' },
+  cost_budgets: {
+    path: '/cost/budgets',
+    name: 'CostBudgets',
+    component: () => import('@/views/cost/budgets/index.vue'),
+    meta: { permission: 'cost.budgets', icon: 'wallet' },
   },
   groups: {
     path: '/identity/groups',
@@ -144,7 +137,8 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
 /** 非路由、非权限资源的展示容器，仅归类接口实际返回的入口。 */
 export const menuRouteGroups = [
   { code: 'identity', path: '/identity', titleKey: 'route.identity.label', icon: 'usergroup' },
-  { code: 'model_access', path: '/model', titleKey: 'route.model.label', icon: 'app' },
+  { code: 'model', path: '/model', titleKey: 'route.model.label', icon: 'app' },
+  { code: 'cost', path: '/cost', titleKey: 'route.cost.label', icon: 'wallet' },
   { code: 'system', path: '/system', titleKey: 'route.system.label', icon: 'setting' },
   { code: 'personal', path: '/account', titleKey: 'route.personal.label', icon: 'user' },
 ] as const
@@ -153,6 +147,7 @@ export const menuRouteGroups = [
 export const businessRoutes: RouteRecordRaw[] = [
   ['model', 'route.model.label'],
   ['identity', 'route.identity.label'],
+  ['cost', 'route.cost.label'],
   ['system', 'route.system.label'],
   ['audit', 'route.audit.label'],
   ['personal', 'route.personal.label'],
@@ -170,5 +165,5 @@ export function canEnterRoute(routeId: string, permissions: string[]): boolean {
     : undefined
   if (!route) return false
   const resource = route.meta?.permission
-  return !resource || permissions.includes(resource) || permissions.includes(`${resource}:write`)
+  return !resource || permissions.includes(resource)
 }

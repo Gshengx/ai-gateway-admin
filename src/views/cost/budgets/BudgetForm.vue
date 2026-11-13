@@ -36,7 +36,12 @@
         <t-form-item
           :label="t(kind === 'users' ? 'cost.baseInput' : 'cost.amountInput')"
           required-mark
-          ><t-input-number v-model="form.budget_amount" :min="0" :decimal-places="2" theme="normal"
+          ><t-input-number
+            v-nonnegative-number
+            v-model="form.budget_amount"
+            :min="0"
+            :decimal-places="2"
+            theme="normal"
         /></t-form-item>
         <t-form-item :label="t('cost.currency')" required-mark
           ><t-select v-model="form.currency" :options="currencyOptions" :disabled="!isHq"
@@ -56,6 +61,7 @@
       <div class="form-row">
         <t-form-item :label="t('cost.warningThreshold')" required-mark
           ><t-input-number
+            v-nonnegative-number
             v-model="form.warning_threshold"
             :min="1"
             :max="98"
@@ -64,6 +70,7 @@
         /></t-form-item>
         <t-form-item :label="t('cost.criticalThreshold')" required-mark
           ><t-input-number
+            v-nonnegative-number
             v-model="form.critical_threshold"
             :min="2"
             :max="99"

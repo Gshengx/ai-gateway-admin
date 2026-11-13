@@ -63,9 +63,12 @@
         /></t-form-item>
         <div v-if="item.file_checks.includes('FILE_SIZE')" class="security-grid">
           <t-form-item :label="label('minSize')"
-            ><t-input-number v-model="item.min_size_mb" :min="0" /></t-form-item
+            ><t-input-number
+              v-nonnegative-number
+              v-model="item.min_size_mb"
+              :min="0" /></t-form-item
           ><t-form-item :label="label('maxSize')"
-            ><t-input-number v-model="item.max_size_mb" :min="0"
+            ><t-input-number v-nonnegative-number v-model="item.max_size_mb" :min="0"
           /></t-form-item>
         </div>
       </template>

@@ -92,10 +92,12 @@ import {
   type TermsTranslation,
 } from '@/api/modules/terms'
 import { canWriteResource, useUserStore } from '@/stores/modules/user'
+import { useTermsStore } from '@/stores/modules/terms'
 import TermsPreviewDialog from './TermsPreviewDialog.vue'
 import { formatDateTime } from '@/utils/datetime'
 const { t } = useI18n()
 const userStore = useUserStore()
+const termsStore = useTermsStore()
 const canWrite = computed(() => canWriteResource(userStore.permissions, 'system.settings'))
 const form = reactive({
   login_popup_enabled: false,
@@ -143,6 +145,11 @@ watch(
     if (value) form.login_popup_enabled = true
   },
 )
+async function readConfiguration() {
+  const config = await getTermsConfigApi()
+  termsStore.updateConfiguration(config)
+  return config
+}
 function apply(config: TermsConfig) {
   saved.value = { ...config }
   const zh = config.translations.find((item) => item.locale_code.startsWith('zh'))
@@ -217,13 +224,13 @@ async function save() {
       await updateTermsConfigApi(switches, createIdempotencyKey())
       changed = true
     }
-    apply(await getTermsConfigApi())
+    apply(await readConfiguration())
     MessagePlugin.success(t('terms.notice.saveSuccess'))
   } catch {
     // Preserve unsaved edits while updating the saved baseline after a partial success.
     if (changed && saved.value) {
       try {
-        const config = await getTermsConfigApi()
+        const config = await readConfiguration()
         saved.value = { ...config }
       } catch {
         // The request layer reports failures.
@@ -241,7 +248,7 @@ async function load() {
   loading.value = true
   loadFailed.value = false
   try {
-    const result = await getTermsConfigApi()
+    const result = await readConfiguration()
     if (current.isCurrent()) apply(result)
   } catch {
     if (current.isCurrent()) loadFailed.value = true

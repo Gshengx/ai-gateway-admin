@@ -1,11 +1,21 @@
-import request from '@/api/request'
-import type { OffsetPageResult } from '@/api/types'
+import type { Raw } from 'vue'
+import type { RequestConfig } from '@/api/request'
+import type { TemplateCondition } from '@/utils/modelTemplate'
+import type {
+  DynamicField,
+  BalanceRecipientDisplay,
+  CheckJob,
+  CheckCounts,
+  OfficialModelBinding,
+} from './modelAccessContract'
 
-// V1.4 的临时契约。真实接口上线后在本模块集中替换，组件不直接操作 mock。
+// Form/view models. HTTP read/write DTOs live in modelAccessContract.ts.
 export type Status = 'DRAFT' | 'TESTING' | 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED'
 export type Health = 'UNKNOWN' | 'CHECKING' | 'HEALTHY' | 'UNHEALTHY'
 export type Subject = 'DEPARTMENT' | 'USER_GROUP' | 'USER'
 export interface AuthField {
+  conditions?: { visible: TemplateCondition[] | null; required: TemplateCondition[] | null }
+  dto?: Pick<DynamicField, 'control' | 'options' | 'value_type' | 'validation_schema'>
   key: string
   label: string
   secret: boolean
@@ -13,6 +23,10 @@ export interface AuthField {
   default_value?: string
 }
 export interface Template {
+  auth_modes?: { value: string; label: string }[]
+  template_version_id?: string
+  enabled?: boolean
+  balance_template_supported?: boolean
   template_key: string
   name: string
   base_url: string
@@ -32,9 +46,16 @@ export interface BalanceConfig {
   body: string
 }
 export interface Provider {
+  version?: number
+  clear_secret_fields?: string[]
+  configured_balance_secret_fields?: string[]
+  template_version_id?: string
+  recipient_users?: BalanceRecipientDisplay[]
+  alert_state?: string
   id: string
   name: string
   template_key: string
+  template_name?: string
   base_url: string
   provider_config: Record<string, string>
   configured_secret_fields: string[]
@@ -44,11 +65,12 @@ export interface Provider {
   balance_query_mode: 'NONE' | 'TEMPLATE' | 'CUSTOM'
   balance_query_config: BalanceConfig
   balance_alert_enabled: boolean
-  balance_alert_threshold: number
+  balance_alert_threshold: number | string
   balance_alert_unit: string
   balance_alert_recipients: string[]
   balance_alert_channels: string[]
-  last_balance_value: number | null
+  last_balance_unit: string | null
+  last_balance_value: string | null
   last_balance_attempt_at: string | null
   last_balance_success_at: string | null
   balance_query_status: 'NEVER_QUERIED' | 'SUCCESS' | 'FAILED'
@@ -61,6 +83,7 @@ export interface Permission {
   subject_type: Subject
   subject_id: string
   subject_name: string
+  subject_username?: string | null
   created_at: string
 }
 export interface Period {
@@ -70,19 +93,19 @@ export interface Period {
   conditions: { weekdays: number[]; start: string; end: string }[]
 }
 export interface Rate {
+  display_name?: string
+  unit_label?: string
   metric_key: string
   unit: string
-  unit_price: number | null
-  period_prices: Record<string, number | null>
+  unit_price: string | null
+  period_prices: Record<string, string | null>
 }
 export interface Pricing {
-  exclusive_usage_confirmed?: boolean
+  catalog_default_price_version_id?: string | null
+  catalog_price_version_id?: string | null
   id: string
   version: number
   source_type: 'BUILT_IN' | 'ENTERPRISE_CUSTOM'
-  sync_mode: 'MANUAL' | 'AUTO'
-  platform_catalog_version: string | null
-  last_synced_at: string | null
   currency: string
   pricing_mode: 'FIXED' | 'TIME_BASED'
   metric_rates: Rate[]
@@ -91,7 +114,12 @@ export interface Pricing {
   created_by: string
 }
 export interface Model {
+  official_model_binding?: OfficialModelBinding
+  provider_base_url?: string
+  security_level?: 'INTERNET' | 'TRUSTED_CLOUD' | 'PRIVATE'
+  provider_name?: string
   lifecycle_events?: {
+    fromStatus?: string | null
     action: 'CREATE' | 'UPDATE' | 'STATUS'
     status: Status
     created_at: string
@@ -124,20 +152,23 @@ export interface CustomInvocationApi {
   path: string
 }
 export interface Check {
+  display_name?: string
   invocation_api?: string
   upstream_path?: string
   key: string
-  status: 'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'ERROR'
-  duration_ms: number
+  status: 'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE' | 'REUSED'
+  duration_ms: number | null
   detail: string
 }
 export interface TestRun {
+  counts?: CheckCounts
+  dto?: Raw<CheckJob>
   id: string
   model_id: string
   purpose: 'ADMISSION' | 'HEALTH'
   trigger_type: 'MANUAL' | 'AUTO'
   invocation_api: string
-  status: Check['status']
+  status: 'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'ERROR'
   checks: Check[]
   billing_user: string
   billing_department: string
@@ -193,9 +224,6 @@ export function blankPricing(): Pricing {
     id: '',
     version: 0,
     source_type: 'BUILT_IN',
-    sync_mode: 'MANUAL',
-    platform_catalog_version: null,
-    last_synced_at: null,
     currency: 'CNY',
     pricing_mode: 'FIXED',
     metric_rates: ([] as string[]).map((metric_key) => ({
@@ -239,6 +267,7 @@ export function blankProvider(): Provider {
     balance_alert_unit: 'CNY',
     balance_alert_recipients: [],
     balance_alert_channels: ['IN_APP'],
+    last_balance_unit: null,
     last_balance_value: null,
     last_balance_attempt_at: null,
     last_balance_success_at: null,
@@ -253,7 +282,7 @@ export function blankModel(): Model {
     provider_id: '',
     model_id_at_gateway: '',
     model_id_at_provider: '',
-    supported_invocation_apis: ['CHAT_COMPLETIONS'],
+    supported_invocation_apis: [],
     custom_invocation_apis: [],
     input_modalities: [],
     output_modalities: [],
@@ -271,151 +300,17 @@ export function blankModel(): Model {
     admission_valid: false,
   }
 }
-type TemplateResponse = Partial<Omit<Template, 'fields'>> & {
-  template_key: string
-  display_name?: string
-  default_base_url?: string
-  fields?: (Partial<AuthField> & {
-    key: string
-    label_zh?: string
-    label_en?: string
-    value_type?: string
-  })[]
-}
+export { transport as accessApi } from './modelAccessTransport'
 
-function normalizeProvider(
-  data: Partial<Provider> & {
-    public_config?: Record<string, string>
-  },
-): Provider {
-  // 未开发的余额字段保持空状态，不将缺失余额解释为零。
-  const empty = blankProvider()
-  return {
-    ...empty,
-    ...data,
-    provider_config: data.provider_config ?? data.public_config ?? {},
-    configured_secret_fields: data.configured_secret_fields ?? [],
-    balance_query_config: { ...empty.balance_query_config, ...data.balance_query_config },
-    balance_alert_recipients: data.balance_alert_recipients ?? [],
-    balance_alert_channels: data.balance_alert_channels ?? [],
-    last_balance_value: data.last_balance_value ?? null,
-  }
-}
-
-export async function isModelNameAvailable(name: string, excludeId?: string): Promise<boolean> {
-  for (let page = 1; ; page++) {
-    const result = await accessApi.models({ page, page_size: 100 })
-    if (result.items.some((item) => typeof item.model_id_at_gateway !== 'string'))
-      throw new Error('Model name is unavailable in the current API contract')
-    if (
-      result.items.some(
-        (item) => item.id !== excludeId && item.model_id_at_gateway.trim() === name.trim(),
-      )
-    )
-      return false
-    if (page >= result.total_pages) return true
-  }
-}
-
-export const accessApi = {
-  metadata: (provider_id: string, model_id_at_provider: string) =>
-    request.get<
-      Pick<
-        Model,
-        | 'supported_invocation_apis'
-        | 'input_modalities'
-        | 'output_modalities'
-        | 'tags'
-        | 'context_window'
-        | 'max_output_tokens'
-      >
-    >('/model-metadata', { params: { provider_id, model_id_at_provider } }),
-  catalog: (model_id_at_provider: string) =>
-    request.get<Pricing>('/pricing-catalog', { params: { model_id_at_provider } }),
-  templates: async (): Promise<Template[]> => {
-    const data = await request.get<TemplateResponse[] | { items: TemplateResponse[] }>(
-      '/provider-templates',
-      { params: { page: 1, page_size: 100 } },
-    )
-    return (Array.isArray(data) ? data : (data.items ?? [])).map((item) => ({
-      template_key: item.template_key,
-      name: item.name ?? item.display_name ?? '',
-      base_url: item.base_url ?? item.default_base_url ?? '',
-      fields: (item.fields ?? []).map((field) => ({
-        key: field.key,
-        label: field.label ?? field.label_zh ?? field.label_en ?? '',
-        secret: field.secret ?? field.value_type === 'SECRET',
-        required: field.required ?? false,
-        default_value: field.default_value,
-      })),
-    }))
-  },
-  providers: async (params: Record<string, unknown>) => {
-    const data = await request.get<OffsetPageResult<Provider>>('/providers', { params })
-    return { ...data, items: (data.items ?? []).map(normalizeProvider) }
-  },
-  provider: async (id: string) =>
-    normalizeProvider(await request.get<Provider>(`/providers/${id}`)),
-  saveProvider: (data: Provider) =>
-    data.id
-      ? request.put<Provider>(`/providers/${data.id}`, data)
-      : request.post<Provider>('/providers', data),
-  removeProvider: (id: string, reason: string) =>
-    request.delete(`/providers/${id}`, { data: { reason } }),
-  balance: (id: string) => request.post<Provider>(`/providers/${id}/balance-query`, {}),
-  discover: (id: string) =>
-    request.post<{ discovery_id: string; items: Candidate[]; error_code: string | null }>(
-      `/providers/${id}/models/discover`,
-      {},
-    ),
-  import: (id: string, discovery_id: string, items: Candidate[]) =>
-    request.post<{ items: Model[]; errors: string[] }>(`/providers/${id}/models/import`, {
-      discovery_id,
-      items,
-    }),
-  models: (params: Record<string, unknown>) =>
-    request.get<OffsetPageResult<Model>>('/models', { params }),
-  model: (id: string) => request.get<Model>(`/models/${id}`),
-  saveModel: (data: Model) =>
-    data.id ? request.put<Model>(`/models/${data.id}`, data) : request.post<Model>('/models', data),
-  removeModel: (id: string, reason: string) =>
-    request.delete(`/models/${id}`, { data: { reason } }),
-  status: (id: string, status: Status, reason: string) =>
-    request.put<Model>(`/models/${id}/status`, { status, reason }),
-  startTest: (
-    id: string,
-    purpose: 'ADMISSION' | 'HEALTH',
-    selected_checks: string[],
-    idempotencyKey?: string,
-  ) =>
-    request.post<TestRun>(
-      `/models/${id}/${purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'}`,
-      { selected_checks },
-      { idempotencyKey },
-    ),
-  test: (id: string, purpose: 'ADMISSION' | 'HEALTH', run: string, signal?: AbortSignal) =>
-    request.get<TestRun>(
-      `/models/${id}/${purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'}/${run}`,
-      { signal },
-    ),
-  history: (id: string, purpose: 'ADMISSION' | 'HEALTH', page = 1, page_size = 20) =>
-    request.get<OffsetPageResult<TestRun>>(
-      `/models/${id}/${purpose === 'HEALTH' ? 'health-checks' : 'admission-tests'}`,
-      { params: { page, page_size } },
-    ),
-  permissions: (id: string, page = 1, subject_type?: Subject) =>
-    request.get<OffsetPageResult<Permission>>(`/models/${id}/permissions`, {
-      params: { page, page_size: 20, subject_type },
-    }),
-  grant: (id: string, items: Omit<Permission, 'id' | 'physical_model_id' | 'created_at'>[]) =>
-    request.post(`/models/${id}/permissions`, { items }),
-  revoke: (id: string, ids: string[], reason: string) =>
-    request.delete(`/models/${id}/permissions`, { data: { ids, reason } }),
-  pricing: (id: string) => request.get<Pricing>(`/models/${id}/pricing/current`),
-  prices: (id: string, page = 1, page_size = 20) =>
-    request.get<OffsetPageResult<Pricing>>(`/models/${id}/pricing`, {
-      params: { page, page_size },
-    }),
-  savePrice: (id: string, data: Pricing) => request.post<Pricing>(`/models/${id}/pricing`, data),
-  syncPrice: (id: string) => request.post<Pricing>(`/models/${id}/pricing/sync`, {}),
+export async function isModelNameAvailable(
+  name: string,
+  excludeId?: string,
+  config?: RequestConfig,
+): Promise<boolean> {
+  const { modelAccessApi } = await import('./modelAccessApi')
+  const result = await modelAccessApi.M12({
+    ...config,
+    params: { model_id_at_gateway: name, exclude_model_id: excludeId },
+  })
+  return result.available
 }

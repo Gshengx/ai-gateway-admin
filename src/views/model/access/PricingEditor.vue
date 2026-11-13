@@ -2,7 +2,15 @@
   <div class="ma-stack">
     <div class="ma-row pricing-heading">
       <h3>{{ t('ma.modelPrice') }}</h3>
-      <span class="ma-muted">{{ t('ma.modelPriceHelp') }}</span>
+      <t-button
+        v-if="defaultPrice"
+        class="ma-push-right"
+        theme="primary"
+        variant="outline"
+        :loading="restoring"
+        @click="restoreDefault"
+        >{{ t('ma.restoreDefaults') }}</t-button
+      >
     </div>
     <t-alert theme="info" :message="t('ma.priceConfigNotice')" />
     <t-form class="ma-form pricing-form" label-align="top" required-mark-position="right">
@@ -112,21 +120,24 @@
         </p>
       </section>
       <p class="ma-muted">{{ t('ma.metricHelp') }}</p>
-      <p v-if="!value.metric_rates.length" class="ma-muted">{{ t('ma.noAdaptedMetrics') }}</p>
-      <t-checkbox v-if="needsExclusiveUsage" v-model="value.exclusive_usage_confirmed">{{
-        t('ma.exclusiveUsage')
-      }}</t-checkbox>
-      <p v-if="needsExclusiveUsage" class="ma-muted">{{ t('ma.exclusiveHelp') }}</p>
+      <p v-if="!value.metric_rates.length" class="ma-muted">{{ t('ma.noMeteringStandard') }}</p>
+      <template v-if="needsExclusiveUsage">
+        <t-checkbox v-model="exclusiveUsageConfirmed">{{ t('ma.exclusiveUsage') }}</t-checkbox>
+        <p class="ma-muted">{{ t('ma.exclusiveHelp') }}</p>
+        <p v-if="validationAttempted && !exclusiveUsageConfirmed" class="ma-error">
+          {{ t('ma.exclusiveUsageRequired') }}
+        </p>
+      </template>
       <section
         v-for="rate in value.metric_rates"
         :key="rate.metric_key"
         class="ma-box pricing-rate"
       >
         <div class="ma-row">
-          <strong>{{ metricLabel(rate.metric_key) }}</strong
+          <strong>{{ rate.display_name || metricLabel(rate.metric_key) }}</strong
           ><span class="ma-muted"
             >{{ t('ma.price') }}（{{ value.currency }} /
-            {{ t('ma.' + unitLabel(rate.unit)) }}）</span
+            {{ rate.unit_label || t('ma.' + unitLabel(rate.unit)) }}）</span
           >
           <t-tag class="ma-push-right" size="small" variant="light">{{ t('ma.adapted') }}</t-tag>
         </div>
@@ -134,13 +145,24 @@
           v-if="value.pricing_mode === 'FIXED'"
           class="pricing-fixed"
           :label="t('ma.price')"
+          :status="priceInvalid(rate.unit_price) ? 'error' : undefined"
+          :tips="priceInvalid(rate.unit_price) ? t('ma.priceDecimalFormat') : undefined"
           required-mark
         >
           <t-input-number
-            v-model="rate.unit_price"
-            @change="markCustom"
-            :min="0"
-            :decimal-places="2"
+            v-nonnegative-number
+            large-number
+            theme="row"
+            :min="'0'"
+            :value="rate.unit_price ?? undefined"
+            :status="priceInvalid(rate.unit_price) ? 'error' : undefined"
+            inputmode="decimal"
+            @change="
+              (value: string | number) => {
+                rate.unit_price = String(value)
+                markCustom()
+              }
+            "
           />
         </t-form-item>
         <template v-else>
@@ -151,11 +173,26 @@
                 period.is_fallback ? t('ma.fallback') : period.name || t('ma.periodName')
               }}</span
               ><t-input-number
-                v-model="rate.period_prices[period.id]"
-                @change="markCustom"
-                :min="0"
-                :decimal-places="2"
+                v-nonnegative-number
+                large-number
+                theme="row"
+                :min="'0'"
+                :value="rate.period_prices[period.id] ?? undefined"
+                :status="priceInvalid(rate.period_prices[period.id]) ? 'error' : undefined"
+                inputmode="decimal"
+                @change="
+                  (value: string | number) => {
+                    rate.period_prices[period.id] = String(value)
+                    markCustom()
+                  }
+                "
               />
+              <p
+                v-if="priceInvalid(rate.period_prices[period.id])"
+                class="ma-error pricing-cell__error"
+              >
+                {{ t('ma.priceDecimalFormat') }}
+              </p>
             </div>
           </div>
         </template>
@@ -165,12 +202,34 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { type Pricing, type Period } from '@/api/modules/modelAccess'
 import { pricingError, periodsError, validatePeriods } from '@/utils/modelPricing'
+import { isDecimal } from '@/utils/modelContract'
 import { metricLabel, unitLabel } from './helpers'
+const props = defineProps<{
+  defaultPrice?: Pricing
+  loadDefault?: () => Promise<Pricing | undefined>
+}>()
+const restoring = ref(false)
 const value = defineModel<Pricing>({ required: true })
+function priceInvalid(price: string | number | null | undefined) {
+  if (price === null || price === undefined || price === '') return validationAttempted.value
+  return !isDecimal(String(price))
+}
+// Local confirmation only; the write DTO has no such field.
+const exclusiveUsageConfirmed = ref(false)
+const needsExclusiveUsage = computed(
+  () =>
+    value.value.metric_rates.some((r) =>
+      ['input_tokens', 'output_tokens'].includes(r.metric_key),
+    ) &&
+    value.value.metric_rates.some(
+      (r) => /^(image|audio|video)_/.test(r.metric_key) && !r.metric_key.endsWith('_tokens'),
+    ),
+)
 const { t, locale } = useI18n(),
   error = ref('')
 const validationAttempted = ref(false)
@@ -184,15 +243,6 @@ const dayOptions = computed(() =>
           new Date(Date.UTC(2026, 10, 2 + i)),
         ),
   })),
-)
-const needsExclusiveUsage = computed(
-  () =>
-    value.value.metric_rates.some((r) =>
-      ['input_tokens', 'output_tokens'].includes(r.metric_key),
-    ) &&
-    value.value.metric_rates.some(
-      (r) => /^(image|audio|video)_/.test(r.metric_key) && !r.metric_key.endsWith('_tokens'),
-    ),
 )
 const periodValidation = computed(() => validatePeriods(value.value.time_periods))
 const namedPeriods = computed(() => value.value.time_periods.filter((p) => !p.is_fallback))
@@ -223,7 +273,7 @@ function addPeriod() {
 function initializePeriodPrices() {
   for (const rate of value.value.metric_rates) {
     for (const period of value.value.time_periods) {
-      rate.period_prices[period.id] ??= period.is_fallback ? (rate.unit_price ?? 0) : 0
+      rate.period_prices[period.id] ??= period.is_fallback ? (rate.unit_price ?? '0') : '0'
     }
   }
 }
@@ -236,8 +286,8 @@ function modeChanged() {
     const fallback = value.value.time_periods.find((period) => period.is_fallback)
     for (const rate of value.value.metric_rates)
       rate.unit_price = fallback
-        ? (rate.period_prices[fallback.id] ?? rate.unit_price ?? 0)
-        : (rate.unit_price ?? 0)
+        ? (rate.period_prices[fallback.id] ?? rate.unit_price ?? '0')
+        : (rate.unit_price ?? '0')
   }
 }
 function addCondition(period: Period) {
@@ -267,12 +317,50 @@ function removePeriod(id: string) {
 }
 function validate() {
   validationAttempted.value = true
-  if (!value.value.metric_rates.length) return true
+  if (!value.value.metric_rates.length) {
+    error.value = ''
+    return true
+  }
   const problem =
     (value.value.pricing_mode === 'TIME_BASED' && periodsError(value.value.time_periods)) ||
-    pricingError(value.value)
-  error.value = problem && problem !== 'invalidPeriods' ? t('ma.' + problem) : ''
+    pricingError(value.value) ||
+    (needsExclusiveUsage.value && !exclusiveUsageConfirmed.value ? 'invalidPrice' : '')
+  error.value =
+    needsExclusiveUsage.value && !exclusiveUsageConfirmed.value
+      ? t('ma.exclusiveUsageRequired')
+      : problem && problem !== 'invalidPeriods'
+        ? t('ma.' + problem)
+        : ''
   return !problem
+}
+watch(
+  [value, exclusiveUsageConfirmed],
+  () => {
+    if (validationAttempted.value) validate()
+  },
+  { deep: true },
+)
+async function restoreDefault() {
+  if (!props.defaultPrice || restoring.value) return
+  restoring.value = true
+  try {
+    const defaults = props.loadDefault ? await props.loadDefault() : props.defaultPrice
+    if (!defaults) {
+      MessagePlugin.info(t('ma.defaultPricingUnavailable'))
+      return
+    }
+    const version = value.value.version
+    value.value = {
+      ...(JSON.parse(JSON.stringify(defaults)) as Pricing),
+      version,
+      source_type: 'ENTERPRISE_CUSTOM',
+    }
+    MessagePlugin.success(t('ma.priceDefaultsRestored'))
+  } catch {
+    // The shared request layer reports failures; retain the current draft.
+  } finally {
+    restoring.value = false
+  }
 }
 function markCustom() {
   value.value.source_type = 'ENTERPRISE_CUSTOM'

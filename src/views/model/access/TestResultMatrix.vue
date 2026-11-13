@@ -14,7 +14,9 @@
             <t-tag variant="light" :theme="statusTheme(entry.check.status)">{{
               t('ma.' + entry.check.status)
             }}</t-tag>
-            <span class="test-history-meta">{{ entry.check.duration_ms }} ms</span>
+            <span class="test-history-meta">{{
+              entry.check.duration_ms === null ? '—' : entry.check.duration_ms + ' ms'
+            }}</span>
           </div>
         </div>
         <span v-else>—</span>

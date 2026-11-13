@@ -62,12 +62,16 @@ function onExpand(values: string[]) {
 
 function onMenuChange(value: string) {
   if (value !== route.path) {
-    router.push(value)
+    void router.push(value).catch(() => {
+      // The router error handler reports failed page downloads.
+    })
   }
 }
 
 function goHome() {
-  router.push('/')
+  void router.push('/').catch(() => {
+    // The router error handler reports failed page downloads.
+  })
 }
 </script>
 

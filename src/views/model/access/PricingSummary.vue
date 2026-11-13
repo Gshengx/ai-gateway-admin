@@ -3,8 +3,8 @@
     <strong>{{ t('ma.' + price.pricing_mode) }}：</strong>
     <div v-for="rate in price.metric_rates" :key="rate.metric_key" class="pricing-summary__row">
       <span
-        >{{ metricLabel(rate.metric_key) }}（{{ price.currency }}/{{
-          t('ma.' + unitLabel(rate.unit))
+        >{{ rate.display_name || metricLabel(rate.metric_key) }}（{{ price.currency }}/{{
+          rate.unit_label || t('ma.' + unitLabel(rate.unit))
         }}）：</span
       >
       <div v-if="price.pricing_mode === 'TIME_BASED'" class="pricing-summary__values">
@@ -19,18 +19,19 @@
           </template>
           <t-tag variant="light">
             {{ period.is_fallback ? t('ma.fallback') : period.name }}–{{
-              rate.period_prices[period.id] ?? '—'
+              formatDecimal(rate.period_prices[period.id])
             }}
           </t-tag>
         </t-tooltip>
       </div>
-      <span v-else>{{ rate.unit_price ?? '—' }}</span>
+      <span v-else>{{ formatDecimal(rate.unit_price) }}</span>
     </div>
   </div>
 </template>
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { Pricing } from '@/api/modules/modelAccess'
+import { formatDecimal } from '@/utils/modelContract'
 import { metricLabel, unitLabel } from './helpers'
 
 defineProps<{ price: Pricing }>()

@@ -704,6 +704,7 @@ export default {
       label: 'Identity',
       users: 'Users',
       groups: 'User Groups',
+      projects: 'Project management',
       roles: 'Roles',
       keys: 'API Keys',
     },
@@ -718,6 +719,7 @@ export default {
       label: 'Cost & Budget',
       overview: 'Usage Overview',
       bills: 'Bills',
+      expenses: 'Expense details',
       budgets: 'Budgets',
     },
     security: {
@@ -1178,7 +1180,7 @@ export default {
   },
   placeholder: {
     title: '{title} · Under Construction',
-    desc: 'This is a scaffold placeholder page. Develop it under the corresponding business domain directory per the Frontend Development Guidelines.',
+    desc: 'This feature is not available yet.',
     fallback: 'Page',
   },
   groups: {
@@ -1252,6 +1254,8 @@ export default {
     },
   },
   error: {
+    goAvailable: 'Go to an available page',
+    backLogin: 'Sign out and return to login',
     forbidden:
       'Your account does not have permission to access this page. Please contact the administrator.',
     notFound: 'The page does not exist or has been removed.',

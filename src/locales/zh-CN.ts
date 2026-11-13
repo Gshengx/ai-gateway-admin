@@ -677,6 +677,7 @@ export default {
       label: '身份管理',
       users: '用户管理',
       groups: '用户组管理',
+      projects: '项目管理',
       roles: '角色管理',
       keys: 'API Key 管理',
     },
@@ -691,6 +692,7 @@ export default {
       label: '成本与预算',
       overview: '使用概览',
       bills: '消费账单',
+      expenses: '费用明细',
       budgets: '预算管理',
     },
     security: {
@@ -1134,7 +1136,7 @@ export default {
   },
   placeholder: {
     title: '{title} · 建设中',
-    desc: '该页面为脚手架占位页，按《前端开发规范》在对应业务域目录下开发。',
+    desc: '该功能暂未开放。',
     fallback: '页面',
   },
   groups: {
@@ -1205,6 +1207,8 @@ export default {
     },
   },
   error: {
+    goAvailable: '前往可访问页面',
+    backLogin: '退出并返回登录',
     forbidden: '当前账号没有访问该页面的权限，请联系管理员。',
     notFound: '页面不存在或已被移除。',
   },

@@ -76,9 +76,9 @@ const languageOptions = computed<SelectProps['options']>(() =>
 )
 
 const userOptions = computed<DropdownProps['options']>(() => [
-  ...menuTrail(permissionStore.navigationMenus, 'profile')
-    .filter((item) => item.routeId === 'profile')
-    .map((item) => ({ content: item.title, value: 'profile' })),
+  ...permissionStore.navigationMenus
+    .filter((item) => item.sidebarHidden && item.routeId)
+    .map((item) => ({ content: item.title, value: item.routeId! })),
   { content: t('header.logout'), value: 'logout' },
 ])
 
@@ -133,8 +133,11 @@ async function onLanguageChange(value: unknown) {
 }
 
 async function onUserAction({ value }: { value: string | number }) {
-  if (value === 'profile') {
-    await router.push('/account')
+  const entry = permissionStore.navigationMenus.find(
+    (item) => item.sidebarHidden && item.routeId === value,
+  )
+  if (entry) {
+    await router.push(entry.path)
     return
   }
   if (value === 'logout') {

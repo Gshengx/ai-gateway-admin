@@ -20,6 +20,8 @@
         <t-form-item name="username">
           <t-input
             v-model="formData.username"
+            name="username"
+            autocomplete="username"
             :maxlength="128"
             size="large"
             :placeholder="t('login.usernamePlaceholder')"
@@ -33,6 +35,8 @@
         <t-form-item name="password">
           <t-input
             v-model="formData.password"
+            name="password"
+            autocomplete="current-password"
             :maxlength="1024"
             type="password"
             size="large"

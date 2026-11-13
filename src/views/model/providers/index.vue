@@ -16,14 +16,9 @@
       <t-button
         theme="primary"
         v-permission.write="'model.providers'"
-        :disabled="!templates.length"
+        :disabled="templatesLoading"
         :loading="templatesLoading"
-        @click="
-          () => {
-            editing = undefined
-            formVisible = true
-          }
-        "
+        @click="create"
         ><template #icon><t-icon name="add" /></template>{{ t('ma.createProvider') }}</t-button
       >
     </div>
@@ -44,31 +39,24 @@
       <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
       <template #name="{ row }"
         ><div class="ma-row">
-          <t-avatar size="small">{{ templateName(row.template_key).charAt(0) }}</t-avatar
+          <t-avatar size="small">{{ templateName(row).charAt(0) }}</t-avatar
           ><t-link theme="primary" @click="openDetail(row)">{{ row.name }}</t-link>
         </div></template
       >
-      <template #template_key="{ row }">{{ templateName(row.template_key) }}</template>
+      <template #template_key="{ row }">{{ templateName(row) }}</template>
       <template #security_level="{ row }">{{ t('ma.' + row.security_level) }}</template>
       <template #balance="{ row }"
         ><div v-if="row.last_balance_value !== null" class="ma-balance">
           <span
             :class="{
-              'ma-low-balance':
-                row.balance_alert_enabled && row.last_balance_value <= row.balance_alert_threshold,
+              'ma-low-balance': row.balance_alert_enabled && row.alert_state === 'LOW',
             }"
-            >{{ row.last_balance_value.toFixed(2) }} {{ row.balance_alert_unit }}</span
+            >{{ formatDecimal(row.last_balance_value) }} {{ row.balance_alert_unit }}</span
           ><t-tag
             variant="light"
             v-if="row.balance_alert_enabled"
-            :theme="row.last_balance_value <= row.balance_alert_threshold ? 'warning' : 'success'"
-            >{{
-              t(
-                row.last_balance_value <= row.balance_alert_threshold
-                  ? 'ma.lowBalance'
-                  : 'ma.balanceNormal',
-              )
-            }}</t-tag
+            :theme="row.alert_state === 'LOW' ? 'warning' : 'success'"
+            >{{ t(row.alert_state === 'LOW' ? 'ma.lowBalance' : 'ma.balanceNormal') }}</t-tag
           ><span class="ma-muted">{{ formatDateTime(row.last_balance_success_at) }}</span>
         </div>
         <span v-else>—</span
@@ -92,10 +80,9 @@
       @close="
         () => {
           guide = undefined
-          load()
+          refreshGuideData()
         }
       "
-      @changed="load"
     />
     <t-drawer
       :close-btn="true"
@@ -124,7 +111,7 @@
             <h3>{{ t('ma.basicInfo') }}</h3>
             <dl class="ma-definitions">
               <dt>{{ t('ma.template') }}</dt>
-              <dd>{{ templateName(detail.template_key) }}</dd>
+              <dd>{{ templateName(detail) }}</dd>
               <dt>{{ t('ma.baseUrl') }}</dt>
               <dd>
                 <code>{{ detail.base_url }}</code>
@@ -142,8 +129,9 @@
             <h3>{{ t('ma.auth') }}</h3>
             <dl class="ma-definitions">
               <template
-                v-for="field in templates.find((x) => x.template_key === detail?.template_key)
-                  ?.fields ?? []"
+                v-for="field in templates.find(
+                  (x) => x.template_version_id === detail?.template_version_id,
+                )?.fields ?? []"
                 :key="field.key"
                 ><dt>{{ authFieldLabel(field) }}</dt>
                 <dd>
@@ -186,28 +174,22 @@
                       'ma-low-balance':
                         detail.balance_alert_enabled &&
                         detail.last_balance_value !== null &&
-                        detail.last_balance_value <= detail.balance_alert_threshold,
+                        detail.alert_state === 'LOW',
                     },
                   ]"
                   >{{
                     detail.last_balance_value === null
                       ? '—'
-                      : detail.last_balance_value.toFixed(2) + ' ' + detail.balance_alert_unit
+                      : formatDecimal(detail.last_balance_value) +
+                        ' ' +
+                        (detail.last_balance_unit ?? t('ma.UNKNOWN'))
                   }}</strong
                 ><t-tag
                   v-if="detail.balance_alert_enabled && detail.last_balance_value !== null"
                   variant="light"
-                  :theme="
-                    detail.last_balance_value <= detail.balance_alert_threshold
-                      ? 'warning'
-                      : 'success'
-                  "
+                  :theme="detail.alert_state === 'LOW' ? 'warning' : 'success'"
                   >{{
-                    t(
-                      detail.last_balance_value <= detail.balance_alert_threshold
-                        ? 'ma.lowBalance'
-                        : 'ma.balanceNormal',
-                    )
+                    t(detail.alert_state === 'LOW' ? 'ma.lowBalance' : 'ma.balanceNormal')
                   }}</t-tag
                 >
               </div>
@@ -231,7 +213,9 @@
               </div>
               <div v-if="detail.balance_alert_enabled" class="ma-muted">
                 {{ t('ma.recipients') }}：{{
-                  detail.balance_alert_recipients.map((id) => recipientNames[id] || id).join('、')
+                  detail.balance_alert_recipients
+                    .map((id) => recipientNames[id] || t('ma.unavailable'))
+                    .join('、')
                 }}
               </div>
               <div v-if="detail.balance_alert_enabled" class="ma-muted">
@@ -282,7 +266,7 @@
               :columns="relatedColumns"
               :pagination="{
                 current: relatedPage,
-                pageSize: 20,
+                pageSize: relatedPageSize,
                 total: relatedTotal,
                 showPageSize: false,
               }"
@@ -316,34 +300,35 @@
       @close="!mutating && (removing = undefined)"
       @confirm="remove"
       ><div class="ma-stack">
-        <t-alert theme="warning" :message="t('ma.providerDelete')" />
-        <div>{{ removing?.name }}</div>
-        <t-textarea v-model="reason" :disabled="mutating" :placeholder="t('ma.reason')" /></div
-    ></t-dialog>
+        <div>{{ t('ma.providerDeleteConfirm', { name: removing?.name }) }}</div>
+        <div class="ma-muted">{{ t('ma.providerDelete') }}</div>
+      </div></t-dialog
+    >
   </section>
 </template>
 <script setup lang="ts">
 import { useLatestRequest } from '@/utils/useLatestRequest'
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
-import { getUserDetailApi } from '@/api/modules/identity'
 import { useUserStore } from '@/stores/modules/user'
 import FilterBar from '@/components/FilterBar.vue'
-import { accessApi, type Provider, type Template, type Model } from '@/api/modules/modelAccess'
+import { accessApi, type Provider, type Template } from '@/api/modules/modelAccess'
+import type { ModelListItem } from '@/api/modules/modelAccessContract'
+import { formatDecimal } from '@/utils/modelContract'
 import { formatDateTime } from '@/utils/datetime'
 import { authFieldLabel, statusTheme } from '../access/helpers'
 import RowActions, { type RowAction } from '../access/RowActions.vue'
 import ProviderForm from '../access/ProviderForm.vue'
 import OnboardingGuide from '../access/OnboardingGuide.vue'
 import { useActionColumnWidth } from '../access/useActionColumnWidth'
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth()
 const recipientNames = ref<Record<string, string>>({})
 const items = ref<Provider[]>([]),
-  templates = ref<Template[]>([]),
-  related = ref<Model[]>([])
+  templates = shallowRef<Template[]>([]),
+  related = ref<ModelListItem[]>([])
 const search = ref(''),
   loading = ref(true),
   formVisible = ref(false),
@@ -360,19 +345,22 @@ const detailVisible = ref(false),
   detailFailed = ref(false)
 const listFailed = ref(false),
   editingLoading = ref(false),
-  templatesLoading = ref(true)
-let templateRequest: Promise<void> | undefined
-const templatesFailed = ref(false)
+  templatesLoading = ref(false)
 const relatedLoading = ref(false),
   relatedFailed = ref(false)
 let detailVersion = 0,
   relatedVersion = 0
+let detailController: AbortController | undefined
+let relatedController: AbortController | undefined
 function closeDetail() {
   ++detailVersion
   ++relatedVersion
+  detailController?.abort()
+  relatedController?.abort()
   detailVisible.value = false
   detail.value = undefined
 }
+const relatedPageSize = 5
 const relatedPage = ref(1),
   relatedTotal = ref(0)
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, pageSizeOptions: [20, 50, 100] })
@@ -396,14 +384,17 @@ const relatedColumns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'model_id_at_gateway', title: t('ma.name') },
   { colKey: 'model_id_at_provider', title: t('ma.upstream') },
   {
-    colKey: 'supported_invocation_apis',
-    title: t('ma.supportedApis'),
-    cell: (_h, { row }) => row.supported_invocation_apis.join(' / '),
+    colKey: 'modalities',
+    title: t('ma.modalities'),
+    cell: (_h, { row }) =>
+      `${row.input_modalities.join('+') || '—'} → ${row.output_modalities.join('+') || '—'}`,
   },
   { colKey: 'status', title: t('ma.status') },
 ])
 let generation = 0,
   timer: ReturnType<typeof setTimeout> | undefined
+let listController: AbortController | undefined
+const balanceController = new AbortController()
 function rowActions(row: Provider): RowAction[] {
   const actions: RowAction[] = [
     { label: t('ma.getModels'), permission: 'model.providers', run: () => (guide.value = row) },
@@ -426,21 +417,35 @@ function rowActions(row: Provider): RowAction[] {
     })
   return actions
 }
-function templateName(key: string) {
-  if (templatesLoading.value) return t('common.loading')
-  if (templatesFailed.value) return t('common.loadFailed')
-  return templates.value.find((x) => x.template_key === key)?.name ?? key
+function templateName(provider: Provider) {
+  return provider.template_name || provider.template_key
+}
+async function create() {
+  if (templatesLoading.value || editingLoading.value) return
+  try {
+    await loadTemplates()
+    editing.value = undefined
+    formVisible.value = true
+  } catch {
+    // Keep the list available; the request layer reports template loading failures.
+  }
 }
 async function load() {
   const g = ++generation
+  listController?.abort()
+  const controller = new AbortController()
+  listController = controller
   loading.value = true
   listFailed.value = false
   try {
-    const data = await accessApi.providers({
-      page: pagination.current,
-      page_size: pagination.pageSize,
-      search: search.value,
-    })
+    const data = await accessApi.providers(
+      {
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        search: search.value,
+      },
+      { signal: controller.signal },
+    )
     if (g !== generation) return
     if (pagination.current > Math.max(1, data.total_pages)) {
       pagination.current = Math.max(1, data.total_pages)
@@ -461,9 +466,9 @@ async function edit(row: Provider) {
   const current = editRequest.begin()
   editingLoading.value = true
   try {
-    await templateRequest
-    if (!current.isCurrent() || templatesFailed.value) return
-    const provider = await accessApi.provider(row.id)
+    const provider = await accessApi.provider(row.id, { signal: current.signal })
+    if (!current.isCurrent()) return
+    await loadTemplates(provider.id, provider.template_version_id)
     if (!current.isCurrent()) return
     editing.value = provider
     closeDetail()
@@ -476,11 +481,15 @@ async function edit(row: Provider) {
 }
 async function saved(provider: Provider, created: boolean) {
   MessagePlugin.success(t('providers.saved'))
-  await load()
   if (created) guide.value = provider
+  else await load()
 }
 async function openDetail(row: Provider) {
   const version = ++detailVersion
+  detailController?.abort()
+  relatedController?.abort()
+  const controller = new AbortController()
+  detailController = controller
   detailTitle.value = row.name
   detailVisible.value = true
   detailLoading.value = true
@@ -489,33 +498,15 @@ async function openDetail(row: Provider) {
   related.value = []
   relatedTotal.value = 0
   try {
-    const provider = await accessApi.provider(row.id)
+    const provider = await accessApi.provider(row.id, { signal: controller.signal })
     if (version !== detailVersion) return
     detail.value = provider
-    await templateRequest
+    await loadTemplates(provider.id, provider.template_version_id)
     if (version !== detailVersion) return
-    if (templatesFailed.value) throw new Error('Provider templates unavailable')
     const session = useUserStore().context.session
     if (session) recipientNames.value[session.user_id] = session.display_name || session.username
-    await Promise.all(
-      (detail.value.balance_alert_enabled && detail.value.balance_query_mode !== 'NONE'
-        ? detail.value.balance_alert_recipients
-        : []
-      )
-        .filter((id) => !recipientNames.value[id])
-        .map(async (id) => {
-          try {
-            const user = (
-              await getUserDetailApi(id, {
-                handledErrorCodes: ['NOT_FOUND', 'OUT_OF_SCOPE', 'FORBIDDEN'],
-              })
-            ).user
-            recipientNames.value[id] = user.display_name || user.username
-          } catch {
-            /* Keep the configured identifier when out of scope. */
-          }
-        }),
-    )
+    for (const recipient of provider.recipient_users ?? [])
+      recipientNames.value[recipient.user_id] = recipient.display_name ?? t('ma.unavailable')
     if (version !== detailVersion) return
     relatedPage.value = 1
     await loadRelated()
@@ -525,18 +516,33 @@ async function openDetail(row: Provider) {
     if (version === detailVersion) detailLoading.value = false
   }
 }
+async function refreshGuideData() {
+  await load()
+  const providerId = detail.value?.id
+  if (!providerId || !detailVisible.value) return
+  const provider = await accessApi.provider(providerId)
+  if (detail.value?.id !== providerId || !detailVisible.value) return
+  detail.value = provider
+  await loadRelated()
+}
 async function loadRelated() {
   if (!detail.value) return
   const version = ++relatedVersion
+  relatedController?.abort()
+  const controller = new AbortController()
+  relatedController = controller
   const providerId = detail.value.id
   relatedLoading.value = true
   relatedFailed.value = false
   try {
-    const data = await accessApi.models({
-      provider_id: providerId,
-      page: relatedPage.value,
-      page_size: 20,
-    })
+    const data = await accessApi.models(
+      {
+        provider_id: providerId,
+        page: relatedPage.value,
+        page_size: relatedPageSize,
+      },
+      { signal: controller.signal },
+    )
     if (version !== relatedVersion || detail.value?.id !== providerId) return
     related.value = data.items
     relatedTotal.value = data.total
@@ -547,11 +553,14 @@ async function loadRelated() {
   }
 }
 async function balance(row: Provider) {
+  if (querying.value) return
   querying.value = true
   try {
-    const data = await accessApi.balance(row.id)
+    const data = await accessApi.balance(row.id, balanceController.signal)
     if (detail.value?.id === row.id) detail.value = data
     await load()
+  } catch (error) {
+    if (!balanceController.signal.aborted) throw error
   } finally {
     querying.value = false
   }
@@ -559,10 +568,6 @@ async function balance(row: Provider) {
 async function remove() {
   if (mutating.value) return
   if (!removing.value) return
-  if (!reason.value.trim()) {
-    MessagePlugin.warning(t('ma.reasonRequired'))
-    return
-  }
   mutating.value = true
   try {
     const active = await accessApi.models({
@@ -591,6 +596,7 @@ function changePage(p: PageInfo) {
 }
 watch(search, () => {
   ++generation
+  listController?.abort()
   loading.value = true
   clearTimeout(timer)
   timer = setTimeout(() => {
@@ -598,23 +604,47 @@ watch(search, () => {
     void load()
   }, 250)
 })
-onMounted(() => {
-  templateRequest = accessApi
-    .templates()
+let templateGeneration = 0
+const templateController = new AbortController()
+const templateRequests = new Map<string, Promise<void>>()
+function loadTemplates(providerId?: string, templateVersion?: string): Promise<void> {
+  const key = JSON.stringify([locale.value, providerId, templateVersion])
+  const pending = templateRequests.get(key)
+  if (pending) return pending
+  const current = ++templateGeneration
+  templatesLoading.value = true
+  const request = accessApi
+    .templates(providerId, { signal: templateController.signal })
     .then((result) => {
-      templates.value = result
-    })
-    .catch(() => {
-      templatesFailed.value = true
+      if (current === templateGeneration) templates.value = result
     })
     .finally(() => {
-      templatesLoading.value = false
+      templateRequests.delete(key)
+      templatesLoading.value = templateRequests.size > 0
     })
+  templateRequests.set(key, request)
+  return request
+}
+watch(locale, () => {
+  void load()
+  const provider = formVisible.value
+    ? editing.value
+    : detailVisible.value
+      ? detail.value
+      : undefined
+  if (formVisible.value || (detailVisible.value && provider))
+    void loadTemplates(provider?.id, provider?.template_version_id).catch(() => {})
+})
+onMounted(() => {
   void load().catch(() => {})
 })
 onBeforeUnmount(() => {
+  templateGeneration++
+  templateController.abort()
   closeDetail()
   generation++
+  listController?.abort()
+  balanceController.abort()
   clearTimeout(timer)
 })
 </script>

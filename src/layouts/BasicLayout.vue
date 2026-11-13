@@ -9,7 +9,14 @@
         <header-bar :collapsed="collapsed" @toggle="collapsed = !collapsed" />
       </t-header>
       <t-content class="basic-layout__content">
-        <router-view v-if="pageAllowed" :key="permissionStore.generation" />
+        <t-loading
+          :loading="navigationStore.loading"
+          :text="t('common.loading')"
+          class="basic-layout__page-loading"
+          :aria-busy="navigationStore.loading"
+        >
+          <router-view v-if="pageAllowed" :key="permissionStore.generation" />
+        </t-loading>
       </t-content>
     </t-layout>
   </t-layout>
@@ -19,6 +26,8 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePermissionStore } from '@/stores/modules/permission'
+import { useNavigationStore } from '@/stores/modules/navigation'
+import { useI18n } from 'vue-i18n'
 
 import SideMenu from './components/SideMenu.vue'
 import HeaderBar from './components/HeaderBar.vue'
@@ -26,6 +35,8 @@ import HeaderBar from './components/HeaderBar.vue'
 const collapsed = ref(false)
 const route = useRoute()
 const permissionStore = usePermissionStore()
+const navigationStore = useNavigationStore()
+const { t } = useI18n()
 const pageAllowed = computed(() =>
   permissionStore.routes.some((item) => item.meta?.routeId === route.meta.routeId),
 )
@@ -34,6 +45,10 @@ const pageAllowed = computed(() =>
 <style scoped>
 .basic-layout {
   height: 100%;
+}
+.basic-layout__page-loading {
+  min-height: 100%;
+  width: 100%;
 }
 
 .basic-layout__aside {

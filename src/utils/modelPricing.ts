@@ -2,7 +2,6 @@ import type { Pricing, Period } from '@/api/modules/modelAccess'
 
 /** 创建与编辑、mock 服务端共用 V1.4 价格规则校验。 */
 export function pricingError(price: Pricing): 'invalidPrice' | 'invalidPeriods' | '' {
-  if (price.source_type === 'BUILT_IN') return ''
   if (
     !['FIXED', 'TIME_BASED'].includes(price.pricing_mode) ||
     !price.currency ||
@@ -11,29 +10,19 @@ export function pricingError(price: Pricing): 'invalidPrice' | 'invalidPeriods' 
     return 'invalidPrice'
   if (price.pricing_mode === 'TIME_BASED' && periodsError(price.time_periods))
     return 'invalidPeriods'
-  const metrics = new Set<string>(),
-    directions = new Set<string>()
-  let ordinary = false,
-    multimodalCount = false
+  const metrics = new Set<string>()
   for (const rate of price.metric_rates) {
     if (metrics.has(rate.metric_key)) return 'invalidPrice'
     metrics.add(rate.metric_key)
-    ordinary ||= ['input_tokens', 'output_tokens'].includes(rate.metric_key)
-    const match = rate.metric_key.match(/^(image|audio|video)_(input|output)_/)
-    if (match) {
-      const direction = `${match[1]}_${match[2]}`
-      if (directions.has(direction)) return 'invalidPrice'
-      directions.add(direction)
-      multimodalCount ||= !rate.metric_key.endsWith('_tokens')
-    }
     const values =
       price.pricing_mode === 'FIXED'
         ? [rate.unit_price]
         : price.time_periods.map((p) => rate.period_prices[p.id])
-    if (values.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0))
+    if (
+      values.some((v) => v === null || v === undefined || !/^(0|[1-9]\d*)(\.\d+)?$/.test(String(v)))
+    )
       return 'invalidPrice'
   }
-  if (ordinary && multimodalCount && !price.exclusive_usage_confirmed) return 'invalidPrice'
   if (price.pricing_mode !== 'TIME_BASED') return ''
   return periodsError(price.time_periods)
 }
@@ -73,7 +62,7 @@ export function validatePeriods(periods: Period[]): PeriodValidation {
         errors.push('periodWeekdayRequired')
       if (
         !/^([01]\d|2[0-3]):[0-5]\d$/.test(c.start) ||
-        !/^([01]\d|2[0-3]):[0-5]\d$/.test(c.end) ||
+        !/^(([01]\d|2[0-3]):[0-5]\d|24:00)$/.test(c.end) ||
         c.start >= c.end
       )
         errors.push('periodTimeInvalid')

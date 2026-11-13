@@ -33,6 +33,7 @@
       >
         <t-input
           v-model="formData[field]"
+          :name="`change-${field}`"
           type="password"
           :autocomplete="field === 'current_password' ? 'current-password' : 'new-password'"
         />

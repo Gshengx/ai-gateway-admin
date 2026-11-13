@@ -124,11 +124,15 @@
         <t-tab-panel
           value="models"
           lazy
-          :label="t('users.detail.tabs.models', { n: modelsLoaded ? modelRows.length : '—' })"
+          :label="
+            t('users.detail.tabs.models', { n: modelsLoaded ? (accessibleModelTotal ?? '—') : '—' })
+          "
         >
           <div v-if="canWriteUsers" class="model-toolbar">
             <ModelGrantSelect
               :key="detail.id"
+              :subject-id="detail.id"
+              :labels="modelNames"
               v-model="selectedModelIds"
               :locked-ids="directModelIdList"
               :disabled="grantDialog.loading"
@@ -371,6 +375,7 @@ import {
   getUserApiKeysApi,
   getUserDetailApi,
   getUserModelGrantSourcesApi,
+  getUserAccessibleModelsApi,
   getUserModelGrantsApi,
   setUserModelGrantsApi,
   type UserApiKeyItem,
@@ -415,6 +420,7 @@ const modelsLoaded = ref(false)
 const keysLoaded = ref(false)
 const keyRequest = useLatestRequest()
 const modelSources = ref<UserModelGrantSource[]>([])
+const accessibleModelTotal = ref<number>()
 /** 用户级直接授权（F-USER-09：取消授权只能作用于直接授权） */
 const directGrants = ref<UserModelGrant[]>([])
 const grantsReady = ref(false)
@@ -448,7 +454,7 @@ const canViewKeys = computed(() => hasPermission(userStore.permissions, 'identit
 const canWriteKeys = computed(() => canWriteResource(userStore.permissions, 'identity.keys'))
 const canWriteUsers = computed(() => canWriteResource(userStore.permissions, 'identity.users'))
 
-const directModelIds = computed(() => new Set(directGrants.value.map((item) => item.model.id)))
+const directModelIds = computed(() => new Set(directGrants.value.map((item) => item.id)))
 const directModelIdList = computed(() => [...directModelIds.value])
 
 const grantDialog = reactive({
@@ -472,6 +478,9 @@ const groupNames = computed(() =>
 )
 
 interface ModelRow {
+  provider: string
+  available: boolean
+  unavailableReason: string | null
   id: string
   name: string
   sources: string
@@ -479,54 +488,37 @@ interface ModelRow {
 }
 
 /** 按模型聚合授权来源：用户直接授权 + 部门/用户组继承 */
-const modelRows = computed<ModelRow[]>(() => {
-  const directLabel = t('users.detail.models.directSource')
-  const grouped = new Map<
-    string,
-    { id: string; name: string; sources: string[]; direct: boolean; inherited: boolean }
-  >()
-
-  modelSources.value.forEach((item) => {
-    let row = grouped.get(item.model.id)
-    if (!row) {
-      row = {
-        id: item.model.id,
-        name: item.model.localized_name || item.model.display_name,
-        sources: [],
-        direct: directModelIds.value.has(item.model.id),
-        inherited: false,
-      }
-      grouped.set(item.model.id, row)
+const modelRows = computed<ModelRow[]>(() =>
+  modelSources.value.map((entry) => {
+    const direct = entry.sources.some(
+      (source) => source.subject_type === 'USER' && !source.inherited,
+    )
+    const inherited = entry.sources.some((source) => source.inherited)
+    const sources = entry.sources.map((source) =>
+      source.subject_type === 'USER' && !source.inherited
+        ? t('users.detail.models.directSource')
+        : source.subject_type === 'DEPARTMENT'
+          ? t('users.detail.models.sourceDepartment', {
+              name: source.subject_department_path ?? source.subject_name,
+            })
+          : t('users.detail.models.sourceGroup', { name: source.subject_name }),
+    )
+    return {
+      id: entry.model.id,
+      name: entry.model.model_id_at_gateway,
+      provider: entry.model.provider_name,
+      available: entry.available,
+      unavailableReason: entry.unavailable_reason,
+      sources: sources.join(t('users.detail.listSeparator')),
+      grantType:
+        direct && inherited
+          ? t('users.detail.models.grant.both')
+          : direct
+            ? t('users.detail.models.grant.direct')
+            : t('users.detail.models.grant.inherited'),
     }
-
-    const direct = item.source_type === 'USER'
-    if (direct) row.direct = true
-    else row.inherited = true
-
-    const label = direct
-      ? directLabel
-      : !item.source_display_name
-        ? t('users.detail.models.sourceOutOfScope')
-        : item.source_type === 'DEPARTMENT'
-          ? t('users.detail.models.sourceDepartment', { name: item.source_display_name })
-          : ['GROUP', 'USER_GROUP'].includes(item.source_type)
-            ? t('users.detail.models.sourceGroup', { name: item.source_display_name })
-            : item.source_display_name
-    if (!row.sources.includes(label)) row.sources.push(label)
-  })
-
-  return [...grouped.values()].map((row) => ({
-    id: row.id,
-    name: row.name,
-    sources: row.sources.join(t('users.detail.listSeparator')),
-    grantType:
-      row.direct && row.inherited
-        ? t('users.detail.models.grant.both')
-        : row.direct
-          ? t('users.detail.models.grant.direct')
-          : t('users.detail.models.grant.inherited'),
-  }))
-})
+  }),
+)
 
 const modelColumns = computed<PrimaryTableCol<ModelRow>[]>(() => {
   const columns: PrimaryTableCol<ModelRow>[] = [
@@ -815,12 +807,14 @@ async function loadModels(userId: string, generation = drawerGeneration) {
   modelsLoading.value = true
   modelsFailed.value = false
   try {
-    const [sources] = await Promise.all([
+    const [sources, accessible] = await Promise.all([
       collectPages((query) => getUserModelGrantSourcesApi(userId, query), current),
+      getUserAccessibleModelsApi(userId, { page: 1, page_size: 1 }),
       loadModelGrants(userId, generation),
     ])
     if (current()) {
       modelSources.value = sources
+      accessibleModelTotal.value = accessible.total
       modelsLoaded.value = true
     }
   } catch {
@@ -852,7 +846,7 @@ function openAddGrant() {
   grantDialog.mode = 'add'
   grantDialog.target = null
   grantDialog.modelIds = [...selectedModelIds.value]
-  grantDialog.visible = true
+  void submitGrant()
 }
 
 function openRemoveGrant(row: ModelRow) {
@@ -897,10 +891,10 @@ async function submitGrant() {
 
   grantDialog.loading = true
   try {
-    const result = await setUserModelGrantsApi(userId, { model_ids: modelIds })
+    const result = await setUserModelGrantsApi(userId, { physical_model_ids: modelIds })
     if (!current()) return
     MessagePlugin.success(
-      result.changed
+      result.changed_model_versions.length > 0
         ? t('users.detail.models.grantSuccess')
         : t('users.detail.models.grantUnchanged'),
     )
@@ -909,6 +903,9 @@ async function submitGrant() {
     // 直接授权变化会同时改变「授权来源」列，两个数据源一起刷新
     await Promise.allSettled([
       loadModelGrants(userId),
+      getUserAccessibleModelsApi(userId, { page: 1, page_size: 1 }).then((data) => {
+        if (current()) accessibleModelTotal.value = data.total
+      }),
       collectPages((query) => getUserModelGrantSourcesApi(userId, query), current).then((items) => {
         if (current()) modelSources.value = items
       }),

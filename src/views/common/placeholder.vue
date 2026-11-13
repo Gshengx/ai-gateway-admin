@@ -1,11 +1,7 @@
 <template>
   <div class="page-container">
-    <t-card :bordered="false">
-      <t-result theme="default" :title="t('placeholder.title', { title: pageTitle })">
-        <template #default>
-          {{ t('placeholder.desc') }}
-        </template>
-      </t-result>
+    <t-card :bordered="false" :title="t('placeholder.title', { title: pageTitle })">
+      <t-empty :description="t('placeholder.desc')" />
     </t-card>
   </div>
 </template>

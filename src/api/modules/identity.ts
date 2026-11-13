@@ -1,3 +1,11 @@
+import type { AccessibleModel, ModelAuthorizationSummary } from './modelAccessContract'
+import { modelAccessApi } from './modelAccessApi'
+import {
+  subjectGrants,
+  replaceSubjectGrants,
+  modelSources,
+  modelOptions,
+} from './modelSubjectAccess'
 import { request } from '../request'
 import { getManagedKeysApi } from './apiKeys'
 import type { RequestConfig } from '../request'
@@ -516,28 +524,15 @@ export function getUserDetailApi(id: string, config?: RequestConfig) {
   return request.get<{ user: UserItem; terms: UserTermsInfo | null }>(`/users/${id}`, config)
 }
 
-/** 模型授权来源中的模型信息（GET /users/{id}/model-grant-sources） */
-export interface ModelGrantSourceModel {
-  id: string
-  display_name: string
-  localized_name: string
-  logical_name: string
-  description: string
-  localized_description: string
-  requested_locale: string
-  resolved_locale: string | null
-  selectable: boolean
-  status: string
-}
-
-/** 用户模型的授权来源：直接授权 / 部门继承 / 用户组继承 */
-export interface UserModelGrantSource {
-  model: ModelGrantSourceModel
-  source_type: string
-  source_id: string | null
-  source_display_name: string | null
-  source_in_scope: boolean
-  scope_mode: string | null
+/** Model authorization projections belong to the model-access contract. */
+export type ModelGrantSourceModel = ModelAuthorizationSummary
+export type UserModelGrantSource = AccessibleModel
+export type UserModelGrant = ModelAuthorizationSummary
+export function getUserAccessibleModelsApi(
+  id: string,
+  params: OffsetPageQuery = { page: 1, page_size: 20 },
+) {
+  return modelAccessApi.A04(id, { params })
 }
 
 /** 用户 API Key（GET /api-keys?user_id=） */
@@ -565,59 +560,31 @@ export function getUserModelGrantSourcesApi(
   id: string,
   params: OffsetPageQuery = { page: 1, page_size: 20 },
 ) {
-  return request.get<OffsetPageResult<UserModelGrantSource>>(`/users/${id}/model-grant-sources`, {
-    params,
-  })
-}
-
-/** 用户级直接模型授权（GET /users/{id}/model-grants） */
-export interface UserModelGrant {
-  id: string
-  granted_at: string
-  source_type: string
-  source_id: string
-  scope_mode: string
-  model: ModelGrantSourceModel
-}
-
-/** 直接授权变更结果 */
-export interface ModelGrantMutationResult {
-  applied: boolean
-  changed: boolean
-  replayed: boolean
-  subject_id: string
-  subject_type: string
+  return modelSources(id, params)
 }
 
 export function getUserModelGrantsApi(
   id: string,
   params: OffsetPageQuery = { page: 1, page_size: 20 },
 ) {
-  return request.get<OffsetPageResult<UserModelGrant>>(`/users/${id}/model-grants`, { params })
+  return subjectGrants('USER', id, params)
 }
 
 /**
- * 覆盖保存用户级直接授权：model_ids 为全量直接授权集合，空集合表示清空直授。
+ * 覆盖保存用户级直接授权：physical_model_ids 为完整直接授权集合，空集合表示清空直授。
  * 不影响部门 / 用户组继承的权限。
  */
-export function setUserModelGrantsApi(id: string, payload: { model_ids: string[] }) {
-  return request.put<ModelGrantMutationResult>(`/users/${id}/model-grants`, payload)
+export function setUserModelGrantsApi(id: string, payload: { physical_model_ids: string[] }) {
+  return replaceSubjectGrants('USER', id, payload.physical_model_ids)
 }
 
-/** 已上架逻辑模型选项（模型选择列表用） */
-export interface LogicalModelOption {
-  id: string
-  display_name: string
-  localized_name: string
-  logical_name: string
-  status: string
-  workload_kind: string
-}
-
-export function getLogicalModelOptionsApi(
-  params: OffsetPageQuery & { search?: string } = { page: 1, page_size: 20 },
+export function getModelAuthorizationOptionsApi(
+  params: OffsetPageQuery & { search?: string; subject_type?: string; subject_id?: string } = {
+    page: 1,
+    page_size: 20,
+  },
 ) {
-  return request.get<OffsetPageResult<LogicalModelOption>>('/logical-models/options', { params })
+  return modelOptions(params)
 }
 
 export function getUserApiKeysApi(params: UserApiKeyQuery, config?: RequestConfig) {
@@ -1040,24 +1007,12 @@ export function deleteUserGroupApi(
   })
 }
 
-export interface UserGroupModelGrant {
-  id: string
-  granted_at: string
-  source_type: string
-  source_id: string
-  scope_mode: string
-  model: ModelGrantSourceModel
-}
-
 export function getUserGroupModelGrantsApi(
   id: string,
   params: OffsetPageQuery,
   config: RequestConfig = {},
 ) {
-  return request.get<OffsetPageResult<UserGroupModelGrant>>(`/groups/${id}/model-grants`, {
-    ...config,
-    params,
-  })
+  return subjectGrants('USER_GROUP', id, params, config)
 }
 
 export function getUserGroupMembersApi(id: string, params: UserGroupMemberQuery) {

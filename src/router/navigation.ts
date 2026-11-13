@@ -26,7 +26,7 @@ export function validatePermissions(value: unknown): asserts value is Permission
     !/^sha256:[a-f0-9]{64}$/.test(nav.catalog_version) ||
     !text(nav.locale) ||
     !Array.isArray(nav.groups) ||
-    nav.groups.length > 4 ||
+    nav.groups.length > 5 ||
     !Array.isArray(nav.items) ||
     nav.items.length > 20 ||
     !text(value.permissions_version) ||

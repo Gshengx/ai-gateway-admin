@@ -1,6 +1,7 @@
 import { i18n } from '@/locales'
 export const authFieldLabel = (field: { key: string; label: string }) =>
-  i18n.global.te('ma.auth_' + field.key) ? i18n.global.t('ma.auth_' + field.key) : field.label
+  field.label ||
+  (i18n.global.te('ma.auth_' + field.key) ? i18n.global.t('ma.auth_' + field.key) : field.key)
 export const invocationLabel = (s: string) =>
   ({
     CHAT_COMPLETIONS: 'Chat Completions',

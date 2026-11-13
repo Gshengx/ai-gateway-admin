@@ -216,14 +216,15 @@ import {
   type ManagedKeyItem,
   type KeyControlCondition,
 } from '@/api/modules/apiKeys'
-import { getTermsConfigApi } from '@/api/modules/terms'
 import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { useUserStore } from '@/stores/modules/user'
+import { useTermsStore } from '@/stores/modules/terms'
 import { formatDateTime } from '@/utils/datetime'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const userStore = useUserStore()
+const termsStore = useTermsStore()
 const canReadUsers = computed(() => userStore.permissions.includes('identity.users'))
 const filters = reactive({ search: '', status: '', control: '', department: '' })
 const items = ref<ManagedKeyItem[]>([])
@@ -239,10 +240,14 @@ const page = ref(1)
 const pageSize = ref(20)
 const paginationTotal = ref(0)
 let listRequest = 0
-let optionRequest = 0
 let disposed = false
 const departmentFilter = ref<InstanceType<typeof DepartmentTreeSelect>>()
-const requireAcceptance = ref(false)
+const requireAcceptance = computed(
+  () =>
+    termsStore.configuration?.mandatory_confirmation ??
+    userStore.termsConfirmationRequired ??
+    false,
+)
 const statusOptions = computed(() => [
   { label: t('managedKeys.allStatuses'), value: '' },
   { label: t('myKeys.active'), value: 'ACTIVE' },
@@ -381,20 +386,6 @@ watch([() => filters.status, () => filters.control, () => filters.department, lo
   // Coalesce a reset that changes both text and select filters.
   latestList.schedule(() => void fetchList(), 0)
 })
-async function loadOptions() {
-  const requestId = ++optionRequest
-  try {
-    const result = await getTermsConfigApi()
-    if (disposed || requestId !== optionRequest) return
-    requireAcceptance.value = result.mandatory_confirmation
-  } catch (error) {
-    if (disposed || requestId !== optionRequest) return
-    requireAcceptance.value = false
-    showError(error)
-  }
-}
-watch(locale, () => void loadOptions())
-
 type Operation = 'enable' | 'disable' | 'delete'
 interface Attempt {
   key: string
@@ -496,12 +487,10 @@ async function submitOperation() {
 }
 onMounted(() => {
   void fetchList()
-  void loadOptions()
 })
 onBeforeUnmount(() => {
   disposed = true
   ++listRequest
-  ++optionRequest
 })
 </script>
 

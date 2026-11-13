@@ -16,6 +16,7 @@
                   t('passwordPolicy.prefix.min_length')
                 }}</span>
                 <t-input-number
+                  v-nonnegative-number
                   v-model="form.min_length"
                   theme="row"
                   :min="limits.min_length.min"
@@ -30,6 +31,7 @@
                   t('passwordPolicy.prefix.max_length')
                 }}</span>
                 <t-input-number
+                  v-nonnegative-number
                   v-model="form.max_length"
                   theme="row"
                   :min="limits.max_length.min"
@@ -46,6 +48,7 @@
             <div class="policy-row">
               <t-form-item name="complexity_categories" :label-width="0" class="policy-item">
                 <t-input-number
+                  v-nonnegative-number
                   v-model="form.complexity_categories"
                   theme="row"
                   :min="limits.complexity_categories.min"
@@ -64,6 +67,7 @@
             <div class="policy-row">
               <t-form-item name="history_count" :label-width="0" class="policy-item">
                 <t-input-number
+                  v-nonnegative-number
                   v-model="form.history_count"
                   theme="row"
                   :min="limits.history_count.min"
@@ -80,6 +84,7 @@
             <div class="policy-row">
               <t-form-item name="failure_threshold" :label-width="0" class="policy-item">
                 <t-input-number
+                  v-nonnegative-number
                   v-model="form.failure_threshold"
                   theme="row"
                   :min="limits.failure_threshold.min"
@@ -96,6 +101,7 @@
             <div class="policy-row">
               <t-form-item name="lock_duration_minutes" :label-width="0" class="policy-item">
                 <t-input-number
+                  v-nonnegative-number
                   v-model="form.lock_duration_minutes"
                   theme="row"
                   :min="limits.lock_duration_minutes.min"

@@ -1,10 +1,11 @@
 import { watch } from 'vue'
-import type { Router } from 'vue-router'
+import type { Router, RouteLocationNormalized } from 'vue-router'
 import { LAYOUT_ROUTE_NAME } from './index'
 import { canEnterRoute, routeRegistry } from './routes'
 import { pinia } from '@/stores'
 import { useUserStore } from '@/stores/modules/user'
 import { usePermissionStore } from '@/stores/modules/permission'
+import { useNavigationStore } from '@/stores/modules/navigation'
 import type { NotifiedError } from '@/api/request'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { i18n, setDocumentTitle, translateRouteTitle } from '@/locales'
@@ -12,6 +13,13 @@ import { i18n, setDocumentTitle, translateRouteTitle } from '@/locales'
 export function setupRouterGuard(router: Router): void {
   const user = useUserStore(pinia)
   const permission = usePermissionStore(pinia)
+  const navigation = useNavigationStore(pinia)
+  let pendingNavigation: RouteLocationNormalized | undefined
+  function finishNavigation(to: RouteLocationNormalized) {
+    if (pendingNavigation !== to) return
+    pendingNavigation = undefined
+    navigation.loading = false
+  }
   let removeRoutes: Array<() => void> = []
   watch(
     () => permission.routes,
@@ -23,12 +31,17 @@ export function setupRouterGuard(router: Router): void {
   )
 
   router.afterEach((to, _from, failure) => {
+    finishNavigation(to)
     if (!failure)
       setDocumentTitle(
         to.meta.serverTitle
           ? permission.routes.find((route) => route.meta?.routeId === to.meta.routeId)?.meta?.title
           : translateRouteTitle(to.meta.title),
       )
+  })
+  router.onError((error, to) => {
+    finishNavigation(to)
+    if (!(error as NotifiedError).notified) MessagePlugin.error(i18n.global.t('common.loadFailed'))
   })
   watch(
     () => permission.menus,
@@ -46,6 +59,8 @@ export function setupRouterGuard(router: Router): void {
   )
 
   router.beforeEach(async (to) => {
+    pendingNavigation = to
+    navigation.loading = true
     if (to.path === '/login' && user.loggedOut) return true
     if (!user.contextLoaded) {
       try {

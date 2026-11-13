@@ -42,12 +42,12 @@
           available.map((key) => ({
             value: key,
             label: t('ma.' + key),
-            disabled: ['CONNECTIVITY', 'PROTOCOL'].includes(key),
+            disabled: true,
           }))
         "
       />
       <template v-else>
-        <t-alert v-if="pollFailed" theme="error" :message="t('common.loadFailed')" />
+        <t-alert v-if="pollFailed" theme="error" :message="t('ma.testResultsLoadFailed')" />
         <t-progress
           v-if="run.status === 'RUNNING'"
           :percentage="
@@ -87,13 +87,17 @@
           theme="primary"
           :disabled="locked || !selected.length"
           :loading="busy"
-          v-permission.write="purpose === 'HEALTH' ? 'model.models' : 'model.admission'"
+          v-permission.write="'model.admission'"
           @click="start"
           >{{ t('ma.startTest') }}</t-button
         >
-        <t-button v-if="pollFailed" theme="primary" :disabled="locked" @click="retryPoll">{{
-          t('common.retry')
-        }}</t-button>
+        <t-button
+          v-if="pollFailed"
+          theme="primary"
+          :disabled="busy || polling"
+          @click="retryPoll"
+          >{{ t('common.retry') }}</t-button
+        >
         <t-button
           v-if="purpose === 'ADMISSION' && run?.status === 'PASSED' && !historyRun"
           theme="danger"
@@ -122,8 +126,8 @@
     :close-on-overlay-click="false"
     :confirm-btn="{ theme: 'primary', content: t('ma.confirm'), loading: busy }"
     :cancel-btn="{ content: t('ma.cancel'), disabled: busy }"
-    :close-btn="!busy"
-    :close-on-esc-keydown="!busy"
+    :close-btn="!locked"
+    :close-on-esc-keydown="!locked"
     @close="!busy && (rejecting = false)"
     @confirm="reject"
   >
@@ -150,8 +154,13 @@ import { createIdempotencyKey } from '@/api/request'
 import { accessApi, type Model, type TestRun } from '@/api/modules/modelAccess'
 import { invocationTargets } from '@/utils/modelInvocation'
 import { invocationLabel } from './helpers'
-const props = defineProps<{ model: Model; purpose: 'ADMISSION' | 'HEALTH'; historyRun?: TestRun }>()
-const emit = defineEmits<{ close: []; changed: [] }>()
+const props = defineProps<{
+  model: Model
+  purpose: 'ADMISSION' | 'HEALTH'
+  historyRun?: TestRun
+  refreshModelBeforeReview?: boolean
+}>()
+const emit = defineEmits<{ close: []; changed: [run: TestRun | undefined] }>()
 const { t } = useI18n()
 const available = computed(() => [
   'CONNECTIVITY',
@@ -166,7 +175,7 @@ const selected = ref([...available.value]),
   rejectionError = ref(false)
 const polling = ref(false)
 const pollFailed = ref(false)
-const locked = computed(() => busy.value || polling.value)
+const locked = computed(() => busy.value || polling.value || run.value?.status === 'RUNNING')
 function close() {
   if (!locked.value) emit('close')
 }
@@ -196,10 +205,10 @@ async function poll() {
       if (elapsed >= 5 * 60 * 1000) {
         polling.value = false
         pollFailed.value = true
-      } else timer = setTimeout(poll, document.hidden ? 3000 : elapsed > 10000 ? 1000 : 500)
+      } else timer = setTimeout(poll, document.hidden ? 3000 : elapsed > 10000 ? 1200 : 800)
     } else {
       polling.value = false
-      emit('changed')
+      emit('changed', run.value)
     }
   } catch {
     if (!closed && version === pollVersion) {
@@ -209,7 +218,7 @@ async function poll() {
   }
 }
 async function retryPoll() {
-  if (locked.value || !run.value || run.value.status !== 'RUNNING') return
+  if (busy.value || polling.value || !run.value || run.value.status !== 'RUNNING') return
   pollStarted = Date.now()
   await poll()
 }
@@ -234,10 +243,10 @@ async function start() {
     if (closed || version !== pollVersion) return
     run.value = result
     pollStarted = Date.now()
-    emit('changed')
     if (result.status === 'RUNNING') await poll()
+    else emit('changed', run.value)
   } catch {
-    // Preserve the current selection; the request layer reports the error.
+    // The shared request layer reports errors without adding another prompt.
   } finally {
     if (!closed && version === pollVersion) busy.value = false
   }
@@ -248,9 +257,10 @@ async function reject() {
   if (rejectionError.value) return
   busy.value = true
   try {
+    if (props.refreshModelBeforeReview) await accessApi.model(props.model.id, false)
     await accessApi.status(props.model.id, 'DRAFT', rejectionReason.value.trim())
     MessagePlugin.success(t('ma.success'))
-    emit('changed')
+    emit('changed', run.value)
     emit('close')
   } catch {
     // Keep the reason and confirmation available for retry.
@@ -262,9 +272,10 @@ async function publish() {
   if (locked.value) return
   busy.value = true
   try {
+    if (props.refreshModelBeforeReview) await accessApi.model(props.model.id, false)
     await accessApi.status(props.model.id, 'ACTIVE', t('ma.publish'))
     MessagePlugin.success(t('ma.success'))
-    emit('changed')
+    emit('changed', run.value)
     emit('close')
   } catch {
     // Keep the successful test visible for retrying publication.
@@ -272,9 +283,12 @@ async function publish() {
     busy.value = false
   }
 }
-onMounted(() => {
+onMounted(async () => {
   if (props.historyRun) {
-    run.value = props.historyRun
+    run.value =
+      props.historyRun.dto && props.historyRun.status !== 'RUNNING'
+        ? props.historyRun
+        : await accessApi.test(props.model.id, props.purpose, props.historyRun.id)
     pollStarted = Date.now()
     if (run.value.status === 'RUNNING') void poll()
   }

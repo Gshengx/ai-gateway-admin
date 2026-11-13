@@ -25,8 +25,8 @@
       <t-steps class="onboarding-steps" :current="step" :readonly="true"
         ><t-step-item v-for="n in [1, 2, 3, 4]" :key="n" :value="n" :title="t('ma.step' + n)"
       /></t-steps>
+      <t-alert v-if="notice" theme="warning" :message="notice" />
       <template v-if="step === 1">
-        <t-alert v-if="notice" theme="warning" :message="notice" />
         <div class="ma-row ma-between onboarding-summary">
           <span>{{ t('ma.discoverCount', { n: candidates.length, m: eligible.length }) }}</span
           ><t-checkbox
@@ -121,9 +121,9 @@
       <template v-else-if="step === 2">
         <p class="ma-muted">{{ t('ma.onboardingTestHelp') }}</p>
         <div class="ma-stack">
-          <div v-for="model in imported" :key="model.id" class="ma-box ma-stack">
-            <strong>{{ model.model_id_at_gateway }}</strong
-            ><span class="ma-muted"
+          <div v-for="model in imported" :key="model.id" class="ma-box onboarding-model-card">
+            <strong class="onboarding-model-card__name">{{ model.model_id_at_gateway }}</strong
+            ><span class="ma-muted onboarding-model-card__metadata"
               >{{ t('ma.upstream') }} {{ model.model_id_at_provider }} ·
               {{ t('ma.contextSummary') }}
               {{
@@ -138,17 +138,23 @@
                   : `${model.max_output_tokens / 1000} K Token`
               }}</span
             >
-            <span class="ma-muted"
+            <span class="ma-muted onboarding-model-card__metadata"
               >{{ t('ma.input') }} {{ model.input_modalities?.join('、') || t('ma.noMetadata') }} ·
               {{ t('ma.output') }} {{ model.output_modalities?.join('、') || t('ma.noMetadata') }} ·
               {{ t('ma.tags') }}
               {{ model.tags?.map(tagLabel).join('、') || t('ma.noMetadata') }}</span
             >
-            <span class="ma-muted">{{
+            <span class="ma-muted onboarding-model-card__status">{{
               t(results[model.id] ? 'ma.' + results[model.id]!.status : 'ma.awaitingTest')
             }}</span>
-            <t-form class="ma-form" label-align="top" required-mark-position="right">
+            <t-form
+              class="ma-form onboarding-model-card__form"
+              label-align="top"
+              required-mark-position="right"
+            >
               <InvocationEditor
+                :validate-required="testAttempted"
+                hide-help
                 v-model:standard="model.supported_invocation_apis"
                 v-model:custom="model.custom_invocation_apis"
                 :disabled="busy || model.status !== 'DRAFT'"
@@ -244,7 +250,7 @@
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { MessagePlugin, type PrimaryTableCol } from 'tdesign-vue-next'
+import { type PrimaryTableCol } from 'tdesign-vue-next'
 import {
   accessApi,
   type Provider,
@@ -252,12 +258,14 @@ import {
   type Candidate,
   type TestRun,
 } from '@/api/modules/modelAccess'
+import { normalizeModelId } from '@/utils/modelContract'
+import { createIdempotencyKey } from '@/api/request'
 import InvocationEditor from './InvocationEditor.vue'
-import { invocationTargets, validInvocationPath } from '@/utils/modelInvocation'
+import { invocationTargets, invocationConfigurationError } from '@/utils/modelInvocation'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
 const props = defineProps<{ provider: Provider }>()
-const emit = defineEmits<{ close: []; changed: [] }>()
-const { t } = useI18n(),
+const emit = defineEmits<{ close: [] }>()
+const { t, te } = useI18n(),
   router = useRouter()
 const step = ref(1),
   loading = ref(true),
@@ -267,8 +275,7 @@ const step = ref(1),
 const candidates = ref<Candidate[]>([]),
   selected = ref<string[]>([]),
   imported = ref<Model[]>([]),
-  results = ref<Record<string, TestRun>>({}),
-  existingNames = ref<string[]>([])
+  results = ref<Record<string, TestRun>>({})
 const empty = (): Candidate => ({
   model_id_at_provider: '',
   model_id_at_gateway: '',
@@ -276,7 +283,7 @@ const empty = (): Candidate => ({
   input_modalities: [],
   output_modalities: [],
   tags: [],
-  supported_invocation_apis: ['CHAT_COMPLETIONS'],
+  supported_invocation_apis: [],
   custom_invocation_apis: [],
   already_added: false,
 })
@@ -308,9 +315,10 @@ function conflict(c: Candidate) {
   return (
     !c.already_added &&
     (!c.model_id_at_gateway.trim() ||
-      existingNames.value.includes(c.model_id_at_gateway) ||
       selectedCandidates.value.some(
-        (x) => x !== c && x.model_id_at_gateway === c.model_id_at_gateway,
+        (x) =>
+          x !== c &&
+          normalizeModelId(x.model_id_at_gateway) === normalizeModelId(c.model_id_at_gateway),
       ))
   )
 }
@@ -329,7 +337,6 @@ function manualPrefill(value: string) {
 function addManual() {
   const m = manual.value
   m.model_id_at_provider = m.model_id_at_provider.trim()
-  m.model_id_at_gateway = m.model_id_at_provider
   manualAttempted.value = true
   if (manualErrors.value.upstream || manualErrors.value.name) return
   m.display_name = m.model_id_at_provider
@@ -347,12 +354,21 @@ async function add() {
       props.provider.id,
       discoveryId.value,
       selectedCandidates.value,
+      props.provider.version,
     )
     imported.value = result.items
-    notice.value = result.errors.join('、')
+    notice.value = failureNotice(
+      'import',
+      result.result.items
+        .filter((item) => item.status === 'REJECTED')
+        .map((item) => ({
+          name: selectedCandidates.value[item.input_index]?.model_id_at_gateway ?? '',
+          code: item.code,
+        })),
+    )
+    if (notice.value && imported.value.length) notice.value += t('ma.importContinueNotice')
     if (imported.value.length) {
       step.value = 2
-      emit('changed')
     }
   } catch {
     if (!closed) notice.value = t('common.loadFailed')
@@ -360,47 +376,103 @@ async function add() {
     busy.value = false
   }
 }
+function failureNotice(
+  stage: 'import' | 'test' | 'publish',
+  failures: { name: string; code: string }[],
+) {
+  if (!failures.length) return ''
+  const groups = new Map<string, Set<string>>()
+  for (const failure of failures) {
+    const names = groups.get(failure.code) ?? new Set<string>()
+    names.add(failure.name)
+    groups.set(failure.code, names)
+  }
+  const details = [...groups].map(([code, names]) => {
+    const key =
+      stage === 'import' && code === 'NAME_CONFLICT'
+        ? 'ma.importNameConflict'
+        : te(`ma.error_${code}`)
+          ? `ma.error_${code}`
+          : 'ma.error_fallback'
+    return t('ma.onboardingFailureGroup', { models: [...names].join(' / '), reason: t(key) })
+  })
+  return t(`ma.${stage}FailureNotice`, { details: details.join('；') })
+}
+const testKeys = new Map<string, { key: string; signature: string }>()
+function testKey(model: Model) {
+  const signature = JSON.stringify([model.supported_invocation_apis, model.custom_invocation_apis])
+  const previous = testKeys.get(model.id)
+  if (previous?.signature === signature) return previous.key
+  const key = createIdempotencyKey()
+  testKeys.set(model.id, { key, signature })
+  return key
+}
+const testAttempted = ref(false)
 async function testAll() {
   if (busy.value) return
-  if (
-    imported.value.some(
-      (m) =>
-        !m.supported_invocation_apis.length ||
-        m.custom_invocation_apis.some((a) => !validInvocationPath(a.path)),
-    )
-  ) {
-    MessagePlugin.warning(t('ma.required'))
+  testAttempted.value = true
+  const invalid = imported.value.filter((m) => invocationConfigurationError(m))
+  if (invalid.length) {
+    notice.value = t('ma.invocationModelsInvalid', {
+      models: invalid.map((m) => m.model_id_at_gateway).join('、'),
+    })
     return
   }
   busy.value = true
   notice.value = ''
+  const failures: { name: string; code: string }[] = []
   try {
     for (const m of imported.value) {
       if (closed) break
       if (['PENDING_REVIEW', 'ACTIVE'].includes(m.status)) continue
       let run = results.value[m.id]
       if (!run || run.status !== 'RUNNING') {
-        await accessApi.saveModel(m)
-        run = await accessApi.startTest(m.id, 'ADMISSION', [
-          'CONNECTIVITY',
-          'PROTOCOL',
-          ...(m.tags.includes('STREAMING') ? ['STREAMING'] : []),
-        ])
+        const batch = await accessApi.onboardingTests(props.provider.id, [m], testKey(m))
+        testKeys.delete(m.id)
+        const item = batch.items[0]
+        if (!item?.job_id) {
+          failures.push({ name: m.model_id_at_gateway, code: item?.code ?? '' })
+          notice.value = failureNotice('test', failures)
+          continue
+        }
+        // Save the accepted job ID before the first GET. A failed GET resumes
+        // this job instead of submitting another paid check.
+        results.value[m.id] = {
+          id: item.job_id,
+          model_id: m.id,
+          purpose: 'ADMISSION',
+          trigger_type: 'MANUAL',
+          status: 'RUNNING',
+          invocation_api: '',
+          invocation_apis: [],
+          checks: [],
+          billing_user: '',
+          billing_department: '',
+          started_at: '',
+          completed_at: null,
+          triggered_by: '',
+        }
+        m.status = 'TESTING'
+        run = await accessApi.test(m.id, 'ADMISSION', item.job_id)
       }
       results.value[m.id] = run
-      const deadline = Date.now() + 5 * 60 * 1000
+      const pollStarted = Date.now()
+      const deadline = pollStarted + 5 * 60 * 1000
       m.status = 'TESTING'
       while (run.status === 'RUNNING' && !closed) {
         if (Date.now() >= deadline) throw new Error(t('common.loadFailed'))
-        await new Promise((resolve) => setTimeout(resolve, 400))
+        const elapsed = Date.now() - pollStarted
+        await new Promise((resolve) =>
+          setTimeout(resolve, document.hidden ? 3000 : elapsed > 10000 ? 1200 : 800),
+        )
+        if (closed) break
         run = await accessApi.test(m.id, 'ADMISSION', run.id)
         results.value[m.id] = run
       }
-      if (!closed) Object.assign(m, await accessApi.model(m.id))
+      if (!closed) Object.assign(m, await accessApi.model(m.id, false))
     }
     if (!closed) {
       step.value = 3
-      emit('changed')
     }
   } catch {
     if (!closed) notice.value = t('common.loadFailed')
@@ -427,10 +499,21 @@ async function publish() {
   if (busy.value || !publishable.value.length) return
   busy.value = true
   try {
-    for (const m of publishable.value)
-      Object.assign(m, await accessApi.status(m.id, 'ACTIVE', t('ma.publishSelected')))
-    step.value = 4
-    emit('changed')
+    const result = await accessApi.publishBatch(props.provider.id, publishable.value)
+    notice.value = failureNotice(
+      'publish',
+      result.items
+        .filter((i) => i.status === 'REJECTED')
+        .map((i) => ({
+          name: publishable.value[i.input_index]?.model_id_at_gateway ?? '',
+          code: i.code,
+        })),
+    )
+    for (const item of result.items) {
+      const model = imported.value.find((m) => m.id === item.physical_model_id)
+      if (model && item.model) Object.assign(model, item.model)
+    }
+    if (!result.failed_count) step.value = 4
   } catch {
     if (!closed) notice.value = t('common.loadFailed')
   } finally {
@@ -439,11 +522,6 @@ async function publish() {
 }
 onMounted(async () => {
   try {
-    const first = await accessApi.models({ page: 1, page_size: 100 })
-    const all = [...first.items]
-    for (let page = 2; page <= first.total_pages; page++)
-      all.push(...(await accessApi.models({ page, page_size: 100 })).items)
-    existingNames.value = all.map((m) => m.model_id_at_gateway)
     const result = await accessApi.discover(props.provider.id)
     discoveryId.value = result.discovery_id
     candidates.value = result.items

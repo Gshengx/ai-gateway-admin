@@ -16,6 +16,16 @@ export function validInvocationPath(path: string) {
   return /^\/(?!\/)[^\s?#\\]*$/.test(path) && !path.includes('://')
 }
 
+/** Standard APIs and custom paths are alternatives; every supplied path must be valid. */
+export function invocationConfigurationError(
+  model: Pick<Model, 'supported_invocation_apis' | 'custom_invocation_apis'>,
+): 'required' | 'path' | null {
+  if (model.custom_invocation_apis.some((api) => !validInvocationPath(api.path))) return 'path'
+  if (!model.supported_invocation_apis.length && !model.custom_invocation_apis.length)
+    return 'required'
+  return null
+}
+
 export function invocationTargets(
   model: Pick<Model, 'supported_invocation_apis' | 'custom_invocation_apis'>,
 ) {

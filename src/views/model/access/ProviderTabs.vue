@@ -83,8 +83,8 @@ import {
   type ComponentPublicInstance,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { Provider } from '@/api/modules/modelAccess'
-const props = defineProps<{ modelValue: string; providers: Provider[]; total: number }>()
+import type { Summary } from '@/api/modules/modelAccessContract'
+const props = defineProps<{ modelValue: string; providers: Summary['providers']; total: number }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; change: [value: string] }>()
 const { t } = useI18n()
 const strip = ref<HTMLElement>(),
@@ -103,10 +103,10 @@ const providerIcons: Record<string, string> = {
 const tabs = computed(() => [
   { id: '', name: t('ma.all'), count: props.total, icon: '' },
   ...props.providers.map((p) => ({
-    id: p.id,
-    name: p.name,
+    id: p.provider_id,
+    name: p.provider_name,
     count: p.model_count,
-    icon: providerIcons[p.template_key] ?? p.name.charAt(0),
+    icon: providerIcons[p.template_icon_key] ?? p.provider_name.charAt(0),
   })),
 ])
 function setTab(id: string, el: Element | ComponentPublicInstance | null) {

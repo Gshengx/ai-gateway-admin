@@ -148,11 +148,14 @@ export default authMock([
           view.gate === 'NEEDS_PASSWORD' ? 'PASSWORD_CHANGE_REQUIRED' : 'TERMS_ACCEPTANCE_REQUIRED',
           '',
         )
+      const trustedSuperAdmin = roleFor(req) === 'super_admin'
+      const capabilities = trustedSuperAdmin ? CAPABILITIES : (mockRoles.get(roleFor(req)) ?? [])
       return success({
-        capabilities:
-          roleFor(req) === 'super_admin' ? CAPABILITIES : (mockRoles.get(roleFor(req)) ?? []),
+        capabilities,
         navigation: mockNavigation(
           String(req.query?.locale ?? req.headers?.['accept-language'] ?? 'zh-CN'),
+          capabilities,
+          trustedSuperAdmin,
         ),
         permissions_version: '1',
         configuration_version: '1',

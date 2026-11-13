@@ -22,7 +22,9 @@
             t('ma.' + row.status)
           }}</t-tag>
         </template>
-        <template #duration_ms="{ row }">{{ row.duration_ms }} ms</template>
+        <template #duration_ms="{ row }">{{
+          row.duration_ms === null ? '—' : row.duration_ms + ' ms'
+        }}</template>
         <template #detail="{ row }">
           <div v-if="['FAILED', 'ERROR'].includes(row.status)" class="test-check-feedback">
             <div>
@@ -34,7 +36,8 @@
               {{ t('ma.troubleshooting') }}：{{ t('ma.testTroubleshooting') }}
             </div>
           </div>
-          <span v-else>{{ checkDetail(row) }}</span>
+          <span v-else-if="row.status === 'PASSED'">{{ t('ma.checkPassed') }}</span>
+          <span v-else>——</span>
         </template>
       </t-table>
     </t-collapse-panel>
@@ -62,7 +65,10 @@ const checkGroups = computed(() => {
     if (!group) {
       group = {
         id,
-        name: row.upstream_path || (row.invocation_api ? invocationLabel(row.invocation_api) : '—'),
+        name:
+          row.display_name ||
+          row.upstream_path ||
+          (row.invocation_api ? invocationLabel(row.invocation_api) : '—'),
         passed: 0,
         rows: [],
       }

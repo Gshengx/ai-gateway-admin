@@ -1,4 +1,198 @@
 const labels: Record<string, [string, string]> = {
+  onboardingFailureGroup: ['{models}：{reason}', '{models}: {reason}'],
+  importFailureNotice: [
+    '以下模型未能导入：{details}',
+    'These models could not be imported: {details}',
+  ],
+  testFailureNotice: [
+    '以下模型未能开始检测：{details}',
+    'Checks could not start for these models: {details}',
+  ],
+  publishFailureNotice: [
+    '以下模型未能上架：{details}',
+    'These models could not be published: {details}',
+  ],
+  importNameConflict: [
+    '模型名称已被占用，请重新获取模型并修改名称后再添加。',
+    'The model name is already in use. Fetch the models again, change the name, and add it again.',
+  ],
+  importContinueNotice: [
+    ' 下方已导入的模型可继续配置接口与检测。',
+    ' You can continue configuring and testing the imported models below.',
+  ],
+  defaultPricingUnavailable: [
+    '当前未配置适用的企业默认计价规则。',
+    'No applicable enterprise default pricing is configured.',
+  ],
+  checkPassed: ['检测通过', 'Check passed'],
+  numberTemplateConflict: [
+    '模板声明了负数范围，与数字字段非负规则冲突，请确认后端模板。',
+    'The template declares a negative range that conflicts with the non-negative input rule. Check the backend template.',
+  ],
+  priceDecimalFormat: [
+    '请输入非负十进制价格，不允许多余前导零或科学计数法，例如 0、0.45、45435。',
+    'Enter a non-negative decimal without extra leading zeros or scientific notation, e.g. 0, 0.45, 45435.',
+  ],
+  modelDeleteText: [
+    '删除“{name}”后将同时删除价格配置、权限、准入检测和健康检查记录。',
+    'Deleting “{name}” will also delete pricing, permissions, admission checks, and health check records.',
+  ],
+  noMeteringStandard: ['无计量标准', 'No metering standard'],
+  error_fallback: [
+    '模型操作未成功，请保留草稿并核对最新状态',
+    'Model operation did not complete. Preserve the draft and check the current state.',
+  ],
+  error_VERSION_CONFLICT: [
+    '数据已被其他操作更新，请保留草稿、刷新后重新确认',
+    'The resource changed. Preserve the draft, refresh, and confirm again.',
+  ],
+  error_STATE_CONFLICT: [
+    '当前状态不允许此操作，请刷新状态后确认',
+    'The current state does not allow this operation. Refresh and confirm again.',
+  ],
+  error_CHECK_IN_PROGRESS: [
+    '检测任务进行中，请查询现有任务',
+    'A check is in progress. Query the existing job.',
+  ],
+  error_OPERATION_RESULT_UNKNOWN: [
+    '提交结果待确认，请查询结果或以原幂等键核对',
+    'Submission result is unknown. Query results or reconcile with the original key.',
+  ],
+  error_NAME_CONFLICT: [
+    '该名称不可用，请修改后保存',
+    'This name is unavailable. Change it before saving.',
+  ],
+  error_PROVIDER_MODEL_CONFLICT: [
+    '该供应商侧模型标识已被当前供应商管理，请勿重复创建。',
+    'This upstream model ID is already managed by the provider.',
+  ],
+  error_VALIDATION_FAILED: [
+    '字段未满足接口要求，请检查填写内容',
+    'The fields do not meet the API requirements. Check the form.',
+  ],
+  error_BILLING_CURRENCY_CHANGED: [
+    '内部计费币种已变化，请刷新价格准备并重新确认',
+    'Billing currency changed. Refresh pricing preparation and confirm again.',
+  ],
+  error_PRICE_RULE_INVALID: [
+    '内部计价规则不完整或时段重叠，请检查配置',
+    'Internal pricing is incomplete or periods overlap. Check the rules.',
+  ],
+  error_METRIC_UNSUPPORTED: [
+    '计量指标或单位与当前适配规格不一致',
+    'Metrics or units differ from the current adapter specification.',
+  ],
+  error_CATALOG_CHANGED: [
+    '目录批次已更新，请保留草稿并重新读取',
+    'The catalog release changed. Preserve the draft and reload it.',
+  ],
+  error_CATALOG_INCOMPATIBLE: [
+    '所选目录版本与当前实例不匹配',
+    'The selected catalog version is incompatible with this instance.',
+  ],
+  error_CATALOG_UNAVAILABLE: [
+    '目录暂不可用，请稍后重新查询',
+    'The catalog is unavailable. Query again later.',
+  ],
+  error_TEMPLATE_UNAVAILABLE: [
+    '所选模板当前不可用于新绑定',
+    'The selected template is unavailable for new bindings.',
+  ],
+  error_DISCOVERY_STALE: [
+    '供应商连接已变化，请重新发现模型',
+    'The provider connection changed. Discover models again.',
+  ],
+  error_DISCOVERY_EXPIRED: [
+    '发现快照已过期，请重新获取或手动添加',
+    'The discovery snapshot expired. Discover again or enter a model manually.',
+  ],
+  error_IDEMPOTENCY_CONFLICT: [
+    '相同幂等键的请求内容发生变化，请核对原操作',
+    'The request body differs for this idempotency key. Reconcile the original action.',
+  ],
+  error_IDEMPOTENCY_IN_PROGRESS: [
+    '原操作仍在处理中，请查询结果',
+    'The original operation is still in progress. Query its result.',
+  ],
+  error_FORBIDDEN: ['当前账号无权执行此操作', 'You do not have permission for this operation.'],
+  error_NOT_FOUND: ['该对象不存在或不可访问', 'This resource is unavailable.'],
+  error_CUSTOM_API_UNSUPPORTED: [
+    '该自定义路径尚无已适配协议',
+    'No supported adapter is available for this custom path.',
+  ],
+  invalidTokenLimit: [
+    'Token 上限必须为正的安全整数或留空',
+    'Token limits must be positive safe integers or left empty.',
+  ],
+  queryLatestTask: ['查询最新任务', 'Query latest job'],
+  verifyTaskTime: [
+    '已读取最新任务，请核对触发时间与本次提交是否一致',
+    'Latest job loaded. Verify its trigger time against your submission.',
+  ],
+  officialReference: ['官方原币参考', 'Official reference in original currency'],
+  reference_AVAILABLE: [
+    '仅借用官方数值预填内部价格，不代表换汇或对账金额',
+    'Official numbers prefill internal pricing; this is not currency conversion or a supplier statement.',
+  ],
+  reference_NO_PUBLIC_PRICE: [
+    '无公开参考价，已预填内部默认 0，请确认后保存',
+    'No public reference price. Confirm the internal default zero price before saving.',
+  ],
+  reference_PRICE_UNAVAILABLE: [
+    '参考价格未获取，已预填内部默认 0，请确认后保存',
+    'Reference pricing is unavailable. Confirm the internal default zero price before saving.',
+  ],
+  reference_UNSUPPORTED_RULE: [
+    '官方规则无法表达，请明确配置支持的内部规则',
+    'Official rules cannot be represented. Configure supported internal rules explicitly.',
+  ],
+  reference_NOT_APPLICABLE: [
+    '无已识别计量指标，按未计价保存',
+    'No recognized metrics. Save as unpriced.',
+  ],
+  binding: ['官方型号绑定', 'Official model binding'],
+  binding_VERIFIED: ['已验证绑定', 'Verified binding'],
+  binding_UNKNOWN: ['绑定未知', 'Unknown binding'],
+  binding_STALE: ['绑定已失效', 'Stale binding'],
+  noPricingPermission: ['无价格费用查看权限', 'No permission to view pricing or costs'],
+  saveGrants: ['保存模型授权', 'Save model authorizations'],
+  confirmImportPrices: [
+    '请逐项确认内部计价规则，再继续导入；预填数字不代表换汇',
+    'Confirm internal pricing for each model before importing. Prefilled numbers are not currency conversions.',
+  ],
+  noPriceMetrics: [
+    '当前接口无已识别计量指标，将按未计价保存',
+    'No recognized metrics for these APIs. The model will be saved as unpriced.',
+  ],
+  callCounts: [
+    '计划模型调用 {planned} · 实际 {actual} · 未知 {unknown} · 辅助 HTTP {auxiliary}',
+    'Planned model calls {planned} · Actual {actual} · Unknown {unknown} · Auxiliary HTTP {auxiliary}',
+  ],
+  knownCost: ['已知费用', 'Known cost'],
+  totalCost: ['总费用', 'Total cost'],
+  cost_COMPLETE: ['完整', 'Complete'],
+  cost_PARTIAL: ['部分已知', 'Partially known'],
+  cost_UNPRICED: ['未计价', 'Unpriced'],
+  cost_UNKNOWN: ['未知', 'Unknown'],
+  cost_NOT_SENT: ['未发送', 'Not sent'],
+  NOT_APPLICABLE: ['不适用', 'Not applicable'],
+  REUSED: ['复用结果', 'Reused result'],
+  unavailable: ['不可用', 'Unavailable'],
+  clearSecret: ['明确清除已配置凭据', 'Explicitly clear the configured credential'],
+  pricingUnsupported: [
+    '官方价格规则无法预填，请配置内部价格后保存',
+    'Official pricing cannot be prefilled. Configure internal pricing before saving.',
+  ],
+  submissionUnknown: [
+    '提交结果待确认，请恢复查询或使用原幂等键核对，勿重复提交',
+    'Submission result is unknown. Resume querying or reconcile using the original idempotency key.',
+  ],
+  notificationUnavailable: [
+    '当前仅监控阈值，不支持通知投递',
+    'Threshold monitoring only; notification delivery is unavailable.',
+  ],
+  grantsPending: ['授权变更将在保存后生效', 'Authorization changes take effect when saved.'],
+
   duplicateName: ['名称重复', 'Duplicate Name'],
   awaitingTest: ['待测试', 'Awaiting Test'],
   manualModel: ['手动添加模型', 'Add Model Manually'],
@@ -6,8 +200,8 @@ const labels: Record<string, [string, string]> = {
   capabilityModalities: ['能力与模态', 'Capabilities and Modalities'],
   contextOutput: ['上下文 / 最大输出', 'Context / Maximum Output'],
   providerTemplateHelp: [
-    'P0：Azure AI、DeepSeek、Google Vertex、网宿 AI、通用模板、企业自建；其余为 P1。',
-    'P0: Azure AI, DeepSeek, Google Vertex, Wangsu AI, generic templates and enterprise-hosted services; all others are P1.',
+    '配置字段和可用性以当前模板目录为准。',
+    'Configuration fields and availability follow the current template catalog.',
   ],
   bailianBaseUrlHelp: [
     '填写百炼控制台提供的完整 API 地址，并使用对应的 API Key。',
@@ -61,12 +255,12 @@ const labels: Record<string, [string, string]> = {
     'Input modalities, output modalities, context window, maximum output and tags use product adaptation presets first, then values returned by the provider model list. Leave them empty if neither source provides data. Missing context window and maximum output values are shown as “No data retrieved”. Verify model information before publication.',
   ],
   onboardingTestHelp: [
-    '研发适配预置该模型支持的接口。可多选或取消勾选支持接口，并单独填写自定义接口路径；客户端指定的接口优先透传，目标模型不支持时由系统做兼容转换。检测费用归属 system 用户并计入总部。',
-    'Product adaptation presets the interfaces supported by this model. Select or deselect supported interfaces and enter custom interface paths separately. Client-specified interfaces are passed through first; the system converts requests for compatibility when the model does not support them. Test costs are allocated to the system user and charged to Headquarters.',
+    '调用接口与自定义接口路径至少配置一项，可仅填写自定义接口路径；客户端指定的接口优先透传，目标模型不支持时由系统做兼容转换。检测费用归属 system 用户并计入总部。',
+    'Configure at least one supported API or custom API path. A custom path alone is allowed. Client-specified interfaces are passed through first; the system converts requests for compatibility when the model does not support them. Test costs are allocated to the system user and charged to Headquarters.',
   ],
   modelPrice: ['模型价格', 'Model pricing'],
   modelPriceHelp: [
-    '产品预置计费模式、已适配计费项和价格；费用按当前生效的价格计算',
+    '确认已适配计量指标的完整内部价格；费用按生效版本计算',
     'Product presets define the pricing mode, adapted billing metrics and prices. Costs use the currently effective prices.',
   ],
   builtInPriceHelp: [
@@ -263,8 +457,8 @@ const labels: Record<string, [string, string]> = {
   upstreamHint: ['例如：gpt-4o-2024-08-06', 'e.g. gpt-4o-2024-08-06'],
   nameHint: ['供 API 请求 model 字段使用', 'Used in the API model field'],
   nameHelp: [
-    '租户内唯一；用户通过该名称直接调用模型。',
-    'Unique within the tenant; users call this name directly.',
+    '系统全局唯一的模型调用 ID，保留大小写。',
+    'Globally unique; users call this name directly.',
   ],
   renameHelp: [
     '修改模型名称会影响调用方，请确认已通知相关调用方。',
@@ -282,8 +476,8 @@ const labels: Record<string, [string, string]> = {
     'Enter a unique upstream path starting with /. Spaces and full URLs are not allowed.',
   ],
   supportedApisHelp: [
-    '研发按供应商和模型适配情况预置接口。客户端指定的接口不受模型支持时，系统按兼容规则转换。',
-    'APIs are preset by provider and model adapters. Unsupported client APIs are converted using compatible rules.',
+    '调用接口与自定义接口路径至少配置一项。客户端指定的接口不受模型支持时，系统按兼容规则转换。',
+    'Configure at least one supported API or custom API path. Unsupported client APIs are converted using compatible rules.',
   ],
   metadataHelp: [
     '模态、上下文窗口、最大输出和标签优先使用研发适配预置；未预置时使用供应商模型列表返回值，无数据时留空。',
@@ -324,6 +518,48 @@ const labels: Record<string, [string, string]> = {
   lastCheckLabel: ['最近检查', 'Last check'],
   unknown: ['—', '—'],
   required: ['请填写所有必填项并检查输入格式', 'Complete required fields and check input format'],
+  providerFieldRequired: ['请填写或选择{field}', 'Enter or select {field}'],
+  providerFieldUrl: [
+    '{field}：请输入有效的 HTTP 或 HTTPS 地址',
+    '{field}: enter a valid HTTP or HTTPS URL',
+  ],
+  providerFieldJson: ['{field}：请输入有效的 JSON', '{field}: enter valid JSON'],
+  providerFieldNumber: ['{field}：请输入非负数', '{field}: enter a non-negative number'],
+  providerFieldPath: [
+    '{field}：请输入以点号分隔的有效 JSON 字段路径',
+    '{field}: enter a valid dot-separated JSON field path',
+  ],
+  providerFieldThreshold: [
+    '{field}：请输入大于 0 的十进制数',
+    '{field}: enter a decimal greater than zero',
+  ],
+  providerRecipientEmail: [
+    '通知接收人：所选接收人需配置有效邮箱',
+    'Recipients: all selected recipients must have a valid email address',
+  ],
+  providerSecretConflict: [
+    '{field}：不能同时清空并填写密钥',
+    '{field}: a secret cannot be cleared and supplied at the same time',
+  ],
+  providerValidationSummary: ['请检查以下字段：{fields}', 'Check these fields: {fields}'],
+  providerSaveFailed: ['供应商保存失败，请重试', 'Unable to save the provider. Try again.'],
+  modelSaveFailed: ['模型保存失败，请重试', 'Unable to save the model. Try again.'],
+  invocationRequired: [
+    '请至少选择一种支持的接口或填写自定义路径',
+    'Select at least one supported API or enter a custom path',
+  ],
+  invocationModelsInvalid: [
+    '请检查以下模型的接口配置：{models}',
+    'Check the API configuration for these models: {models}',
+  ],
+  exclusiveUsageRequired: [
+    '请确认多模态用量与 Token 用量互斥，避免重复计费',
+    'Confirm that multimodal usage and token usage are mutually exclusive to avoid duplicate charges',
+  ],
+  testResultsLoadFailed: [
+    '检测结果获取失败，可点击重试继续查询当前任务',
+    'Unable to load test results. Retry to continue querying the current task',
+  ],
   success: ['操作成功', 'Operation successful'],
   reason: ['操作原因', 'Reason'],
   reasonRequired: ['请填写操作原因', 'Enter a reason'],
@@ -331,6 +567,7 @@ const labels: Record<string, [string, string]> = {
     '确认删除？此操作将清理关联配置。',
     'Delete this item and its associated configuration?',
   ],
+  providerDeleteConfirm: ['确认删除供应商“{name}”？', 'Delete provider “{name}”?'],
   providerDelete: [
     '供应商名下存在已上架模型时须先下架。删除为永久删除，关联模型将不可调用；历史费用与审计快照不受影响。',
     'Unpublish active models before deleting this provider. Deletion is permanent and associated models become unavailable. Historical cost and audit snapshots are retained.',
@@ -460,9 +697,9 @@ const labels: Record<string, [string, string]> = {
     '字段路径使用点号分隔的 JSON 路径。自定义接口仅用于查询余额，认证密钥会加密保存。',
     'Use dot-separated JSON paths. Custom APIs query balances only; secrets are stored encrypted.',
   ],
-  balanceAlert: ['余额低于阈值时发送预警', 'Alert when balance is low'],
+  balanceAlert: ['启用低余额阈值监控', 'Alert when balance is low'],
   threshold: ['预警阈值', 'Alert threshold'],
-  recipients: ['接收人', 'Recipients'],
+  recipients: ['通知接收人', 'Notification recipients'],
   channels: ['通知渠道', 'Channels'],
   IN_APP: ['站内信', 'In-app'],
   EMAIL: ['邮件', 'Email'],
@@ -535,7 +772,18 @@ const labels: Record<string, [string, string]> = {
   USER: ['用户授权', 'User grants'],
   addGrant: ['添加授权', 'Add'],
   removeGrant: ['移除', 'Remove'],
+  revokeGrant: ['取消授权', 'Revoke authorization'],
+  revokeGrantConfirm: [
+    '确认取消所选对象的模型授权？',
+    'Revoke model access for the selected subjects?',
+  ],
   batchGrant: ['批量授权', 'Batch Authorize'],
+  batchGrantSubjectsRequired: ['请至少选择一个授权对象', 'Select at least one subject'],
+  batchGrantModelLimit: ['每次请选择 1～100 个模型', 'Select between 1 and 100 models'],
+  batchGrantPendingReview: [
+    '所选模型包含待审核模型，无法批量授权',
+    'The selection contains models pending review. Batch authorization is unavailable.',
+  ],
   selectedModels: ['授权模型', 'Models to authorize'],
   subject: ['授权对象', 'Subject'],
   grantHelp: [

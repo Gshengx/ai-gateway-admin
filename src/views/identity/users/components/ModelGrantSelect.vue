@@ -56,8 +56,15 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SelectInputProps } from 'tdesign-vue-next'
-import { getLogicalModelOptionsApi, type LogicalModelOption } from '@/api/modules/identity'
-const props = defineProps<{ disabled?: boolean; lockedIds: string[] }>()
+import { getModelAuthorizationOptionsApi } from '@/api/modules/identity'
+import type { ModelAuthorizationSummary } from '@/api/modules/modelAccessContract'
+const props = defineProps<{
+  disabled?: boolean
+  lockedIds: string[]
+  labels?: Record<string, string>
+  subjectType?: 'USER' | 'DEPARTMENT' | 'USER_GROUP'
+  subjectId?: string
+}>()
 const selection = defineModel<string[]>({ required: true })
 const emit = defineEmits<{ names: [labels: Record<string, string>] }>()
 const { t, locale } = useI18n()
@@ -67,17 +74,21 @@ const popupVisible = ref(false),
   page = ref(1),
   total = ref(0)
 const pageSize = 5
-const items = ref<LogicalModelOption[]>([]),
+const items = ref<ModelAuthorizationSummary[]>([]),
   names = ref<Record<string, string>>({})
 const locked = computed(() => new Set(props.lockedIds))
-const display = computed(() => selection.value.map((id) => names.value[id] ?? id))
+const display = computed(() =>
+  selection.value.map((id) => names.value[id] ?? props.labels?.[id] ?? t('ma.unavailable')),
+)
 let generation = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 async function load() {
   const request = ++generation
   loading.value = true
   try {
-    const result = await getLogicalModelOptionsApi({
+    const result = await getModelAuthorizationOptionsApi({
+      subject_type: props.subjectType ?? 'USER',
+      subject_id: props.subjectId,
       page: page.value,
       page_size: pageSize,
       search: keyword.value.trim() || undefined,
@@ -86,10 +97,7 @@ async function load() {
     items.value = result.items
     total.value = result.total
     const labels = Object.fromEntries(
-      result.items.map((item) => [
-        item.id,
-        item.localized_name || item.display_name || item.logical_name,
-      ]),
+      result.items.map((item) => [item.id, item.model_id_at_gateway]),
     )
     Object.assign(names.value, labels)
     emit('names', labels)

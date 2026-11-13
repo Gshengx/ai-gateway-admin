@@ -30,7 +30,7 @@
             >{{ t('ma.edit') }}</t-button
           >
         </div>
-        <t-alert theme="info" :message="t('ma.priceDisclaimer')" />
+        <t-alert v-if="canReadPrice" theme="info" :message="t('ma.priceDisclaimer')" />
         <dl class="ma-definitions">
           <template v-for="row in info" :key="row[0]"
             ><dt>{{ row[0] }}</dt>
@@ -44,9 +44,10 @@
           >
         </dl>
         <div class="ma-stack">
-          <h3>{{ t('ma.priceHistory') }}</h3>
+          <h3 v-if="canReadPrice">{{ t('ma.priceHistory') }}</h3>
           <LoadingState
             height="var(--stable-detail-section-height)"
+            v-if="canReadPrice"
             :loading="pricesLoading"
             :failed="pricesFailed"
             retryable
@@ -70,13 +71,17 @@
               @current-change="
                 (v: number) => {
                   pricePage = v
-                  loadPrices()
+                  loadPriceHistory()
                 }
               "
             />
           </LoadingState>
         </div>
-        <div v-for="purpose in ['ADMISSION', 'HEALTH'] as const" :key="purpose" class="ma-stack">
+        <div
+          v-for="purpose in canReadChecks ? (['ADMISSION', 'HEALTH'] as const) : []"
+          :key="purpose"
+          class="ma-stack"
+        >
           <h3>{{ t(purpose === 'HEALTH' ? 'ma.healthHistory' : 'ma.admissionHistory') }}</h3>
           <p class="test-history-meta">{{ t('ma.matrixHelp') }}</p>
           <LoadingState
@@ -110,8 +115,12 @@
                   <template #headerRightContent>
                     <span class="test-history-meta">{{
                       t('ma.passedCount', {
-                        n: record.checks.filter((check) => check.status === 'PASSED').length,
-                        total: record.checks.length,
+                        n:
+                          record.counts?.passed_items ??
+                          record.checks.filter((check) => check.status === 'PASSED').length,
+                        total: record.counts
+                          ? Object.values(record.counts).reduce((sum, count) => sum + count, 0)
+                          : record.checks.length,
                       })
                     }}</span>
                   </template>
@@ -157,28 +166,26 @@
   </t-drawer>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import LoadingState from '@/components/LoadingState.vue'
 import PricingSummary from './PricingSummary.vue'
 import TestResultMatrix from './TestResultMatrix.vue'
 import { useI18n } from 'vue-i18n'
-import {
-  accessApi,
-  type Model,
-  type Provider,
-  type Pricing,
-  type TestRun,
-} from '@/api/modules/modelAccess'
+import { accessApi, type Model, type Pricing, type TestRun } from '@/api/modules/modelAccess'
+import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
-const props = defineProps<{ id: string; providers: Provider[] }>()
+const props = defineProps<{ id: string }>()
 const emit = defineEmits<{
   close: []
   edit: [id: string]
   test: [model: Model, purpose: 'HEALTH' | 'ADMISSION', run?: TestRun]
 }>()
 const { t } = useI18n()
+const user = useUserStore()
+const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
+const canReadChecks = computed(() => user.permissions.includes('model.admission'))
 const pricePageSize = 5
 const historyPageSize = 5
 const model = ref<Model>(),
@@ -203,7 +210,8 @@ const pricesRequest = useLatestRequest()
 const historyRequests = { ADMISSION: useLatestRequest(), HEALTH: useLatestRequest() }
 const modelRequest = useLatestRequest()
 const loadRequest = useLatestRequest()
-async function loadHistory(purpose: 'ADMISSION' | 'HEALTH') {
+async function loadHistory(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestRun) {
+  if (!canReadChecks.value) return
   const current = historyRequests[purpose].begin()
   historyLoading.value[purpose] = true
   historyFailed.value[purpose] = false
@@ -213,6 +221,7 @@ async function loadHistory(purpose: 'ADMISSION' | 'HEALTH') {
       purpose,
       historyPages.value[purpose],
       historyPageSize,
+      { signal: current.signal },
     )
     if (!current.isCurrent()) return
     const previousIds = new Set(histories.value[purpose].map((record) => record.id))
@@ -221,7 +230,16 @@ async function loadHistory(purpose: 'ADMISSION' | 'HEALTH') {
     )
     const pageChanged = !data.items.some((record) => previousIds.has(record.id))
     expandedHistory.value[purpose] = pageChanged && data.items[0] ? [data.items[0].id] : retained
-    histories.value[purpose] = data.items
+    const previousDetails = new Map(histories.value[purpose].map((record) => [record.id, record]))
+    histories.value[purpose] = data.items.map((record) => {
+      const known = completedRun?.id === record.id ? completedRun : previousDetails.get(record.id)
+      return known?.model_id === props.id &&
+        known.dto &&
+        known.status !== 'RUNNING' &&
+        known.status === record.status
+        ? known
+        : record
+    })
     historyTotals.value[purpose] = data.total
   } catch {
     if (current.isCurrent()) historyFailed.value[purpose] = true
@@ -229,24 +247,16 @@ async function loadHistory(purpose: 'ADMISSION' | 'HEALTH') {
     if (current.isCurrent()) historyLoading.value[purpose] = false
   }
 }
-const lifecycleEvents = computed(() => {
-  const chronological = [...(model.value?.lifecycle_events ?? [])].sort(
-    (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
-  )
-  return chronological
-    .map((event, index) => ({ ...event, fromStatus: chronological[index - 1]?.status }))
-    .reverse()
-})
+const lifecycleEvents = computed(() => model.value?.lifecycle_events ?? [])
 const info = computed(() => {
   if (!model.value) return []
-  const m = model.value,
-    p = props.providers.find((p) => p.id === m.provider_id)
+  const m = model.value
   return [
     [t('ma.name'), m.model_id_at_gateway],
-    [t('ma.provider'), p?.name || '—'],
+    [t('ma.provider'), m.provider_name || '—'],
     [t('ma.upstream'), m.model_id_at_provider],
-    [t('ma.baseUrl'), p?.base_url || '—'],
-    [t('ma.security'), p ? t('ma.' + p.security_level) : '—'],
+    [t('ma.baseUrl'), m.provider_base_url || '—'],
+    [t('ma.security'), m.security_level ? t('ma.' + m.security_level) : '—'],
     [t('ma.supportedApis'), m.supported_invocation_apis.map(invocationLabel).join('、')],
     [t('ma.customPath'), m.custom_invocation_apis.map((a) => a.path).join('、') || '—'],
     [t('ma.input'), m.input_modalities.join('、') || t('ma.noMetadata')],
@@ -272,7 +282,9 @@ const info = computed(() => {
         : t('ma.disabled'),
     ],
     [t('ma.lastCheckLabel'), formatDateTime(m.health_checked_at) || '—'],
-    [t('ma.priceSummary'), pricesFailed.value ? t('common.loadFailed') : '—'],
+    ...(canReadPrice.value
+      ? [[t('ma.priceSummary'), pricesFailed.value ? t('common.loadFailed') : '—']]
+      : []),
     [
       t('ma.admissionAt'),
       historyFailed.value.ADMISSION
@@ -285,15 +297,22 @@ const info = computed(() => {
     [t('ma.created'), formatDateTime(m.created_at)],
   ]
 })
-async function loadPrices() {
+function loadPrices() {
+  return loadPriceHistory(true)
+}
+async function loadPriceHistory(refreshCurrent = false) {
+  if (!canReadPrice.value) return
   const current = pricesRequest.begin()
   pricesLoading.value = true
   pricesFailed.value = false
   try {
-    const p = await accessApi.prices(props.id, pricePage.value, pricePageSize)
+    const [p, price] = await Promise.all([
+      accessApi.prices(props.id, pricePage.value, pricePageSize, { signal: current.signal }),
+      refreshCurrent ? accessApi.pricing(props.id, { signal: current.signal }) : undefined,
+    ])
     if (!current.isCurrent()) return
     priceHistory.value = p.items
-    if (pricePage.value === 1) currentPrice.value = p.items[0]
+    if (price) currentPrice.value = price
     priceTotal.value = p.total
   } catch {
     if (current.isCurrent()) pricesFailed.value = true
@@ -304,15 +323,18 @@ async function loadPrices() {
 async function refresh() {
   const current = modelRequest.begin()
   const [updated] = await Promise.all([
-    accessApi.model(props.id),
+    accessApi.model(props.id, true, { signal: current.signal }),
     loadPrices(),
-    ...(['ADMISSION', 'HEALTH'] as const).map(loadHistory),
+    ...(['ADMISSION', 'HEALTH'] as const).map((purpose) => loadHistory(purpose)),
   ])
   if (current.isCurrent()) model.value = updated
 }
-async function refreshTest(purpose: 'ADMISSION' | 'HEALTH') {
+async function refreshTest(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestRun) {
   const current = modelRequest.begin()
-  const [updated] = await Promise.all([accessApi.model(props.id), loadHistory(purpose)])
+  const [updated] = await Promise.all([
+    accessApi.model(props.id, true, { signal: current.signal }),
+    loadHistory(purpose, completedRun),
+  ])
   if (current.isCurrent()) model.value = updated
 }
 defineExpose({ refresh, refreshTest })
@@ -328,6 +350,37 @@ async function loadDetail() {
     if (current.isCurrent()) loading.value = false
   }
 }
+const pendingHistoryDetails = new Set<string>()
+const historyDetailsController = new AbortController()
+onBeforeUnmount(() => historyDetailsController.abort())
+watch(
+  expandedHistory,
+  async (values) => {
+    for (const purpose of ['ADMISSION', 'HEALTH'] as const)
+      for (const id of values[purpose]) {
+        const record = histories.value[purpose].find((r) => r.id === id)
+        const key = `${purpose}:${id}`
+        if (record && !record.dto && !pendingHistoryDetails.has(key)) {
+          pendingHistoryDetails.add(key)
+          try {
+            const detail = await accessApi.test(
+              props.id,
+              purpose,
+              record.id,
+              historyDetailsController.signal,
+            )
+            const index = histories.value[purpose].findIndex((r) => r.id === id)
+            if (index >= 0) histories.value[purpose][index] = detail
+          } catch {
+            /* The request layer reports the error. */
+          } finally {
+            pendingHistoryDetails.delete(key)
+          }
+        }
+      }
+  },
+  { deep: true },
+)
 onMounted(loadDetail)
 </script>
 <style scoped src="./access.css"></style>

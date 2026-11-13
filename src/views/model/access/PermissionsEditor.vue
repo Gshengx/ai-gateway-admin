@@ -15,8 +15,8 @@
             v-permission.write="'model.permissions'"
             theme="danger"
             variant="outline"
-            @click="removing = [...selected[kind]]"
-            >{{ t('ma.removeGrant') }}</t-button
+            @click="requestRemove([...selected[kind]])"
+            >{{ t('ma.revokeGrant') }}</t-button
           >
         </div>
         <div v-permission.write="'model.permissions'" class="ma-row">
@@ -24,7 +24,7 @@
             v-model="candidates[kind]"
             :type="kind"
             :labels="names"
-            :locked-ids="lockedSubjects[kind]"
+            :locked-ids="authorized[kind]"
             @names="remember"
           /><t-button
             theme="primary"
@@ -43,7 +43,7 @@
           :selected-row-keys="selected[kind]"
           :pagination="{
             current: pages[kind],
-            pageSize: 20,
+            pageSize,
             total: totals[kind],
             showPageSize: false,
           }"
@@ -52,25 +52,28 @@
           @page-change="
             (p: PageInfo) => {
               pages[kind] = p.current
-              load(kind)
+              renderPage(kind)
             }
           "
-          ><template #action="{ row }"
+          ><template #subject_name="{ row }">{{ subjectLabel(row) }}</template>
+          <template #action="{ row }"
             ><t-link
               v-permission.write="'model.permissions'"
               theme="danger"
-              @click="removing = [row.id]"
-              >{{ t('ma.removeGrant') }}</t-link
+              @click="requestRemove([row.id])"
+              >{{ t('ma.revokeGrant') }}</t-link
             ></template
           ></t-table
         >
       </LoadingState>
     </section>
     <t-dialog
+      attach="body"
+      placement="center"
       dialog-class-name="model-access-dialog"
       :close-btn="!saving"
       :visible="removing.length > 0"
-      :header="t('ma.removeGrant')"
+      :header="t('ma.revokeGrant')"
       :close-on-esc-keydown="!saving"
       :close-on-overlay-click="false"
       :cancel-btn="{ content: t('ma.cancel'), disabled: saving }"
@@ -78,7 +81,17 @@
       @close="!saving && (removing = [])"
       @confirm="remove"
       ><div class="ma-stack">
-        <p>{{ t('ma.deleteConfirm') }}</p>
+        <p>{{ t('ma.revokeGrantConfirm') }}</p>
+        <p>
+          {{
+            removing
+              .map((id) => {
+                const grant = savedGrants.get(id)
+                return grant ? subjectLabel(grant) : t('ma.unavailable')
+              })
+              .join('、')
+          }}
+        </p>
         <t-textarea v-model="reason" :placeholder="t('ma.reason')" /></div
     ></t-dialog>
   </div>
@@ -91,41 +104,39 @@ import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
 import SubjectSelect from './SubjectSelect.vue'
 import { accessApi, type Permission, type Subject } from '@/api/modules/modelAccess'
-const props = defineProps<{ modelId?: string; modelIds?: string[] }>()
+
+const props = defineProps<{ modelId: string }>()
 const emit = defineEmits<{ 'busy-change': [value: boolean] }>()
-const value = defineModel<Permission[]>({ default: () => [] })
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
-const candidates = reactive<Record<Subject, string[]>>({
-    DEPARTMENT: [],
-    USER_GROUP: [],
-    USER: [],
-  }),
-  selected = reactive<Record<Subject, string[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })
-const rows = reactive<Record<Subject, Permission[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] }),
-  pages = reactive({ DEPARTMENT: 1, USER_GROUP: 1, USER: 1 }),
-  totals = reactive({ DEPARTMENT: 0, USER_GROUP: 0, USER: 0 })
-const names = ref<Record<string, string>>({}),
-  saving = ref(false),
-  removing = ref<string[]>([]),
-  reason = ref('')
-watch(saving, (value) => emit('busy-change', value), { flush: 'sync' })
+const pageSize = 5
+const savedGrants = reactive(new Map<string, Permission>())
+const collections = reactive<Record<Subject, Permission[]>>({
+  DEPARTMENT: [],
+  USER_GROUP: [],
+  USER: [],
+})
+const rows = reactive<Record<Subject, Permission[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })
+const candidates = reactive<Record<Subject, string[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })
+const selected = reactive<Record<Subject, string[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })
 const authorized = reactive<Record<Subject, string[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })
-const lockedSubjects = computed(
-  () =>
-    Object.fromEntries(
-      kinds.map((kind) => [
-        kind,
-        [
-          ...new Set([
-            ...authorized[kind],
-            ...value.value
-              .filter((item) => item.subject_type === kind)
-              .map((item) => item.subject_id),
-          ]),
-        ],
-      ]),
-    ) as Record<Subject, string[]>,
+const pages = reactive({ DEPARTMENT: 1, USER_GROUP: 1, USER: 1 })
+const totals = reactive({ DEPARTMENT: 0, USER_GROUP: 0, USER: 0 })
+const loading = reactive({ DEPARTMENT: true, USER_GROUP: true, USER: true })
+const failed = reactive({ DEPARTMENT: false, USER_GROUP: false, USER: false })
+const names = ref<Record<string, string>>({})
+const saving = ref(false)
+const removing = ref<string[]>([])
+const reason = ref('')
+const requests = {
+  DEPARTMENT: useLatestRequest(),
+  USER_GROUP: useLatestRequest(),
+  USER: useLatestRequest(),
+}
+watch(
+  () => saving.value || removing.value.length > 0,
+  (value) => emit('busy-change', value),
+  { flush: 'sync' },
 )
 const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'row-select', type: 'multiple', width: 40 },
@@ -135,61 +146,30 @@ const columns = computed<PrimaryTableCol[]>(() => [
 function remember(map: Record<string, string>) {
   Object.assign(names.value, map)
 }
-async function allGranted(
-  id: string,
-  kind: Subject,
-  seed?: Awaited<ReturnType<typeof accessApi.permissions>>,
-) {
-  const first = seed ?? (await accessApi.permissions(id, 1, kind))
-  const remaining = await Promise.all(
-    Array.from({ length: first.total_pages }, (_, i) => i + 1)
-      .filter((page) => page !== first.page)
-      .map((page) => accessApi.permissions(id, page, kind)),
-  )
-  return [...first.items, ...remaining.flatMap((page) => page.items)]
+function subjectLabel(grant: Permission) {
+  return grant.subject_type === 'USER' && grant.subject_username
+    ? `${grant.subject_name}(${grant.subject_username})`
+    : grant.subject_name
 }
-const loading = reactive({ DEPARTMENT: true, USER_GROUP: true, USER: true })
-const failed = reactive({ DEPARTMENT: false, USER_GROUP: false, USER: false })
-const requests = {
-  DEPARTMENT: useLatestRequest(),
-  USER_GROUP: useLatestRequest(),
-  USER: useLatestRequest(),
+function renderPage(kind: Subject) {
+  totals[kind] = collections[kind].length
+  pages[kind] = Math.max(1, Math.min(pages[kind], Math.max(1, Math.ceil(totals[kind] / pageSize))))
+  rows[kind] = collections[kind].slice((pages[kind] - 1) * pageSize, pages[kind] * pageSize)
 }
 async function load(kind: Subject) {
   const current = requests[kind].begin()
-  const modelId = props.modelId
   loading[kind] = true
   failed[kind] = false
   try {
-    if (modelId) {
-      const data = await accessApi.permissions(modelId, pages[kind], kind)
-      if (!current.isCurrent()) return
-      if (pages[kind] > Math.max(1, data.total_pages)) {
-        pages[kind] = Math.max(1, data.total_pages)
-        return await load(kind)
-      }
-      rows[kind] = data.items
-      totals[kind] = data.total
-      const grants = await allGranted(modelId, kind, data)
-      if (!current.isCurrent()) return
-      authorized[kind] = grants.map((grant) => grant.subject_id)
-      remember(Object.fromEntries(grants.map((grant) => [grant.subject_id, grant.subject_name])))
-    } else {
-      const list = value.value.filter((x) => x.subject_type === kind)
-      totals[kind] = list.length
-      pages[kind] = Math.min(pages[kind], Math.max(1, Math.ceil(list.length / 20)))
-      rows[kind] = list.slice((pages[kind] - 1) * 20, pages[kind] * 20)
-      if (props.modelIds?.length) {
-        const lists = await Promise.all(props.modelIds.map((id) => allGranted(id, kind)))
-        if (!current.isCurrent()) return
-        authorized[kind] = (lists[0] ?? [])
-          .filter((grant) =>
-            lists.every((list) => list.some((item) => item.subject_id === grant.subject_id)),
-          )
-          .map((grant) => grant.subject_id)
-      }
-    }
-    remember(Object.fromEntries(rows[kind].map((x) => [x.subject_id, x.subject_name])))
+    const data = await accessApi.permissionSet(props.modelId, kind, { signal: current.signal })
+    if (!current.isCurrent()) return
+    const grants = data.items
+    for (const [id, grant] of savedGrants) if (grant.subject_type === kind) savedGrants.delete(id)
+    grants.forEach((grant) => savedGrants.set(grant.id, grant))
+    collections[kind] = grants
+    authorized[kind] = grants.map((grant) => grant.subject_id)
+    remember(Object.fromEntries(grants.map((grant) => [grant.subject_id, subjectLabel(grant)])))
+    renderPage(kind)
   } catch {
     if (current.isCurrent()) failed[kind] = true
   } finally {
@@ -201,35 +181,23 @@ async function add(kind: Subject) {
   saving.value = true
   try {
     const grants = candidates[kind]
-      .filter((id) => !lockedSubjects.value[kind].includes(id))
-      .map((subject_id) => ({
-        subject_type: kind,
-        subject_id,
-        subject_name: names.value[subject_id] ?? subject_id,
-      }))
-    if (props.modelId || props.modelIds?.length)
-      for (const id of props.modelIds ?? [props.modelId!]) await accessApi.grant(id, grants)
-    if (!props.modelId)
-      for (const g of grants)
-        if (
-          !value.value.some(
-            (x) => x.subject_id === g.subject_id && x.subject_type === g.subject_type,
-          )
-        )
-          value.value.push({
-            ...g,
-            id: `${g.subject_type}:${g.subject_id}`,
-            physical_model_id: '',
-            created_at: '',
-          })
+      .filter((id) => !authorized[kind].includes(id))
+      .map((subject_id) => ({ subject_type: kind, subject_id }))
+    if (!grants.length) return
+    await accessApi.grant(props.modelId, grants)
     candidates[kind] = []
-    if (props.modelId || props.modelIds?.length) MessagePlugin.success(t('ma.success'))
+    selected[kind] = []
+    MessagePlugin.success(t('ma.success'))
+    pages[kind] = 1
     await load(kind)
   } catch {
-    // Keep the selection available for retry; the request layer reports the error.
+    // Keep the selection for retry; the request layer reports the error.
   } finally {
     saving.value = false
   }
+}
+function requestRemove(ids: string[]) {
+  removing.value = ids
 }
 async function remove() {
   if (saving.value || !removing.value.length) return
@@ -237,26 +205,37 @@ async function remove() {
     MessagePlugin.warning(t('ma.reasonRequired'))
     return
   }
+  const targets = removing.value.map((id) => savedGrants.get(id)).filter((grant) => !!grant)
+  const changedKinds = new Set(targets.map((grant) => grant.subject_type))
+  if (!changedKinds.size) return
   saving.value = true
   try {
-    if (props.modelId) await accessApi.revoke(props.modelId, removing.value, reason.value)
-    else value.value = value.value.filter((x) => !removing.value.includes(x.id))
-    if (props.modelId) MessagePlugin.success(t('ma.success'))
+    await accessApi.revoke(props.modelId, removing.value, reason.value)
+    MessagePlugin.success(t('ma.success'))
     removing.value = []
     reason.value = ''
-    for (const k of kinds) {
-      selected[k] = []
-      await load(k)
-    }
+    for (const kind of changedKinds) selected[kind] = []
+    await Promise.all([...changedKinds].map(load))
   } catch {
-    // Keep the selection available for retry; the request layer reports the error.
+    // Reconcile the current grants before a retry.
+    await Promise.allSettled([...changedKinds].map(load))
+    removing.value = removing.value.filter((id) => savedGrants.has(id))
   } finally {
     saving.value = false
   }
 }
-watch([() => props.modelId, () => props.modelIds], () => void Promise.all(kinds.map(load)), {
-  immediate: true,
-  deep: true,
-})
+watch(
+  () => props.modelId,
+  () => {
+    savedGrants.clear()
+    for (const kind of kinds) {
+      pages[kind] = 1
+      candidates[kind] = []
+      selected[kind] = []
+    }
+    void Promise.all(kinds.map(load))
+  },
+  { immediate: true, deep: true },
+)
 </script>
 <style scoped src="./access.css"></style>

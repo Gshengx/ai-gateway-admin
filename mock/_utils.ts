@@ -170,7 +170,7 @@ function auditEntity(group: string, id: string): AuditEntity | undefined {
   if (group === 'users') return [...directory.values()].find((user) => user.id === id)
   if (group === 'api-keys' || group === 'keys') return apiKeys.find((key) => key.id === id)
   if (group === 'models' || group === 'providers')
-    return existingState<Record<string, AuditEntity[]>>('modelAccess')?.[group]?.find(
+    return existingState<Record<string, AuditEntity[]>>('modelAccessV14')?.[group]?.find(
       (item) => item.id === id,
     )
   if (group === 'groups' || group === 'departments')

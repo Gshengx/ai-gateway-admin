@@ -122,7 +122,7 @@
       <p>{{ t('groups.delete.modelsLabel') }}</p>
       <ul>
         <li v-for="model in referencedModels" :key="model.id">
-          {{ model.localized_name || model.display_name || model.logical_name }}
+          {{ model.model_id_at_gateway }}
         </li>
       </ul>
       <p v-if="referencesHasMore">{{ t('groups.delete.referencedMore') }}</p>
@@ -312,9 +312,7 @@ async function checkReferences(id: string) {
       { skipErrorHandler: true },
     )
     if (requestId !== referenceRequestId || !confirmDialog.visible) return
-    referencedModels.value = [
-      ...new Map(result.items.map(({ model }) => [model.id, model])).values(),
-    ]
+    referencedModels.value = [...new Map(result.items.map((model) => [model.id, model])).values()]
     referencesHasMore.value = result.page < result.total_pages
   } catch {
     // 预检失败不阻断删除。
@@ -340,13 +338,7 @@ function showReferenceBlocked() {
               h('p', t('groups.delete.modelsLabel')),
               h(
                 'ul',
-                models.map((model) =>
-                  h(
-                    'li',
-                    { key: model.id },
-                    model.localized_name || model.display_name || model.logical_name,
-                  ),
-                ),
+                models.map((model) => h('li', { key: model.id }, model.model_id_at_gateway)),
               ),
             ]
           : []),

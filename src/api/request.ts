@@ -37,6 +37,10 @@ export interface NotifiedError extends Error {
 }
 
 function businessMessage(code?: string, config?: RequestConfig): string {
+  if (config?.url?.startsWith('/model-access')) {
+    const key = `ma.error_${code}`
+    return i18n.global.te(key) ? i18n.global.t(key) : i18n.global.t('ma.error_fallback')
+  }
   if (code === 'VALIDATION_FAILED' && config?.url !== '/auth/change-password')
     return i18n.global.t('requestErrors.VALIDATION_FAILED')
   for (const group of ['authErrors', 'roleErrors']) {

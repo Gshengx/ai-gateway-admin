@@ -9,6 +9,7 @@
     @close="onClose"
   >
     <t-form
+      autocomplete="off"
       :disabled="submitting || validating"
       ref="formRef"
       :data="form"
@@ -77,6 +78,7 @@
       <t-form-item v-if="isCreate" :label="t('users.form.password')" name="initial_password">
         <t-input
           v-model="form.initial_password"
+          name="managed-initial-password"
           type="password"
           autocomplete="new-password"
           :placeholder="t('users.form.passwordPlaceholder')"

@@ -1,11 +1,19 @@
 import { defineStore } from 'pinia'
 import { useUserStore } from './user'
-import { acceptTermsApi, getRequiredTermsApi, type TermsStatus } from '@/api/modules/terms'
+import {
+  acceptTermsApi,
+  getRequiredTermsApi,
+  type TermsStatus,
+  type TermsConfig,
+} from '@/api/modules/terms'
 import type { NotifiedError } from '@/api/request'
+
+type TermsConfiguration = Pick<TermsConfig, 'mandatory_confirmation' | 'login_popup_enabled'>
 
 export const useTermsStore = defineStore('terms', {
   state: () => ({
     status: null as TermsStatus | null,
+    configuration: null as TermsConfiguration | null,
     loaded: false,
     accepting: false,
     visible: false,
@@ -18,10 +26,18 @@ export const useTermsStore = defineStore('terms', {
     },
   },
   actions: {
+    updateConfiguration(configuration: TermsConfiguration) {
+      this.configuration = {
+        mandatory_confirmation: configuration.mandatory_confirmation,
+        login_popup_enabled: configuration.login_popup_enabled,
+      }
+    },
     async loadStatus() {
       this.loaded = false
       this.status = null
       this.status = await getRequiredTermsApi()
+      // Seed this login's memory once; later config reads must not be overwritten by its snapshot.
+      if (!this.configuration) this.updateConfiguration(this.status)
       this.loaded = true
       this.visible =
         this.requireConfirmation || (this.status.login_popup_enabled && !this.status.accepted)

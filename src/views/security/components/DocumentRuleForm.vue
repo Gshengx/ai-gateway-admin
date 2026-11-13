@@ -92,11 +92,16 @@
             <div v-if="field.mask_config.mode === 'PARTIAL_MASK'" class="security-grid">
               <t-form-item :label="label('keepPrefix')"
                 ><t-input-number
+                  v-nonnegative-number
                   v-model="field.mask_config.keep_prefix"
                   :min="0"
                   :max="100" /></t-form-item
               ><t-form-item :label="label('keepSuffix')"
-                ><t-input-number v-model="field.mask_config.keep_suffix" :min="0" :max="100"
+                ><t-input-number
+                  v-nonnegative-number
+                  v-model="field.mask_config.keep_suffix"
+                  :min="0"
+                  :max="100"
               /></t-form-item>
             </div>
             <t-button
@@ -111,7 +116,12 @@
           }}</t-button>
         </section>
         <t-form-item :label="label('documentThreshold')"
-          ><t-input-number v-model="form.config.threshold" :min="0" :max="1" :step="0.05"
+          ><t-input-number
+            v-nonnegative-number
+            v-model="form.config.threshold"
+            :min="0"
+            :max="1"
+            :step="0.05"
         /></t-form-item>
         <t-alert theme="info" :message="label('mockEvaluation')" />
         <t-form-item :label="label('testText')"
