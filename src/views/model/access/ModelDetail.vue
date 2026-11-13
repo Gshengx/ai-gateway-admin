@@ -339,10 +339,14 @@ async function refresh() {
 async function refreshTest(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestRun) {
   const current = modelRequest.begin()
   const [updated] = await Promise.all([
-    accessApi.model(props.id, true, { signal: current.signal }),
+    accessApi.model(props.id, purpose !== 'HEALTH', { signal: current.signal }),
     loadHistory(purpose, completedRun),
   ])
-  if (current.isCurrent()) model.value = updated
+  if (!current.isCurrent()) return
+  if (purpose === 'HEALTH' && model.value) {
+    model.value.health_status = updated.health_status
+    model.value.health_checked_at = updated.health_checked_at
+  } else model.value = updated
 }
 defineExpose({ refresh, refreshTest })
 async function loadDetail() {
