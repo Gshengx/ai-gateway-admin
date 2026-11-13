@@ -1,10 +1,10 @@
 <template>
   <t-config-provider :global-config="tdesignLocale">
     <t-loading
-      v-if="userStore.permissionsLoading && !termsStore.accepting"
+      v-if="userStore.permissionsLoading && !termsStore.accepting && !isLoginPage"
       :text="t('navigationErrors.loading')"
       fullscreen
-      :delay="isLoginPage ? 0 : 200"
+      :delay="200"
     />
     <div v-if="userStore.permissionError" class="permission-error" role="alert">
       <AccessState :title="t('navigationErrors.title')" :description="userStore.permissionError">
