@@ -12,6 +12,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# 构建已要求 Node.js；发布前确认自检运行时存在，避免更新后才发现缺失。
+$node = (Get-Command node -ErrorAction Stop).Source
+$httpsCheck = Join-Path $PSScriptRoot 'check-https.mjs'
+if (-not (Test-Path $httpsCheck)) { throw "缺少 HTTPS 自检脚本：$httpsCheck" }
+
 $pscp = 'C:\Program Files (x86)\PuTTY\pscp.exe'
 $plink = 'C:\Program Files (x86)\PuTTY\plink.exe'
 foreach ($exe in @($pscp, $plink)) {
@@ -74,17 +79,14 @@ echo "files=`$(find "`$RELEASE" -type f | wc -l)"
     # 从已验证的 SSH 通道获取根证书，不关闭 TLS 验证、不写入客户端信任库。
     & $pscp -batch -pw $Password "${User}@${Server}:/etc/nginx/ssl/ais-root-ca.crt" $localRootCa
     if ($LASTEXITCODE -ne 0) { throw '获取 HTTPS 根证书失败' }
-    $root = & curl.exe --noproxy '*' --cacert $localRootCa -sS -o NUL -w '%{http_code}' --max-time 15 "https://$Server/"
-    if ($LASTEXITCODE -ne 0) { throw 'HTTPS 首页 TLS 验证失败' }
-    $api = & curl.exe --noproxy '*' --cacert $localRootCa -sS -o NUL -w '%{http_code}' --max-time 15 "https://$Server/api/v1/api-keys"
-    if ($LASTEXITCODE -ne 0) { throw 'HTTPS 接口 TLS 验证失败' }
-    Write-Host "      首页 $root / 接口 $api (401 表示反代正常)"
-    if ($root -ne '200') { throw "首页返回 $root，部署异常" }
-    if ($api -ne '401') { throw "未登录接口返回 $api，预期 401" }
+    # Node.js 验证证书链、有效期和主机名，不依赖 Windows Schannel 的吊销服务。
+    & $node $httpsCheck "https://$Server/" $localRootCa
+    if ($LASTEXITCODE -ne 0) { throw 'HTTPS 自检失败（证书或 HTTP 状态异常）' }
 
     Write-Host "`n更新完成：https://$Server/"
 }
 finally {
     Remove-Item $tgz -Force -ErrorAction SilentlyContinue
     Remove-Item $localRootCa -Force -ErrorAction SilentlyContinue
+    if ($cmdFile) { Remove-Item $cmdFile -Force -ErrorAction SilentlyContinue }
 }

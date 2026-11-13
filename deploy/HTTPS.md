@@ -63,3 +63,6 @@ curl --cacert /etc/nginx/ssl/ais-root-ca.crt -I https://10.22.116.88/
 
 日常前端更新仍执行 `update.ps1`；自检会通过 SSH 获取根证书并验证 HTTPS，
 不会使用 `-k` 或修改客户端信任库。完整部署 `deploy.sh` 要求证书已初始化。
+Windows 手动发布的自检使用 `check-https.mjs` 和已有 Node.js 运行时，明确启用证书校验，
+保留证书链、有效期及主机名校验，避免 Schannel 因私有 CA 吊销状态未知而误报。
+证书无效、主机名不符、请求超时或 HTTP 状态不符合预期时，发布脚本仍会失败。

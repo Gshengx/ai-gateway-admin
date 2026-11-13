@@ -39,6 +39,9 @@ const { t } = useI18n()
 }
 
 .group-reference-content ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-comp-margin-xs);
   padding-inline-start: var(--td-comp-paddingLR-l);
 }
 </style>

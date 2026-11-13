@@ -35,6 +35,9 @@ bash deploy/setup-ci.sh
 后端地址：`http://10.22.116.82:18088`。日常手动更新：在 Windows 执行
 `$env:AIS_DEPLOY_PASS='<密码>'; powershell -ExecutionPolicy Bypass -File deploy/update.ps1`，
 会上传当前 `dist`、原子切换版本、滚动重启 Deployment，并通过私有根证书验证首页与 API。
+发布机需有项目构建使用的 Node.js。自检由 `check-https.mjs` 使用 Node.js HTTPS 完成，
+验证证书链、有效期、主机名及首页 200 / 未登录 API 401；不依赖 Windows Schannel 的吊销服务，
+也不关闭 TLS 校验或修改系统信任库。
 
 常用 VM 自检：
 
