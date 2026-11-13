@@ -118,6 +118,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   budgetHint: 'The project budget is shared among members; it is not a personal allowance.',
   NORMAL: 'Normal',
   WARNING: 'Warning',
+  CRITICAL: 'Critical',
   EXHAUSTED: 'Exhausted',
   budgetDisabled: 'Disabled',
   unconfigured: 'Not configured',

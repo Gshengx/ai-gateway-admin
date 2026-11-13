@@ -96,6 +96,7 @@ export default {
     confirmDelete: 'Delete the selected users?',
     deleteSuccess: 'Deleted successfully',
     selected: '{n} selected',
+    selectionLimit: 'Select no more than {n} items at a time.',
     cancel: 'Cancel',
     save: 'Save',
     confirm: 'Confirm',

@@ -82,6 +82,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   DEPARTMENT: 'Department',
   USER: 'User',
   MODEL: 'Model',
+  PROJECT: 'Project',
   serviceType: 'Service type',
   COMMERCIAL: 'Commercial',
   PRIVATE: 'Private deployment',

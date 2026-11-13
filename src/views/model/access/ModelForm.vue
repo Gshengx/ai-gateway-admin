@@ -4,12 +4,12 @@
     :close-btn="!saving"
     :visible="drawerVisible"
     :show-overlay="showOverlay"
-    :header="t(modelId ? 'ma.editTitle' : 'ma.createTitle')"
+    :header="t(isEditing ? 'ma.editTitle' : 'ma.createTitle')"
     size="min(100vw, var(--physical-model-form-width))"
     :close-on-overlay-click="false"
     :confirm-btn="{
       theme: 'primary',
-      content: t(modelId || model.id ? 'ma.save' : 'ma.create'),
+      content: t(isEditing ? 'ma.save' : 'ma.create'),
       loading: saving,
       disabled: loading || loadFailed || saving || preparing || preparationFailed,
     }"
@@ -68,7 +68,7 @@
                 /><span v-if="nameError" class="ma-error" role="alert">{{ nameError }}</span>
                 <span class="ma-muted">{{ t('ma.nameHelp') }}</span
                 ><t-alert
-                  v-if="model.id && !basicLocked"
+                  v-if="isEditing && !basicLocked"
                   theme="warning"
                   :message="t('ma.renameHelp')"
                 /></div
@@ -191,14 +191,14 @@
           value="price"
           :label="t('ma.pricing')"
         >
-          <div v-if="!modelId" class="ma-stack ma-section">
+          <div v-if="!isEditing" class="ma-stack ma-section">
             <t-checkbox v-model="configurePricing" :disabled="saving || !canWritePrice">{{
               t('pricingFlow.configure')
             }}</t-checkbox>
             <p class="ma-muted">{{ t('pricingFlow.optional') }}</p>
           </div>
           <PricingEditor
-            v-if="modelId || configurePricing"
+            v-if="isEditing || configurePricing"
             :inert="saving || !canWritePrice"
             :default-price="defaultPrice"
             :load-default="model.id || price.metric_rates.length ? loadDefaultPricing : undefined"
@@ -206,7 +206,7 @@
             v-model="price"
             class="ma-section"
           />
-          <div v-if="!modelId && configurePricing && officialPrice" class="ma-stack ma-section">
+          <div v-if="!isEditing && configurePricing && officialPrice" class="ma-stack ma-section">
             <h3>{{ t('pricingFlow.official') }}</h3>
             <p class="ma-muted">{{ t('pricingFlow.officialHint') }}</p>
             <PricingSummary :price="officialPrice" />
@@ -221,7 +221,7 @@
           :loading="saving"
           :disabled="loading || loadFailed || preparing || preparationFailed"
           @click="save"
-          >{{ t(modelId || model.id ? 'ma.save' : 'ma.create') }}</t-button
+          >{{ t(isEditing ? 'ma.save' : 'ma.create') }}</t-button
         >
       </div></template
     >
@@ -291,6 +291,8 @@ const props = withDefaults(
   defineProps<{ modelId?: string; providerId?: string; showOverlay?: boolean }>(),
   { showOverlay: true },
 )
+// A returned creation ID must not switch presentation modes during readback and closing.
+const isEditing = !!props.modelId
 const emit = defineEmits<{ close: []; saved: [model: Model, previous: Model | undefined] }>()
 const { visible: drawerVisible, close: closeDrawer } = useDrawerClose('.model-form-drawer', () =>
   emit('close'),

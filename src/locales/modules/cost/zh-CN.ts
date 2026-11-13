@@ -79,6 +79,7 @@ const messages = {
   DEPARTMENT: '部门',
   USER: '用户',
   MODEL: '模型',
+  PROJECT: '项目',
   serviceType: '服务类型',
   COMMERCIAL: '商业服务',
   PRIVATE: '私有部署',

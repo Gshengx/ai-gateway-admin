@@ -109,6 +109,7 @@ const messages = {
   budgetHint: '项目预算为项目成员共享额度，不代表个人独占。',
   NORMAL: '正常',
   WARNING: '预警',
+  CRITICAL: '严重预警',
   EXHAUSTED: '已耗尽',
   budgetDisabled: '已停用',
   unconfigured: '未配置',

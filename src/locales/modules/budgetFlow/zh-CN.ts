@@ -72,7 +72,8 @@ const messages = {
   FAILED: '执行失败',
   withdraw: '撤回',
   withdrawTitle: '撤回工单',
-  withdrawHint: '撤回后将关闭尚未处理的审批任务。若仍需申请，请修改后重新提交。',
+  withdrawHint:
+    '确认撤回工单 {number}？撤回后将关闭尚未处理的审批任务。若仍需申请，请修改后重新提交。',
   confirm: '确认撤回',
   approve: '同意',
   reject: '拒绝',

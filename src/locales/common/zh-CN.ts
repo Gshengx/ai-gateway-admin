@@ -93,6 +93,7 @@ export default {
     confirmDelete: '确认删除所选用户？',
     deleteSuccess: '删除成功',
     selected: '已选 {n} 项',
+    selectionLimit: '单次最多选择 {n} 项。',
     cancel: '取消',
     save: '保存',
     confirm: '确定',
