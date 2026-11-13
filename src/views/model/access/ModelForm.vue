@@ -193,7 +193,7 @@
           <PricingEditor
             :inert="saving || !canWritePrice"
             :default-price="defaultPrice"
-            :load-default="() => accessApi.defaultPricing(model)"
+            :load-default="model.id ? () => accessApi.defaultPricing(model) : undefined"
             ref="priceEditor"
             v-model="price"
             class="ma-section"
@@ -659,14 +659,6 @@ async function loadModel() {
       originalModel = JSON.parse(JSON.stringify(loadedModel)) as Model
       price.value = loadedPrice
       originalPrice = JSON.stringify(price.value)
-      if (canReadPrice.value) {
-        try {
-          const defaults = await accessApi.defaultPricing(loadedModel)
-          if (current.isCurrent()) defaultPrice.value = defaults
-        } catch {
-          // Keep the current price and draft; a failed default read is not an empty default.
-        }
-      }
     }
   } catch {
     if (current.isCurrent()) loadFailed.value = true

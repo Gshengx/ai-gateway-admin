@@ -844,7 +844,9 @@ export const transport = {
   pricing: async (id: string, config?: RequestConfig) => {
     const p = await api.R03(id, config)
     priceFacts.set(id, p)
-    return pricingView(p.price, p.metric_specs, p.billing_currency)
+    const view = pricingView(p.price, p.metric_specs, p.billing_currency)
+    view.version = p.price_version
+    return view
   },
   prices: async (id: string, page = 1, page_size = 20, config?: RequestConfig) => {
     const p = await api.R01(id, { ...config, params: { page, page_size } })

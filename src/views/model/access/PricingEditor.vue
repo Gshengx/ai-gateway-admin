@@ -3,7 +3,7 @@
     <div class="ma-row pricing-heading">
       <h3>{{ t('ma.modelPrice') }}</h3>
       <t-button
-        v-if="defaultPrice"
+        v-if="defaultPrice || loadDefault"
         class="ma-push-right"
         theme="primary"
         variant="outline"
@@ -341,7 +341,7 @@ watch(
   { deep: true },
 )
 async function restoreDefault() {
-  if (!props.defaultPrice || restoring.value) return
+  if ((!props.defaultPrice && !props.loadDefault) || restoring.value) return
   restoring.value = true
   try {
     const defaults = props.loadDefault ? await props.loadDefault() : props.defaultPrice
@@ -349,10 +349,8 @@ async function restoreDefault() {
       MessagePlugin.info(t('ma.defaultPricingUnavailable'))
       return
     }
-    const version = value.value.version
     value.value = {
       ...(JSON.parse(JSON.stringify(defaults)) as Pricing),
-      version,
       source_type: 'ENTERPRISE_CUSTOM',
     }
     MessagePlugin.success(t('ma.priceDefaultsRestored'))
