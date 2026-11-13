@@ -118,14 +118,7 @@
     <p class="confirm-content">{{ confirmDialog.content }}</p>
     <p v-if="checkingReferences">{{ t('groups.delete.checkingReferences') }}</p>
     <t-alert v-if="referencedModels.length" theme="warning">
-      <p>{{ t('groups.delete.referenced') }}</p>
-      <p>{{ t('groups.delete.modelsLabel') }}</p>
-      <ul>
-        <li v-for="model in referencedModels" :key="model.id">
-          {{ model.model_id_at_gateway }}
-        </li>
-      </ul>
-      <p v-if="referencesHasMore">{{ t('groups.delete.referencedMore') }}</p>
+      <group-reference-content :models="referencedModels" :has-more="referencesHasMore" />
     </t-alert>
   </t-dialog>
 </template>
@@ -145,6 +138,7 @@ import {
 import { formatDateTime } from '@/utils/datetime'
 import GroupFormDialog from './components/GroupFormDialog.vue'
 import GroupMembersDrawer from './components/GroupMembersDrawer.vue'
+import GroupReferenceContent from './components/GroupReferenceContent.vue'
 import type { NotifiedError } from '@/api/request'
 import {
   createUserGroupApi,
@@ -330,20 +324,7 @@ function showReferenceBlocked() {
   const dialog = DialogPlugin.alert({
     placement: 'center',
     header: t('groups.delete.blockedTitle'),
-    body: () =>
-      h('div', [
-        h('p', t('groups.delete.referenced')),
-        ...(models.length
-          ? [
-              h('p', t('groups.delete.modelsLabel')),
-              h(
-                'ul',
-                models.map((model) => h('li', { key: model.id }, model.model_id_at_gateway)),
-              ),
-            ]
-          : []),
-        ...(hasMore ? [h('p', t('groups.delete.referencedMore'))] : []),
-      ]),
+    body: () => h(GroupReferenceContent, { models, hasMore }),
     onConfirm: () => dialog.destroy(),
     onClose: () => dialog.destroy(),
   })

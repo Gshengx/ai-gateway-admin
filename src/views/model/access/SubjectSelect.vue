@@ -401,6 +401,7 @@ onBeforeUnmount(() => {
 }
 .subject-picker > :deep(.t-loading__parent) {
   scrollbar-gutter: auto;
+  padding-bottom: var(--td-comp-paddingTB-s);
 }
 .subject-picker__options {
   display: flex;
