@@ -122,14 +122,7 @@
                 multiple
                 filterable
                 creatable
-                :options="[
-                  ...new Map(
-                    [
-                      ...tagOptions,
-                      ...model.tags.map((value) => ({ value, label: tagLabel(value) })),
-                    ].map((option) => [option.value, option]),
-                  ).values(),
-                ]"
+                :options="tagChoices"
                 @search="searchTags"
             /></t-form-item>
             <p class="ma-muted">{{ t('ma.metadataHelp') }}</p>
@@ -241,7 +234,7 @@ import { useUserStore } from '@/stores/modules/user'
 import { normalizeModelId } from '@/utils/modelContract'
 const props = defineProps<{ modelId?: string; providerId?: string }>()
 const emit = defineEmits<{ close: []; saved: [model: Model, previous: Model | undefined] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canWritePrice = computed(() => user.permissions.includes('model.pricing:write'))
@@ -360,12 +353,27 @@ watch(
 )
 let originalPrice = JSON.stringify(price.value)
 const tagOptions = ref<{ value: string; label: string }[]>([])
+const tagLabels = ref(new Map<string, string>())
+const tagChoices = computed(() => {
+  const options = new Map(tagOptions.value.map((option) => [option.value, option]))
+  for (const value of model.value.tags) {
+    if (!options.has(value))
+      options.set(value, { value, label: tagLabels.value.get(value) ?? tagLabel(value) })
+  }
+  return [...options.values()]
+})
 const tagRequest = useLatestRequest()
-async function loadTags(q = '') {
+async function loadTags(q = '', resetLabels = false) {
   const current = tagRequest.begin()
   try {
     const result = await accessApi.tags(q, { signal: current.signal })
-    if (current.isCurrent()) tagOptions.value = result.items
+    if (current.isCurrent()) {
+      tagOptions.value = result.items
+      tagLabels.value = new Map([
+        ...(resetLabels ? [] : tagLabels.value),
+        ...result.items.map((option) => [option.value, option.label] as const),
+      ])
+    }
   } catch {
     // The request layer reports failures; cancelled searches need no feedback.
   }
@@ -373,6 +381,7 @@ async function loadTags(q = '') {
 function searchTags(q: string) {
   tagRequest.schedule(() => void loadTags(q))
 }
+watch(locale, () => void loadTags('', true))
 const preparationFailed = ref(false)
 const preparing = ref(false)
 const preparedSignature = ref('')

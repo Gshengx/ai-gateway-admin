@@ -66,9 +66,8 @@ const checkGroups = computed(() => {
       group = {
         id,
         name:
-          row.display_name ||
           row.upstream_path ||
-          (row.invocation_api ? invocationLabel(row.invocation_api) : '—'),
+          (row.invocation_api ? invocationLabel(row.invocation_api) : row.display_name || '—'),
         passed: 0,
         rows: [],
       }
