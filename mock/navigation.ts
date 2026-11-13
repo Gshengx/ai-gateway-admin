@@ -123,6 +123,12 @@ const catalog: {
       title: ['用户须知', 'Terms of use'],
       resource: null,
     },
+    {
+      id: 'personal_projects',
+      title: ['我的项目', 'My projects'],
+      resource: 'personal.projects',
+      group: 'personal',
+    },
   ],
 }
 
@@ -149,13 +155,13 @@ export function mockNavigation(
         title: item.title[titleIndex],
         title_locale: language,
         sort_order: (index + 1) * 10,
-        sidebar_hidden: index >= 13,
+        sidebar_hidden: !item.group,
       },
     ]
   })
   return {
     schema_version: 3,
-    catalog_version: 'sha256:753009296de15f838edb5f483c0fd3f0fe29a53acf1f30e60932aab3730c5a5c',
+    catalog_version: 'sha256:3264c71fc73cfd2ac7f844160dbec5a70c6aca973dd3f458135d4f8d9fd6693c',
     locale: language,
     groups: catalog.groups.flatMap((code, index) =>
       items.some((item) => !item.sidebar_hidden && item.parent_group_code === code)

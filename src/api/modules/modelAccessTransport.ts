@@ -449,7 +449,9 @@ export const transport = {
     const balance: D.BalanceConfigInput = {
       ...(p.id ? { expected_version: balanceVersions.get(p.id) ?? 0 } : {}),
       mode: p.balance_query_mode,
-      currency_or_unit: p.balance_alert_unit || b.unit || null,
+      ...(p.balance_query_mode !== 'NONE'
+        ? { currency_or_unit: p.balance_alert_unit || b.unit || null }
+        : {}),
       alert_enabled: alertEnabled,
       threshold: alertEnabled ? String(p.balance_alert_threshold) : null,
       recipient_user_ids: p.balance_alert_recipients,

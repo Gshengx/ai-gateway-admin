@@ -6,14 +6,16 @@
       fullscreen
       :delay="isLoginPage ? 0 : 200"
     />
-    <div v-if="userStore.permissionError" class="permission-error">
-      <t-alert theme="error" :message="userStore.permissionError">
-        <template #operation
-          ><t-button variant="text" @click="retryPermissions">{{
-            t('navigationErrors.retry')
-          }}</t-button></template
+    <div v-if="userStore.permissionError" class="permission-error" role="alert">
+      <AccessState :title="t('navigationErrors.title')" :description="userStore.permissionError">
+        <t-button
+          theme="primary"
+          size="large"
+          :loading="userStore.permissionsLoading"
+          @click="retryPermissions"
+          >{{ t('navigationErrors.retry') }}</t-button
         >
-      </t-alert>
+      </AccessState>
     </div>
     <router-view />
     <change-password-dialog />
@@ -31,6 +33,7 @@ import enUS from 'tdesign-vue-next/es/locale/en_US'
 import zhCN from 'tdesign-vue-next/es/locale/zh_CN'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import TermsAcceptDialog from '@/components/TermsAcceptDialog.vue'
+import AccessState from '@/components/AccessState.vue'
 
 // 组件库内置文案（分页/弹窗/日期等）跟随应用语言切换
 const { locale, t } = useI18n()
@@ -60,10 +63,8 @@ const tdesignLocale = computed(() => {
 .permission-error {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
-  padding: var(--td-comp-paddingLR-xl);
   background: var(--td-bg-color-page);
+  overflow-y: auto;
   z-index: var(--td-z-index-dialog);
 }
 </style>

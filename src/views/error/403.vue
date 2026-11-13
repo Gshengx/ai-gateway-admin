@@ -1,20 +1,14 @@
 <template>
-  <main class="forbidden-page">
-    <section class="forbidden-content" aria-labelledby="forbidden-title">
-      <t-icon name="lock-on" size="var(--td-comp-size-xxxxl)" class="forbidden-icon" />
-      <p class="forbidden-code" aria-hidden="true">403</p>
-      <h1 id="forbidden-title">{{ t('route.forbidden') }}</h1>
-      <p class="forbidden-description">{{ t('error.forbidden') }}</p>
-      <t-button
-        theme="primary"
-        size="large"
-        :loading="navigating"
-        :disabled="userStore.permissionsLoading"
-        @click="returnToApp"
-        >{{ actionLabel }}</t-button
-      >
-    </section>
-  </main>
+  <AccessState code="403" :title="t('route.forbidden')" :description="t('error.forbidden')">
+    <t-button
+      theme="primary"
+      size="large"
+      :loading="navigating"
+      :disabled="userStore.permissionsLoading"
+      @click="returnToApp"
+      >{{ actionLabel }}</t-button
+    >
+  </AccessState>
 </template>
 
 <script setup lang="ts">
@@ -24,6 +18,7 @@ import { useI18n } from 'vue-i18n'
 import { usePermissionStore, type MenuItem } from '@/stores/modules/permission'
 import { useUserStore } from '@/stores/modules/user'
 import { canEnterRoute } from '@/router/routes'
+import AccessState from '@/components/AccessState.vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -72,39 +67,3 @@ async function returnToApp() {
   }
 }
 </script>
-
-<style scoped>
-.forbidden-page {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: var(--td-comp-paddingTB-xxl) var(--td-comp-paddingLR-xl);
-  background: var(--td-bg-color-page);
-}
-.forbidden-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--td-comp-margin-l);
-  text-align: center;
-}
-.forbidden-icon {
-  color: var(--td-brand-color);
-}
-.forbidden-code {
-  margin: 0;
-  color: var(--td-text-color-placeholder);
-  font-size: var(--td-font-size-headline-large);
-  font-weight: var(--td-font-weight-600);
-}
-.forbidden-content h1 {
-  margin: 0;
-  color: var(--td-text-color-primary);
-  font-size: var(--td-font-size-title-large);
-}
-.forbidden-description {
-  margin: 0;
-  color: var(--td-text-color-secondary);
-  font-size: var(--td-font-size-body-medium);
-}
-</style>

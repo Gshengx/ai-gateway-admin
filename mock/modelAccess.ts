@@ -1785,7 +1785,12 @@ function validateBalance(id: string, input: D.BalanceConfigInput, template: D.Te
     throw issue('VALIDATION_FAILED', 422)
   if (input.mode === 'TEMPLATE' && !template.balance_template_supported)
     throw issue('VALIDATION_FAILED', 422)
-  if (input.mode === 'NONE' && input.alert_enabled) throw issue('VALIDATION_FAILED', 422)
+  if (
+    input.mode === 'NONE' &&
+    (input.alert_enabled ||
+      (input.currency_or_unit !== undefined && input.currency_or_unit !== null))
+  )
+    throw issue('VALIDATION_FAILED', 422)
   if (input.mode === 'CUSTOM') {
     const q = input.query_config
     if (

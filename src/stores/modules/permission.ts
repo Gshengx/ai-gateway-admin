@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import type { RouteRecordRaw } from 'vue-router'
 import type { PermissionsResult } from '@/api/modules/auth'
-import { routeRegistry, canEnterRoute, menuRouteGroups } from '@/router/routes'
+import { resolveNavigationRoute, canEnterRoute, menuRouteGroups } from '@/router/routes'
 
 export interface MenuItem {
   path: string
@@ -53,7 +53,7 @@ export const usePermissionStore = defineStore('permission', {
       }
       for (const item of navigation.items) {
         if (!canEnterRoute(item.route_id, permissions)) continue
-        const local = routeRegistry[item.route_id]!
+        const local = resolveNavigationRoute(item.route_id)
         const meta = {
           ...local.meta,
           routeId: item.route_id,

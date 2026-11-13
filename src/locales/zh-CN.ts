@@ -766,6 +766,7 @@ export default {
     VALIDATION_FAILED: '提交数据校验失败，请检查输入内容',
   },
   navigationErrors: {
+    title: '权限暂不可用',
     incompatible: '导航接口契约不兼容，请联系管理员',
     unavailable: '权限读取失败，请重试；业务写入已暂停',
     refreshRequired: '权限正在刷新或已失效，请刷新权限后重试',

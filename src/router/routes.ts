@@ -113,6 +113,13 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
     component: () => import('@/views/personal/keys/index.vue'),
     meta: { permission: 'personal.keys', icon: 'key' },
   },
+  personal_projects: {
+    path: '/account/projects',
+    alias: '/personal/projects',
+    name: 'PersonalProjects',
+    component: placeholder,
+    meta: { permission: 'personal.projects', icon: 'folder' },
+  },
   profile: {
     path: '/account',
     alias: '/personal/overview',
@@ -159,11 +166,19 @@ export const businessRoutes: RouteRecordRaw[] = [
   ),
 }))
 
+/** 未实现入口仅注册本地占位页，是否可见仍由本次 navigation 快照决定。 */
+export function resolveNavigationRoute(routeId: string): RouteRecordRaw {
+  if (Object.prototype.hasOwnProperty.call(routeRegistry, routeId)) return routeRegistry[routeId]!
+  return {
+    path: `/unimplemented/${encodeURIComponent(routeId)}`,
+    name: `Unimplemented:${routeId}`,
+    component: placeholder,
+    meta: { icon: 'app' },
+  }
+}
+
 export function canEnterRoute(routeId: string, permissions: string[]): boolean {
-  const route = Object.prototype.hasOwnProperty.call(routeRegistry, routeId)
-    ? routeRegistry[routeId]
-    : undefined
-  if (!route) return false
+  const route = resolveNavigationRoute(routeId)
   const resource = route.meta?.permission
   return !resource || permissions.includes(resource)
 }

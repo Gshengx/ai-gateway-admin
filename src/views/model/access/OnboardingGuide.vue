@@ -527,7 +527,8 @@ onMounted(async () => {
     candidates.value = result.items
     selected.value = eligible.value.map((c) => c.model_id_at_provider)
     if (result.error_code) {
-      notice.value = t('ma.' + result.error_code)
+      const key = `ma.error_${result.error_code}`
+      notice.value = t(te(key) ? key : 'ma.discoveryFailed')
     }
   } finally {
     loading.value = false

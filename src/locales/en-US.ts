@@ -796,6 +796,7 @@ export default {
     VALIDATION_FAILED: 'Validation failed. Please check your input.',
   },
   navigationErrors: {
+    title: 'Permissions unavailable',
     incompatible: 'Navigation contract is incompatible. Contact your administrator.',
     unavailable: 'Unable to load permissions. Business writes are paused.',
     refreshRequired: 'Permissions need to be refreshed before saving.',

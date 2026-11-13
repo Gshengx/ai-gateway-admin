@@ -399,6 +399,9 @@ onBeforeUnmount(() => {
   gap: var(--td-comp-margin-s);
   padding: var(--td-comp-paddingTB-s) var(--td-comp-paddingLR-s);
 }
+.subject-picker > :deep(.t-loading__parent) {
+  scrollbar-gutter: auto;
+}
 .subject-picker__options {
   display: flex;
   flex-direction: column;

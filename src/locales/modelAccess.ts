@@ -98,6 +98,14 @@ const labels: Record<string, [string, string]> = {
     '所选模板当前不可用于新绑定',
     'The selected template is unavailable for new bindings.',
   ],
+  error_DISCOVERY_UPSTREAM_UNREACHABLE: [
+    '无法连接供应商获取模型，请检查供应商接口地址和网络连接后重试。',
+    'Could not connect to the provider to fetch models. Check the provider API URL and network connection, then try again.',
+  ],
+  discoveryFailed: [
+    '获取模型失败，请检查供应商配置后重试，或手动填写模型标识。',
+    'Could not fetch models. Check the provider configuration and try again, or enter a model ID manually.',
+  ],
   error_DISCOVERY_STALE: [
     '供应商连接已变化，请重新发现模型',
     'The provider connection changed. Discover models again.',

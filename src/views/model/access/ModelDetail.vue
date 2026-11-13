@@ -23,6 +23,12 @@
             @click="emit('test', model, 'HEALTH')"
             >{{ t('ma.healthTitle') }}</t-button
           ><t-button
+            v-if="model.status !== 'PENDING_REVIEW'"
+            v-permission.write="'model.permissions'"
+            theme="default"
+            @click="emit('grants', model)"
+            >{{ t('ma.grants') }}</t-button
+          ><t-button
             v-permission.write="'model.models'"
             theme="primary"
             v-if="model.status !== 'PENDING_REVIEW'"
@@ -180,6 +186,7 @@ const props = defineProps<{ id: string }>()
 const emit = defineEmits<{
   close: []
   edit: [id: string]
+  grants: [model: Model]
   test: [model: Model, purpose: 'HEALTH' | 'ADMISSION', run?: TestRun]
 }>()
 const { t } = useI18n()

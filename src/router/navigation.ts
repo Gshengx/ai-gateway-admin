@@ -1,5 +1,4 @@
 import type { PermissionsResult } from '@/api/modules/auth'
-import { routeRegistry } from './routes'
 
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
@@ -10,7 +9,7 @@ const title = (value: unknown) =>
   [...value].length <= 128 &&
   !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value)
 
-/** 接口边界校验。未知入口绝不退回静态菜单或接受服务端 URL。 */
+/** 校验结构；新增目录项交给本地占位路由，不以目录数量或实现范围判定不兼容。 */
 export function validatePermissions(value: unknown): asserts value is PermissionsResult {
   const fail = () => {
     throw Object.assign(new Error('NAVIGATION_CONTRACT_INCOMPATIBLE'), {
@@ -26,9 +25,7 @@ export function validatePermissions(value: unknown): asserts value is Permission
     !/^sha256:[a-f0-9]{64}$/.test(nav.catalog_version) ||
     !text(nav.locale) ||
     !Array.isArray(nav.groups) ||
-    nav.groups.length > 5 ||
     !Array.isArray(nav.items) ||
-    nav.items.length > 20 ||
     !text(value.permissions_version) ||
     !/^\d+$/.test(value.permissions_version) ||
     !text(value.configuration_version) ||
@@ -79,7 +76,6 @@ export function validatePermissions(value: unknown): asserts value is Permission
       !common(item) ||
       !text(item.route_id) ||
       typeof item.sidebar_hidden !== 'boolean' ||
-      !Object.prototype.hasOwnProperty.call(routeRegistry, item.route_id) ||
       item.menu_code !== item.route_id ||
       routes.has(item.route_id) ||
       (item.parent_group_code !== undefined && !groups.has(String(item.parent_group_code)))
