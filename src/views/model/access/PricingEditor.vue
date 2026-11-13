@@ -211,7 +211,7 @@ import { isDecimal } from '@/utils/modelContract'
 import { metricLabel, unitLabel } from './helpers'
 const props = defineProps<{
   defaultPrice?: Pricing
-  loadDefault?: () => Promise<Pricing | undefined>
+  loadDefault?: () => Promise<Pricing | undefined | null>
 }>()
 const restoring = ref(false)
 const value = defineModel<Pricing>({ required: true })
@@ -345,6 +345,7 @@ async function restoreDefault() {
   restoring.value = true
   try {
     const defaults = props.loadDefault ? await props.loadDefault() : props.defaultPrice
+    if (defaults === null) return
     if (!defaults) {
       MessagePlugin.info(t('ma.defaultPricingUnavailable'))
       return

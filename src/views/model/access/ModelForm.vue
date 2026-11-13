@@ -190,14 +190,27 @@
           value="price"
           :label="t('ma.pricing')"
         >
+          <div v-if="!modelId" class="ma-stack ma-section">
+            <t-checkbox v-model="configurePricing" :disabled="saving || !canWritePrice">{{
+              t('pricingFlow.configure')
+            }}</t-checkbox>
+            <p class="ma-muted">{{ t('pricingFlow.optional') }}</p>
+          </div>
           <PricingEditor
+            v-if="modelId || configurePricing"
             :inert="saving || !canWritePrice"
             :default-price="defaultPrice"
-            :load-default="model.id ? () => accessApi.defaultPricing(model) : undefined"
+            :load-default="model.id || price.metric_rates.length ? loadDefaultPricing : undefined"
             ref="priceEditor"
             v-model="price"
             class="ma-section"
-        /></t-tab-panel> </t-tabs
+          />
+          <div v-if="!modelId && configurePricing && officialPrice" class="ma-stack ma-section">
+            <h3>{{ t('pricingFlow.official') }}</h3>
+            <p class="ma-muted">{{ t('pricingFlow.officialHint') }}</p>
+            <PricingSummary :price="officialPrice" />
+          </div>
+        </t-tab-panel> </t-tabs
     ></LoadingState>
     <template #footer
       ><div class="ma-footer">
@@ -212,6 +225,39 @@
       </div></template
     >
   </t-drawer>
+  <t-dialog
+    v-if="priceComparison"
+    dialog-class-name="model-access-dialog"
+    width="var(--physical-model-dialog-width)"
+    :visible="true"
+    :header="t('pricingFlow.comparison')"
+    :close-on-overlay-click="false"
+    :footer="false"
+    @close="priceComparison = undefined"
+  >
+    <div class="ma-stack">
+      <p>{{ t('pricingFlow.comparisonHint') }}</p>
+      <h3>{{ t('pricingFlow.saved', { version: priceComparison.current.version }) }}</h3>
+      <PricingSummary
+        v-if="priceComparison.current.metric_rates.some((rate) => rate.unit_price !== null)"
+        :price="priceComparison.current"
+      />
+      <p v-else>{{ t('pricingFlow.unpriced') }}</p>
+      <h3>{{ t('pricingFlow.draft') }}</h3>
+      <PricingSummary :price="priceComparison.draft" />
+      <div class="ma-footer">
+        <t-button theme="default" @click="priceComparison = undefined">{{
+          t('pricingFlow.keep')
+        }}</t-button>
+        <t-button theme="default" @click="acceptPriceComparison(false)">{{
+          t('pricingFlow.useCurrent')
+        }}</t-button>
+        <t-button theme="primary" @click="acceptPriceComparison(true)">{{
+          t('pricingFlow.useDraft')
+        }}</t-button>
+      </div>
+    </div>
+  </t-dialog>
 </template>
 <script setup lang="ts">
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -232,6 +278,8 @@ import {
 } from '@/api/modules/modelAccess'
 import { statusTheme, tagLabel } from './helpers'
 import PricingEditor from './PricingEditor.vue'
+import PricingSummary from './PricingSummary.vue'
+import { pricingFlowMessages } from '@/locales/modules/modelAccess/pricingFlow'
 import InvocationEditor from './InvocationEditor.vue'
 import { invocationConfigurationError } from '@/utils/modelInvocation'
 import { useDrawerTabs } from '@/utils/useDrawerTabs'
@@ -240,13 +288,15 @@ import { useUserStore } from '@/stores/modules/user'
 import { normalizeModelId } from '@/utils/modelContract'
 const props = defineProps<{ modelId?: string; providerId?: string }>()
 const emit = defineEmits<{ close: []; saved: [model: Model, previous: Model | undefined] }>()
-const { t, locale } = useI18n()
+const { t, locale } = useI18n({ messages: pricingFlowMessages })
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canWritePrice = computed(() => user.permissions.includes('model.pricing:write'))
+const configurePricing = ref(canReadPrice.value && canWritePrice.value)
+const officialPrice = ref<Pricing>()
+const priceComparison = ref<{ current: Pricing; draft: Pricing }>()
 const model = ref({ ...blankModel(), provider_id: props.providerId ?? '' }),
   price = ref(blankPricing()),
-  // Reserved for the forthcoming enterprise-default pricing endpoint.
   defaultPrice = ref<Pricing>()
 const providerOptions = ref<Provider[]>([])
 const providerOptionsLoading = ref(false)
@@ -488,14 +538,21 @@ async function fetchMetadata() {
     }
     const signature = configurationSignature.value
     if (invocationConfigurationError(model.value)) return
+    if (!configurePricing.value) {
+      preparedSignature.value = signature
+      return
+    }
     await accessApi.prepare(model.value, config)
     if (!current.isCurrent()) return
     const pricing = await accessApi.catalog(name, model.value.provider_id)
-    price.value = pricing
-    defaultPrice.value = pricing.catalog_default_price_version_id
-      ? structuredClone(pricing)
+    if (!current.isCurrent()) return
+    const prefill = pricing
+    officialPrice.value = accessApi.officialPricing(model.value.provider_id, name)
+    price.value = prefill
+    defaultPrice.value = prefill.catalog_default_price_version_id
+      ? structuredClone(prefill)
       : undefined
-    originalPrice = JSON.stringify(pricing)
+    originalPrice = JSON.stringify(prefill)
     preparedSignature.value = signature
   } catch (e) {
     if (current.isCurrent()) {
@@ -518,10 +575,45 @@ watch(
     if (error.value === t('ma.required')) error.value = ''
     preparing.value = true
     price.value = blankPricing()
+    defaultPrice.value = undefined
+    officialPrice.value = undefined
     metadataRequest.schedule(() => void loadMetadata(), 800)
   },
   { flush: 'sync' },
 )
+watch(configurePricing, (enabled) => {
+  metadataRequest.invalidate()
+  pendingMetadata = undefined
+  preparing.value = false
+  preparationFailed.value = false
+  preparationError.value = ''
+  preparedSignature.value = ''
+  if (enabled) void loadMetadata()
+})
+
+async function loadDefaultPricing() {
+  const result = await accessApi.defaultPricing(model.value)
+  if (result.state === 'NOT_APPLICABLE') {
+    MessagePlugin.info(t('pricingFlow.noMetrics'))
+    return null
+  }
+  const defaults = result.price
+  if (defaults && !model.value.id)
+    return { ...defaults, catalog_price_version_id: price.value.catalog_price_version_id }
+  if (defaults && defaults.version !== price.value.version) {
+    const current = await accessApi.pricing(model.value.id)
+    priceComparison.value = { current, draft: defaults }
+    return null
+  }
+  return defaults
+}
+function acceptPriceComparison(useDraft: boolean) {
+  if (!priceComparison.value) return
+  const { current, draft } = priceComparison.value
+  price.value = useDraft ? { ...draft, version: current.version } : current
+  originalPrice = JSON.stringify(current)
+  priceComparison.value = undefined
+}
 
 function nameChanged(value: string) {
   manualName = !!value && value !== lastAutomaticName
@@ -574,7 +666,8 @@ async function save() {
     loadFailed.value ||
     saving.value ||
     preparing.value ||
-    preparationFailed.value
+    preparationFailed.value ||
+    priceComparison.value
   )
     return
   error.value = ''
@@ -598,7 +691,7 @@ async function save() {
     error.value = t('ma.invalidTokenLimit')
     return
   }
-  if (priceEditor.value && !priceEditor.value.validate()) {
+  if ((m.id || configurePricing.value) && priceEditor.value && !priceEditor.value.validate()) {
     tab.value = 'price'
     return
   }
@@ -608,6 +701,7 @@ async function save() {
     m.model_id_at_gateway = normalizeModelId(m.model_id_at_gateway)
     if (
       !m.id &&
+      configurePricing.value &&
       (preparationFailed.value || preparedSignature.value !== configurationSignature.value)
     ) {
       error.value = t('common.loadFailed')
@@ -615,13 +709,40 @@ async function save() {
     }
     const changedPrice = JSON.stringify(price.value) !== originalPrice
     const result = await accessApi.saveModel(m, {
-      ...(!m.id || changedPrice ? { price: price.value } : {}),
+      ...((!m.id && configurePricing.value) || (m.id && changedPrice)
+        ? { price: price.value }
+        : {}),
     })
     model.value = result
+    if (canReadPrice.value && (changedPrice || (!originalModel && configurePricing.value))) {
+      const reads = await Promise.allSettled([
+        accessApi.pricing(result.id),
+        accessApi.prices(result.id, 1, 5),
+      ])
+      if (reads.some((read) => read.status === 'rejected'))
+        MessagePlugin.warning(t('pricingFlow.refreshFailed'))
+    }
     MessagePlugin.success(t('ma.success'))
     emit('saved', result, originalModel)
     emit('close')
   } catch (e) {
+    const failure = e as NotifiedError
+    if (
+      model.value.id &&
+      failure.code === 'VERSION_CONFLICT' &&
+      String(failure.params?.version_domain).toUpperCase() === 'PRICE'
+    ) {
+      try {
+        const current = await accessApi.pricing(model.value.id)
+        priceComparison.value = {
+          current,
+          draft: JSON.parse(JSON.stringify(price.value)) as Pricing,
+        }
+      } catch {
+        error.value = t('common.loadFailed')
+      }
+      return
+    }
     const detail = (e as NotifiedError).params?.fields as Record<string, string> | undefined
     if (detail?.model_access === 'NAME_CONFLICT' || (e as NotifiedError).code === 'NAME_CONFLICT') {
       nameError.value = t('ma.nameConflict')

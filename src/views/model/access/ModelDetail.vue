@@ -42,7 +42,12 @@
             ><dt>{{ row[0] }}</dt>
             <dd>
               <PricingSummary
-                v-if="row[0] === t('ma.priceSummary') && currentPrice && !pricesFailed"
+                v-if="
+                  row[0] === t('ma.priceSummary') &&
+                  currentPrice &&
+                  currentPrice.state !== 'UNPRICED' &&
+                  !pricesFailed
+                "
                 :price="currentPrice"
               />
               <template v-else>{{ row[1] }}</template>
@@ -59,9 +64,11 @@
             retryable
             @retry="loadPrices"
           >
-            <div v-for="(price, i) in priceHistory" :key="price.id" class="price-history-entry">
+            <div v-for="price in priceHistory" :key="price.id" class="price-history-entry">
               <strong>{{
-                pricePage === 1 && i === 0 ? t('ma.currentPrice') : t('ma.historicalPrice')
+                currentPrice?.state === 'PRICED' && price.version === currentPrice.version
+                  ? t('ma.currentPrice')
+                  : t('ma.historicalPrice')
               }}</strong>
               <p class="ma-muted">
                 {{ formatDateTime(price.created_at) }} · {{ price.created_by }}
@@ -182,6 +189,7 @@ import { accessApi, type Model, type Pricing, type TestRun } from '@/api/modules
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
+import { pricingFlowMessages } from '@/locales/modules/modelAccess/pricingFlow'
 const props = defineProps<{ id: string }>()
 const emit = defineEmits<{
   close: []
@@ -189,7 +197,7 @@ const emit = defineEmits<{
   grants: [model: Model]
   test: [model: Model, purpose: 'HEALTH' | 'ADMISSION', run?: TestRun]
 }>()
-const { t } = useI18n()
+const { t } = useI18n({ messages: pricingFlowMessages })
 const user = useUserStore()
 const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canReadChecks = computed(() => user.permissions.includes('model.admission'))
@@ -290,7 +298,16 @@ const info = computed(() => {
     ],
     [t('ma.lastCheckLabel'), formatDateTime(m.health_checked_at) || '—'],
     ...(canReadPrice.value
-      ? [[t('ma.priceSummary'), pricesFailed.value ? t('common.loadFailed') : '—']]
+      ? [
+          [
+            t('ma.priceSummary'),
+            pricesFailed.value
+              ? t('common.loadFailed')
+              : currentPrice.value?.state === 'UNPRICED'
+                ? t('pricingFlow.unpriced')
+                : '—',
+          ],
+        ]
       : []),
     [
       t('ma.admissionAt'),
@@ -341,6 +358,7 @@ async function refreshTest(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestR
   const [updated] = await Promise.all([
     accessApi.model(props.id, purpose !== 'HEALTH', { signal: current.signal }),
     loadHistory(purpose, completedRun),
+    purpose === 'ADMISSION' ? loadPrices() : undefined,
   ])
   if (!current.isCurrent()) return
   if (purpose === 'HEALTH' && model.value) {

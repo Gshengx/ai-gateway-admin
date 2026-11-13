@@ -325,7 +325,14 @@ export const transport = {
       prep.default_reference?.catalog_default_price_version_id ?? null
     return view
   },
-  defaultPricing: async (model: Model) => {
+  officialPricing: (provider: string, upstream: string) => {
+    const prep = preparations.get(preparedKey(provider, upstream))
+    const reference = prep?.official_reference
+    return reference
+      ? pricingView({ ...reference, expected_price_version: 0 }, prep?.metric_specs)
+      : undefined
+  },
+  defaultPricing: async (model: Model, config?: RequestConfig) => {
     const params = new URLSearchParams()
     if (model.id) params.set('model_id', model.id)
     else {
@@ -336,10 +343,18 @@ export const transport = {
       )
       model.custom_invocation_apis.forEach((api) => params.append('custom_api_paths', api.path))
     }
-    const result = await api.M14({ params })
-    return result.state === 'AVAILABLE' && result.internal_pricing_prefill
-      ? pricingView(result.internal_pricing_prefill, result.metric_specs, result.billing_currency)
-      : undefined
+    const result = await api.M14({ ...config, params })
+    return {
+      state: result.state,
+      price:
+        result.state === 'AVAILABLE' && result.internal_pricing_prefill
+          ? pricingView(
+              result.internal_pricing_prefill,
+              result.metric_specs,
+              result.billing_currency,
+            )
+          : undefined,
+    }
   },
   templates: async (provider_id?: string, config?: RequestConfig): Promise<Template[]> => {
     const data = await api.P01({ ...config, params: provider_id ? { provider_id } : undefined })
@@ -595,11 +610,11 @@ export const transport = {
   publishBatch: async (provider: string, models: Model[]) =>
     api.D04(provider, {
       models: await Promise.all(
-        models.map(async (m) => ({
-          physical_model_id: m.id,
-          expected_state_version:
-            modelVersions.get(m.id)?.state ?? (await facts(m.id)).versions.state,
-        })),
+        models.map(async (m) => {
+          const current = await api.M04(m.id)
+          modelView(current)
+          return { physical_model_id: m.id, expected_state_version: current.versions.state }
+        }),
       ),
     }),
   models: async (params: Record<string, unknown>, config?: RequestConfig) => {
@@ -640,21 +655,19 @@ export const transport = {
         m.health_check_interval_minutes as D.HealthInput['health_check_interval_minutes'],
     }
     if (!m.id) {
-      const prep =
-        preparations.get(preparedKey(m.provider_id, m.model_id_at_provider)) ??
-        (await transport.prepare(m))
-      const pricing = options.price?.metric_rates.length
-        ? pricingInput(options.price)
-        : prep.metric_specs.length
-          ? prep.internal_pricing_prefill
-          : null
+      const prep = options.price
+        ? (preparations.get(preparedKey(m.provider_id, m.model_id_at_provider)) ??
+          (await transport.prepare(m)))
+        : undefined
+      const pricing = options.price?.metric_rates.length ? pricingInput(options.price) : null
+      const providerVersion = prep?.provider_version ?? (await api.P04(m.provider_id)).version
       return modelView(
         await api.M03({
           ...baseInput(m),
           catalog_model_version_id: undefined,
           pricing,
           health,
-          expected_provider_version: prep.provider_version,
+          expected_provider_version: providerVersion,
           initial_grants: (options.grants ?? []).map((g) => ({
             subject_type: g.subject_type,
             subject_id: g.subject_id,
@@ -727,7 +740,8 @@ export const transport = {
     })
   },
   status: async (id: string, status: Status, reason: string) => {
-    const m = await facts(id)
+    const m = await api.M04(id)
+    modelView(m)
     const action: D.StatusCommand['action'] =
       status === 'ACTIVE'
         ? m.status === 'SUSPENDED'
@@ -846,6 +860,7 @@ export const transport = {
     priceFacts.set(id, p)
     const view = pricingView(p.price, p.metric_specs, p.billing_currency)
     view.version = p.price_version
+    view.state = p.state
     return view
   },
   prices: async (id: string, page = 1, page_size = 20, config?: RequestConfig) => {

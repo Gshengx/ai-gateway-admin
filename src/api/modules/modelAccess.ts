@@ -101,6 +101,7 @@ export interface Rate {
   period_prices: Record<string, string | null>
 }
 export interface Pricing {
+  state?: 'PRICED' | 'UNPRICED' | 'CURRENCY_MISMATCH'
   catalog_default_price_version_id?: string | null
   catalog_price_version_id?: string | null
   id: string
