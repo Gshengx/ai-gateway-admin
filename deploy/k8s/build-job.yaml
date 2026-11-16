@@ -23,6 +23,8 @@ spec:
           env:
             - name: NPM_CONFIG_CACHE
               value: /tmp/.npm
+            - name: NODE_OPTIONS
+              value: --max-old-space-size=2304
           command: ['/bin/sh', '-ec']
           args:
             - |
