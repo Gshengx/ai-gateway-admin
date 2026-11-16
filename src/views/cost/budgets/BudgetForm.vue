@@ -119,7 +119,6 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import {
   saveBudget,
   getBudget,
-  getCostDepartment,
   getBudgetWarnings,
   type Budget,
   type BudgetConfig,
@@ -139,7 +138,7 @@ const props = defineProps<{
   selectedUsers: string[]
 }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
-const { t, users, deptName, init, ensureDepartments, money, error } = useCost()
+const { t, users, departments, deptName, init, ensureDepartments, money, error } = useCost()
 const departmentIds = ref<string[]>([])
 const targetDepartment = computed(() => departmentIds.value[0] ?? props.departmentId)
 const sourceBudget = ref<Budget | null>(null)
@@ -346,7 +345,8 @@ watch(
       return
     }
     try {
-      const parent = props.kind === 'users' ? id : (await getCostDepartment(id)).parent_id
+      if (props.kind !== 'users') await ensureDepartments([id])
+      const parent = props.kind === 'users' ? id : departments.get(id)?.parent_id
       sourceBudget.value = parent ? await getBudget('departments', parent) : props.headquarters
       if (!props.budget?.configured && sourceBudget.value) {
         form.effective_start = sourceBudget.value.effective_start

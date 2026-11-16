@@ -291,7 +291,11 @@
       @submit="onDrawerSubmit"
     />
 
-    <user-detail-drawer v-model:visible="detailVisible" :user="detailUser" />
+    <user-detail-drawer
+      v-model:visible="detailVisible"
+      :user="detailUser"
+      :initial-detail="initialUserDetail"
+    />
 
     <user-import-dialog v-model:visible="importVisible" @imported="refreshAll" />
 
@@ -465,7 +469,7 @@ interface TreeDataNode extends TreeOptionData {
   children?: TreeDataNode[] | true
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 function groupTooltip(row: UserItem) {
   return row.groups.length
     ? row.groups.map((group) => group.display_name).join(t('users.detail.listSeparator'))
@@ -1120,6 +1124,37 @@ async function onDeleteDepartment(node: TreeDataNode) {
   })
 }
 
+function updateDepartmentNode(id: string, payload: UpdateDepartmentPayload) {
+  const current = departmentMap.value.get(id)
+  if (!current) return
+  const translation =
+    payload.translations[locale.value] ??
+    (locale.value === 'en-US' ? payload.translations.en : undefined)
+  const displayName = translation?.name || payload.name
+  mergeDepartments([{ ...current, ...payload, display_name: displayName }])
+  const updatePaths = (node: TreeDataNode, path: string) => {
+    node.path = path
+    if (Array.isArray(node.children))
+      node.children.forEach((child) => updatePaths(child, `${path}/${child.name}`))
+  }
+  for (const tree of [lazyTree.value, searchTree.value]) {
+    const node = findTreeNode(tree, id)
+    if (node) {
+      node.name = displayName
+      node.label = displayName
+      updatePaths(node, departmentPath(id))
+    }
+  }
+  lazyTree.value = [...lazyTree.value]
+  searchTree.value = [...searchTree.value]
+  tableData.value.forEach((user) => {
+    if (user.department?.id === id) {
+      user.department.name = payload.name
+      user.department.display_name = displayName
+    }
+  })
+}
+
 async function onDepartmentSubmit(payload: CreateDepartmentPayload | UpdateDepartmentPayload) {
   if (deptSubmitting.value) return
   deptSubmitting.value = true
@@ -1129,10 +1164,11 @@ async function onDepartmentSubmit(payload: CreateDepartmentPayload | UpdateDepar
       MessagePlugin.success(t('users.departments.createSuccess'))
     } else if (deptDialog.department) {
       await updateDepartmentApi(deptDialog.department.id, payload as UpdateDepartmentPayload)
+      updateDepartmentNode(deptDialog.department.id, payload as UpdateDepartmentPayload)
       MessagePlugin.success(t('users.departments.updateSuccess'))
     }
     deptDialog.visible = false
-    await refreshAll()
+    if (deptDialog.mode === 'create') await refreshAll()
   } catch {
     // 错误已由请求拦截器统一提示
   } finally {
@@ -1165,9 +1201,11 @@ const route = useRoute()
 const router = useRouter()
 const detailVisible = ref(false)
 const detailUser = ref<UserItem | null>(null)
+const initialUserDetail = ref<Awaited<ReturnType<typeof getUserDetailApi>>>()
 
 /** 用户名点击：打开只读详情，与编辑区分 */
-function onView(row: UserItem) {
+function onView(row: UserItem, initial?: Awaited<ReturnType<typeof getUserDetailApi>>) {
+  initialUserDetail.value = initial
   detailUser.value = row
   detailVisible.value = true
 }
@@ -1183,7 +1221,7 @@ watch(
     if (typeof value !== 'string' || !value) return
     try {
       const result = await getUserDetailApi(value)
-      if (!stale) onView(result.user)
+      if (!stale) onView(result.user, result)
     } catch {
       // The request layer reports unavailable or out-of-scope users.
     }
@@ -1197,11 +1235,32 @@ watch(detailVisible, (visible) => {
   void router.replace({ query })
 })
 
+async function refreshDepartmentNode(id: string) {
+  const department = departmentMap.value.get(id)
+  if (!department) return
+  const session = departmentSession
+  const result = await getDepartmentListApi({ parent_id: department.parent_id ?? undefined })
+  if (session !== departmentSession) return
+  const updated = result.items.find((item) => item.id === id)
+  if (!updated) return
+  mergeDepartments([updated])
+  const updateCount = (nodes: TreeDataNode[]): TreeDataNode[] =>
+    nodes.map((node) => ({
+      ...node,
+      ...(node.id === id ? { user_count: updated.user_count } : {}),
+      ...(Array.isArray(node.children) ? { children: updateCount(node.children) } : {}),
+    }))
+  lazyTree.value = updateCount(lazyTree.value)
+  searchTree.value = updateCount(searchTree.value)
+}
+
 async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
   if (submitting.value) return
   submitting.value = true
+  const creating = drawerMode.value === 'create'
+  const departmentId = selectedDepartmentId.value
   try {
-    if (drawerMode.value === 'create') {
+    if (creating) {
       await createUserApi(payload as CreateUserPayload)
       MessagePlugin.success(t('users.createSuccess'))
     } else if (editingUser.value) {
@@ -1209,7 +1268,11 @@ async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
       MessagePlugin.success(t('users.updateSuccess'))
     }
     drawerVisible.value = false
-    await refreshAll()
+    if (creating) {
+      await Promise.all([refreshDepartmentNode(departmentId), fetchUsers()])
+    } else {
+      await refreshAll()
+    }
   } catch {
     // Request errors are handled by the interceptor.
   } finally {
@@ -1359,6 +1422,11 @@ async function openBatchDeleteDialog(ids: string[]) {
     )
     return
   }
+  const departmentIds = new Set([selectedDepartmentId.value])
+  const deletingIds = new Set(preview.deletable.map((item) => item.user_id))
+  tableData.value.forEach((user) => {
+    if (deletingIds.has(user.id) && user.department) departmentIds.add(user.department.id)
+  })
   const deleteKey = createIdempotencyKey()
   openConfirmDialog({
     title: t('users.confirm.deleteBatchTitle'),
@@ -1377,7 +1445,10 @@ async function openBatchDeleteDialog(ids: string[]) {
       const deleted = new Set(preview.deletable.map((item) => item.user_id))
       selectedKeys.value = selectedKeys.value.filter((id) => !deleted.has(id))
       MessagePlugin.success(t('common.deleteSuccess'))
-      await refreshAll()
+      await Promise.all([
+        fetchUsers(),
+        ...[...departmentIds].filter(Boolean).map(refreshDepartmentNode),
+      ])
     },
   })
 }

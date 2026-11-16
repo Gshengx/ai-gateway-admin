@@ -128,6 +128,7 @@ const columns = computed<PrimaryTableCol<UserGroupMember>[]>(() => [
 let requestSequence = 0
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 let resetting = false
+let appliedDepartmentId = ''
 
 function clearSearchTimer() {
   if (searchTimer !== undefined) {
@@ -199,7 +200,9 @@ watch(
   { flush: 'sync' },
 )
 
-function onDepartmentChange() {
+function onDepartmentChange({ id }: { id: string }) {
+  if (!id && !appliedDepartmentId) return
+  appliedDepartmentId = id
   if (resetting || !props.visible) return
   // The options endpoint includes descendants; refresh must query even when the ID is unchanged.
   pagination.current = 1
@@ -214,6 +217,7 @@ watch(
     resetting = true
     search.value = ''
     departmentId.value = ''
+    appliedDepartmentId = ''
     clearSelection()
     candidates.value = []
     pagination.current = 1

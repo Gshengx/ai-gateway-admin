@@ -74,6 +74,7 @@ import { MessagePlugin, type FormRule } from 'tdesign-vue-next'
 import LocaleSelect from '@/components/LocaleSelect.vue'
 import { useTermsStore } from '@/stores/modules/terms'
 import { useUserStore } from '@/stores/modules/user'
+import { useLocaleOptionsStore } from '@/stores/modules/localeOptions'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,11 +144,12 @@ async function onSubmit(ctx: { validateResult: boolean | Record<string, unknown>
     await userStore.login(formData)
     const session = userStore.context.session
     if (session?.gate !== 'READY' || session.scope !== 'FULL') return
-    try {
-      await termsStore.loadStatus()
-    } catch {
-      if (termsStore.blocking) throw new Error(t('authErrors.contextUnavailable'))
-    }
+    const [, permissions] = await Promise.allSettled([
+      termsStore.loadStatus(),
+      userStore.fetchUserInfo(),
+      useLocaleOptionsStore().load(),
+    ])
+    if (permissions.status === 'rejected') return
     if (
       userStore.context.session?.gate === 'READY' &&
       userStore.context.session.scope === 'FULL' &&

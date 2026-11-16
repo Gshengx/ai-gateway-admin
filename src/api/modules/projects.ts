@@ -1,4 +1,5 @@
 import { request } from '../request'
+import { getCurrentLocale } from '@/locales'
 import type { OffsetPageQuery, OffsetPageResult } from '../types'
 
 /** Temporary prototype contract, authorized 2026-11-13. No production endpoints yet. */
@@ -103,7 +104,18 @@ export const changeProjectMembers = (
   user_ids: string[],
   action: 'remove' | 'promote',
 ) => request.post(`/me/projects/${id}/members/${action}`, { user_ids })
-export const projectUserOptions = (params: OffsetPageQuery & { search?: string }) =>
-  request.get<OffsetPageResult<ProjectMember>>('/projects/user-options', { params })
+const userOptionRequests = new Map<string, Promise<OffsetPageResult<ProjectMember>>>()
+export function projectUserOptions(params: OffsetPageQuery & { search?: string }) {
+  const key = JSON.stringify([getCurrentLocale(), params])
+  const existing = userOptionRequests.get(key)
+  if (existing) return existing
+  const pending = request.get<OffsetPageResult<ProjectMember>>('/projects/user-options', { params })
+  userOptionRequests.set(key, pending)
+  const release = () => {
+    if (userOptionRequests.get(key) === pending) userOptionRequests.delete(key)
+  }
+  void pending.then(release, release)
+  return pending
+}
 export const projectModelOptions = (params: OffsetPageQuery & { search?: string }) =>
   request.get<OffsetPageResult<ProjectRef>>('/projects/model-options', { params })

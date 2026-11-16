@@ -37,7 +37,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { DropdownProps, SelectProps } from 'tdesign-vue-next'
 
-import { getLocaleOptionsApi, updateMyPreferencesApi } from '@/api/modules/identity'
+import { updateMyPreferencesApi } from '@/api/modules/identity'
 import { getTimeZone } from '@/utils/datetime'
 import {
   getCurrentLocale,
@@ -50,6 +50,7 @@ import {
 } from '@/locales'
 import { menuTrail, usePermissionStore } from '@/stores/modules/permission'
 import { useUserStore } from '@/stores/modules/user'
+import { useLocaleOptionsStore } from '@/stores/modules/localeOptions'
 
 const props = defineProps<{ collapsed: boolean }>()
 const emit = defineEmits<{ toggle: [] }>()
@@ -63,7 +64,8 @@ const permissionStore = usePermissionStore()
 
 const currentLocale = ref<AppLocale>(getCurrentLocale())
 /** 语言选项：value 为前端语言包代码，code 为后端注册的原始语言代码 */
-const remoteLocales = ref<Array<{ label: string; value: AppLocale; code: string }>>([])
+const localeOptionsStore = useLocaleOptionsStore()
+const remoteLocales = computed(() => localeOptionsStore.options)
 
 /** 面包屑覆盖全部获准入口，包括 sidebar_hidden 的页面。 */
 const breadcrumbs = computed(() => menuTrail(permissionStore.navigationMenus, route.meta.routeId))
@@ -84,18 +86,8 @@ const userOptions = computed<DropdownProps['options']>(() => [
 
 async function loadLocales() {
   try {
-    const result = await getLocaleOptionsApi()
-    const options: Array<{ label: string; value: AppLocale; code: string }> = []
-    result.items
-      .filter((item) => item.status === 'ACTIVE')
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .forEach((item) => {
-        // 后端可能注册 en / zh 等简写，统一归一化为前端语言包代码
-        const value = normalizeLocale(item.locale_code)
-        if (options.some((option) => option.value === value)) return
-        options.push({ label: item.native_name, value, code: item.locale_code })
-      })
-    remoteLocales.value = options
+    if (!localeOptionsStore.attempted) await localeOptionsStore.load()
+    const options = remoteLocales.value
     // 记录后端原始语言代码，保证请求 locale 入参与后端注册值一致（如 en 而非 en-US）
     const matched = options.find((option) => option.value === getCurrentLocale())
     if (matched) setApiLocale(matched.code)

@@ -1,4 +1,9 @@
 export default {
+  initializationErrors: {
+    terms: 'Failed to load terms status',
+    permissions: 'Failed to load permissions',
+    locales: 'Failed to load language options',
+  },
   app: {
     title: 'AI Security Gateway',
     subtitle: 'AIS GATEWAY · Identity & Access Management',

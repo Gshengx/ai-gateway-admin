@@ -415,9 +415,9 @@ function edit(row: ProjectBudgetRecord | null) {
   editing.value = row
   formVisible.value = true
 }
-async function openDetail(row: ProjectBudgetRecord) {
+async function openDetail(row: ProjectBudgetRecord, alreadyLoaded = false) {
   try {
-    detail.value = await getProjectBudget(row.project.id)
+    detail.value = alreadyLoaded ? row : await getProjectBudget(row.project.id)
     detailTab.value = 'overview'
     await router.replace({ query: { ...route.query, projectId: row.project.id } })
     analytics.value = await getProjectBudgetAnalytics(row.project.id)
@@ -450,7 +450,7 @@ onMounted(async () => {
   if (route.query.projectId) {
     try {
       const record = await getProjectBudget(String(route.query.projectId))
-      await openDetail(record)
+      await openDetail(record, true)
       if (route.query.action === 'configure') edit(record)
     } catch (e) {
       error(e)

@@ -398,6 +398,7 @@ const props = defineProps<{
   visible: boolean
   /** 列表行数据用于标识目标用户，详情数据准备好后再展示。 */
   user: UserItem | null
+  initialDetail?: Awaited<ReturnType<typeof getUserDetailApi>>
 }>()
 
 const emit = defineEmits<{
@@ -724,6 +725,7 @@ onBeforeUnmount(() => {
   resetKeyOperation()
 })
 
+let consumedInitialDetail: typeof props.initialDetail
 watch(
   () => [props.visible, props.user?.id, detailReload.value] as const,
   async ([visible], _previous, onCleanup) => {
@@ -760,8 +762,13 @@ watch(
 
     const userId = props.user.id
     loading.value = true
+    const initial =
+      props.initialDetail?.user.id === userId && props.initialDetail !== consumedInitialDetail
+        ? props.initialDetail
+        : undefined
+    if (initial) consumedInitialDetail = initial
     const results = await Promise.allSettled([
-      getUserDetailApi(userId)
+      (initial ? Promise.resolve(initial) : getUserDetailApi(userId))
         .then((result) => {
           if (stale) return
           detail.value = result.user

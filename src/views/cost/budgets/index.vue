@@ -663,10 +663,21 @@ async function showDetail(budget: Budget) {
     error(err)
   }
 }
+async function refreshPage() {
+  if (tab.value === 'departments') {
+    await load()
+  } else {
+    await Promise.all([
+      load(),
+      getDepartmentBudgets({ page: 1, page_size: 20 }).then((result) => {
+        headquarters.value = result.headquarters
+      }),
+    ])
+  }
+}
 async function saved() {
   selected.value = []
-  headquarters.value = (await getDepartmentBudgets({ page: 1, page_size: 20 })).headquarters
-  await load()
+  await refreshPage()
   if (detail.value)
     detail.value = await getBudget(tab.value === 'users' ? 'users' : 'departments', detail.value.id)
 }
@@ -698,9 +709,7 @@ watch(locale, load)
 onMounted(async () => {
   try {
     await init()
-    const result = await getDepartmentBudgets({ page: 1, page_size: 20 })
-    headquarters.value = result.headquarters
-    await load()
+    await refreshPage()
   } catch (err) {
     error(err)
   }

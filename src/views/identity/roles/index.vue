@@ -188,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { useI18n } from 'vue-i18n'
@@ -234,7 +234,9 @@ const columns = computed<PrimaryTableCol<RoleItem>[]>(() => [
 function resetPage() {
   page.value = 1
 }
+let disposed = false
 async function fetchList(): Promise<void> {
+  if (disposed) return
   const current = listRequest.begin()
   loading.value = true
   listFailed.value = false
@@ -399,6 +401,7 @@ let roleAttempt: { signature: string; key: string } | undefined
 let stagedRoleId = ''
 let formRequest = 0
 onBeforeUnmount(() => {
+  disposed = true
   ++formRequest
 })
 function close() {
@@ -547,7 +550,8 @@ function save() {
       throw error
     } finally {
       saving.value = false
-      if (metadataSaved || permissionsSaved) {
+      await nextTick()
+      if (!disposed && (metadataSaved || permissionsSaved)) {
         resetPage()
         await fetchList()
       }

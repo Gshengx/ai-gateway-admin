@@ -37,6 +37,12 @@ export interface NotifiedError extends Error {
 }
 
 function businessMessage(code?: string, config?: RequestConfig): string {
+  const initializationKey = {
+    '/terms/required': 'terms',
+    '/me/permissions': 'permissions',
+    '/locales/options': 'locales',
+  }[config?.url ?? '']
+  if (initializationKey) return i18n.global.t(`initializationErrors.${initializationKey}`)
   if (config?.url?.startsWith('/projects') || config?.url?.startsWith('/me/projects')) {
     const key = `projects.error_${code}`
     return i18n.global.te(key) ? i18n.global.t(key) : i18n.global.t('projects.failed')

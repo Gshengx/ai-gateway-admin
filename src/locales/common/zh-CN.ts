@@ -1,4 +1,9 @@
 export default {
+  initializationErrors: {
+    terms: '协议状态请求失败',
+    permissions: '权限请求失败',
+    locales: '语言选项请求失败',
+  },
   app: {
     title: 'AI 安全网关',
     subtitle: 'AIS GATEWAY · 身份与访问管理平台',

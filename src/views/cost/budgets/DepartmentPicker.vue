@@ -16,7 +16,7 @@ import { getCostContext, getCostDepartment, type CostDepartment } from '@/api/mo
 import { useCost } from '../useCost'
 const props = defineProps<{ modelValue: string[]; unrestricted?: boolean; rootId?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
-const { t, english, departments, error } = useCost()
+const { t, english, departments, ensureDepartments, error } = useCost()
 interface Node {
   value: string
   label: string
@@ -84,9 +84,8 @@ watch(
   async (ids) => {
     if (!ids.length || nodes.value.length) return
     try {
-      const selected = await Promise.all(
-        ids.map((id) => departments.get(id) ?? getCostDepartment(id)),
-      )
+      await ensureDepartments(ids)
+      const selected = ids.map((id) => departments.get(id)!)
       nodes.value = convert(selected)
     } catch (e) {
       error(e)

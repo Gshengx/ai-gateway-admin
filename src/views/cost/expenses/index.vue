@@ -376,6 +376,17 @@ function params() {
     end: dates.value[1] || query.end,
   }
 }
+function hasFilters() {
+  return Object.entries(params()).some(
+    ([key, value]) =>
+      !['page', 'page_size', 'sort_by', 'direction'].includes(key) &&
+      value !== undefined &&
+      value !== null &&
+      value !== '' &&
+      !(Array.isArray(value) && value.length === 0),
+  )
+}
+
 async function load() {
   const current = ++generation
   loading.value = true
@@ -384,6 +395,7 @@ async function load() {
     if (current !== generation) return
     items.value = result.items
     total.value = result.total
+    if (!hasFilters()) allTotal.value = result.total
     summary.value = result.summary
   } catch (e) {
     error(e)
@@ -462,8 +474,8 @@ onMounted(async () => {
       selectedFields.value = [...visibleFields.value]
     }
     options.value = await getExpenseOptions()
-    allTotal.value = (await getExpenses({ page: 1, page_size: 1 })).total
     await load()
+    if (hasFilters()) allTotal.value = (await getExpenses({ page: 1, page_size: 1 })).total
   } catch (e) {
     error(e)
   }

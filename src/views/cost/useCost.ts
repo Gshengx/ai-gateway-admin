@@ -11,6 +11,7 @@ import {
 } from '@/api/modules/cost'
 const departments = reactive(new Map<string, CostDepartment>())
 const users = reactive<CostUser[]>([])
+const departmentRequests = new Map<string, Promise<void>>()
 let pending: Promise<void> | undefined
 let cachedActor = ''
 const scope = reactive({ root: 'hq', headquarters: true })
@@ -26,6 +27,7 @@ export function useCost() {
     if (cachedActor !== actor) {
       pending = undefined
       departments.clear()
+      departmentRequests.clear()
       users.splice(0)
       cachedActor = actor
     }
@@ -50,8 +52,19 @@ export function useCost() {
     await Promise.all(
       [...new Set(ids)]
         .filter((id) => id && !departments.has(id))
-        .map(async (id) => {
-          departments.set(id, await getCostDepartment(id))
+        .map((id) => {
+          const existing = departmentRequests.get(id)
+          if (existing) return existing
+          const actor = cachedActor
+          const request = getCostDepartment(id)
+            .then((department) => {
+              if (actor === cachedActor) departments.set(id, department)
+            })
+            .finally(() => {
+              if (departmentRequests.get(id) === request) departmentRequests.delete(id)
+            })
+          departmentRequests.set(id, request)
+          return request
         }),
     )
   }

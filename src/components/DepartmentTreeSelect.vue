@@ -445,7 +445,11 @@ const onChange: NonNullable<TreeSelectProps['onChange']> = (value) => {
 
 watch(
   () => props.modelValue,
-  (id) => {
+  (id, previous) => {
+    if (previous === undefined && !id) {
+      resolvedId = ''
+      return
+    }
     if (id !== resolvedId) void resolveSelection(id)
   },
   { immediate: true },

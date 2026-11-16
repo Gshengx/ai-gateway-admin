@@ -130,7 +130,7 @@
     </t-dialog>
 
     <add-members-dialog
-      v-if="group"
+      v-if="group && addVisible"
       v-model:visible="addVisible"
       :group-id="group.id"
       @added="onMembersAdded"
@@ -169,6 +169,8 @@ const { t } = useI18n()
 const userStore = useUserStore()
 
 let memberRequest = 0
+let appliedDepartmentId = ''
+let resettingFilters = false
 
 const loading = ref(false)
 const failed = ref(false)
@@ -208,16 +210,22 @@ watch(
   { flush: 'sync' },
 )
 
-function onDepartmentChange() {
+function onDepartmentChange({ id }: { id: string }) {
+  if (!id && !appliedDepartmentId) return
+  appliedDepartmentId = id
   pagination.current = 1
-  if (props.visible) void fetchMembers()
+  if (props.visible && !resettingFilters) void fetchMembers()
 }
 
-watch(search, () => {
-  clearSelection()
-  pagination.current = 1
-  if (props.visible) void fetchMembers()
-})
+watch(
+  search,
+  () => {
+    clearSelection()
+    pagination.current = 1
+    if (props.visible && !resettingFilters) void fetchMembers()
+  },
+  { flush: 'sync' },
+)
 
 async function fetchMembers(): Promise<void> {
   if (!props.group) return
@@ -260,10 +268,13 @@ watch(
       loading.value = false
       return
     }
+    resettingFilters = true
     search.value = ''
     departmentId.value = ''
+    appliedDepartmentId = ''
     clearSelection()
     pagination.current = 1
+    resettingFilters = false
     await fetchMembers()
   },
 )

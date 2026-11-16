@@ -557,7 +557,7 @@ async function balance(row: Provider) {
   querying.value = true
   try {
     const data = await accessApi.balance(row.id, balanceController.signal)
-    if (detail.value?.id === row.id) detail.value = data
+    if (detail.value?.id === row.id) Object.assign(detail.value, data)
     await load()
   } catch (error) {
     if (!balanceController.signal.aborted) throw error

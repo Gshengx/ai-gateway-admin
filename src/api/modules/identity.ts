@@ -97,7 +97,12 @@ export function getPermissionResourcesApi(
 }
 
 export function createRoleApi(payload: RolePayload, idempotencyKey?: string) {
-  return request.post<RoleMutationResult>('/roles', payload, { idempotencyKey })
+  const { description, ...required } = payload
+  return request.post<RoleMutationResult>(
+    '/roles',
+    { ...required, ...(description ? { description } : {}) },
+    { idempotencyKey },
+  )
 }
 
 export function updateRoleApi(id: string, payload: Partial<RolePayload>) {
@@ -669,7 +674,12 @@ export function updateMyPreferencesApi(payload: MyPreferencesPayload) {
 }
 
 export function createUserApi(payload: CreateUserPayload) {
-  return request.post<UserSaveResult>('/users', payload)
+  const { email, phone, ...required } = payload
+  return request.post<UserSaveResult>('/users', {
+    ...required,
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
+  })
 }
 
 export function updateUserApi(id: string, payload: UpdateUserPayload) {

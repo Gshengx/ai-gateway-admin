@@ -477,16 +477,14 @@ export const transport = {
         method: b.method,
         url: b.url,
         auth_type: b.auth,
-        auth_header_name: b.header || null,
-        value_path: b.available_path || null,
-        currency_path: null,
+        ...(b.auth === 'HEADER' ? { auth_header_name: b.header } : {}),
         calculation_mode: b.mapping === 'AVAILABLE' ? 'DIRECT' : 'SUBTRACT',
-        total_path: b.total_path || null,
-        used_path: b.used_path || null,
-        body: b.body ? JSON.parse(b.body) : null,
-        template_parameters: {},
+        ...(b.mapping === 'AVAILABLE'
+          ? { value_path: b.available_path }
+          : { total_path: b.total_path, used_path: b.used_path }),
+        ...(b.method === 'POST' && b.body.trim() ? { body: JSON.parse(b.body) } : {}),
       }
-    if (b.secret)
+    if (balance.mode === 'CUSTOM' && b.auth !== 'NONE' && b.secret)
       balance.secrets = b.auth === 'HEADER' ? { header_value: b.secret } : { token: b.secret }
     const input: D.ProviderCreate = {
       name: p.name,
@@ -496,8 +494,8 @@ export const transport = {
       security_level: p.security_level,
       public_config,
       ...(Object.keys(secrets).length ? { secrets } : {}),
-      notes: p.notes,
-      clear_secret_fields: p.clear_secret_fields ?? [],
+      ...(p.id || p.notes ? { notes: p.notes } : {}),
+      ...(p.clear_secret_fields?.length ? { clear_secret_fields: p.clear_secret_fields } : {}),
       ...(!p.id || b.secret || balanceDrafts.get(p.id) !== balanceSignature(p)
         ? { balance_config: balance }
         : {}),
@@ -528,7 +526,16 @@ export const transport = {
       result = await api.B05(id, receipt.run_id, { signal })
     }
     balanceAttempts.delete(id)
-    return transport.provider(id)
+    const refreshed = await api.B04(id, { signal })
+    return {
+      last_balance_value: refreshed.last_balance_value,
+      last_balance_unit: refreshed.last_balance_unit,
+      last_balance_attempt_at: refreshed.last_attempt_at,
+      last_balance_success_at: refreshed.last_success_at,
+      balance_query_status: refreshed.query_status,
+      balance_query_error_code: refreshed.error_code,
+      alert_state: refreshed.alert_state,
+    }
   },
   discover: async (id: string, resume_discovery_id?: string) => {
     const result = await api.D01(id, resume_discovery_id ? { resume_discovery_id } : {})
