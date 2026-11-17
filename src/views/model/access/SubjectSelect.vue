@@ -35,16 +35,17 @@
         <t-loading :loading="loading" :inert="loading">
           <t-tree
             v-if="type === 'DEPARTMENT'"
+            ref="departmentTree"
             :key="treeVersion"
             :value="checkedIds"
             :data="departmentOptions"
             :load="loadChildren"
             :default-expanded="searchExpanded"
             checkable
-            check-strictly
+            :check-strictly="false"
             value-mode="all"
             @change="treeChanged"
-            @load="syncTreeSelection"
+            @load="commitTreeSelection"
           />
           <div v-else class="subject-picker__options">
             <t-checkbox
@@ -79,7 +80,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { TreeProps, SelectInputProps } from 'tdesign-vue-next'
+import type { TreeInstanceFunctions, TreeProps, SelectInputProps } from 'tdesign-vue-next'
 import DepartmentTreeSelect from '@/components/DepartmentTreeSelect.vue'
 import { modelAccessApi } from '@/api/modules/modelAccessApi'
 import type { Subject } from '@/api/modules/modelAccess'
@@ -115,7 +116,22 @@ interface Node {
 const departments = ref<Node[]>([])
 const locked = computed(() => new Set(props.lockedIds ?? []))
 const checkedIds = ref<string[]>([])
-let treeSyncTimer: ReturnType<typeof setTimeout> | undefined
+const departmentTree = ref<TreeInstanceFunctions>()
+function commitTreeSelection() {
+  const items = departmentTree.value?.getItems() ?? []
+  const visible = new Set(items.map((item) => String(item.value)))
+  selection.value = [
+    ...new Set([
+      ...selection.value.filter((id) => !visible.has(id) && !locked.value.has(id)),
+      ...items
+        .filter(
+          (item) => item.checked && !item.indeterminate && !locked.value.has(String(item.value)),
+        )
+        .map((item) => String(item.value)),
+    ]),
+  ]
+  syncTreeSelection()
+}
 function syncTreeSelection() {
   checkedIds.value = [...new Set([...selection.value, ...locked.value])]
 }
@@ -222,8 +238,6 @@ const loadChildren: NonNullable<TreeProps['load']> = async (node) => {
     )
     if (controller.signal.aborted) return []
     // The tree installs lazy children itself; rebuilding its data here races checked-state restore.
-    clearTimeout(treeSyncTimer)
-    treeSyncTimer = setTimeout(syncTreeSelection, 0)
     return children.map((item) => ({ ...item, disabled: locked.value.has(item.value) }))
   } catch (error) {
     if (controller.signal.aborted) return []
@@ -341,10 +355,9 @@ function toggle(id: string, checked: boolean) {
     ? [...new Set([...selection.value, id])]
     : selection.value.filter((x) => x !== id)
 }
-const treeChanged: NonNullable<TreeProps['onChange']> = (keys, context) => {
+const treeChanged: NonNullable<TreeProps['onChange']> = (_keys, context) => {
   if (context.trigger === 'setItem') return
-  const id = String(context.node.value)
-  toggle(id, keys.map(String).includes(id))
+  commitTreeSelection()
 }
 const changeTags: NonNullable<SelectInputProps['onTagChange']> = (_value, context) => {
   if (context.trigger === 'clear') selection.value = []
@@ -384,7 +397,6 @@ onBeforeUnmount(() => {
   optionsController?.abort()
   branchController.abort()
   clearTimeout(timer)
-  clearTimeout(treeSyncTimer)
 })
 </script>
 <style scoped>
