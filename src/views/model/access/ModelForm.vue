@@ -11,7 +11,7 @@
       theme: 'primary',
       content: t(isEditing ? 'ma.save' : 'ma.create'),
       loading: saving,
-      disabled: loading || loadFailed || saving || preparing || preparationFailed,
+      disabled: loading || loadFailed || saving || preparing || preparationFailed || editLocked,
     }"
     :cancel-btn="{ content: t('ma.cancel'), disabled: saving }"
     :close-on-esc-keydown="!saving"
@@ -37,7 +37,7 @@
                 required-mark
                 ><t-select
                   v-model="model.provider_id"
-                  :disabled="basicLocked || saving"
+                  :disabled="identityLocked || saving"
                   :placeholder="t('ma.chooseProvider')"
                   :options="providerChoices"
                   :loading="providerOptionsLoading"
@@ -50,7 +50,7 @@
                 required-mark
                 ><t-input
                   v-model="model.model_id_at_provider"
-                  :disabled="basicLocked || saving"
+                  :disabled="identityLocked || saving"
                   :placeholder="t('ma.upstreamHint')"
                   @change="prefill"
                   @blur="loadMetadata"
@@ -74,9 +74,14 @@
                 /></div
             ></t-form-item>
             <InvocationEditor
+              :initialize-from-options="!isEditing"
+              :provided-options="editProtocolOptions"
+              :provider-id="model.provider_id"
+              :upstream-id="model.model_id_at_provider"
+              ref="invocationEditor"
+              :allow-empty="isEditing && model.status === 'DRAFT'"
               :validate-required="basicValidationAttempted && !basicLocked"
-              v-model:standard="model.supported_invocation_apis"
-              v-model:custom="model.custom_invocation_apis"
+              v-model:configuration="model"
               :disabled="basicLocked || saving"
             />
             <div class="ma-grid">
@@ -163,14 +168,14 @@
               </div>
               <p class="ma-muted">{{ t('ma.healthHelp') }}</p>
               <div class="model-health-fields">
-                <t-checkbox v-model="model.auto_health_check" :disabled="saving">{{
+                <t-checkbox v-model="model.auto_health_check" :disabled="saving || editLocked">{{
                   t('ma.autoHealth')
                 }}</t-checkbox>
                 <div class="ma-row model-health-fields__interval">
                   <span>{{ t('ma.interval') }}</span
                   ><t-select
                     v-model="model.health_check_interval_minutes"
-                    :disabled="saving || !model.auto_health_check"
+                    :disabled="saving || editLocked || !model.auto_health_check"
                     :options="
                       [60, 360, 720, 1440].map((v) => ({
                         value: v,
@@ -193,7 +198,7 @@
         >
           <PricingEditor
             v-if="isEditing || configurePricing"
-            :inert="saving || !canWritePrice"
+            :inert="saving || editLocked || !canWritePrice"
             :default-price="defaultPrice"
             :load-default="model.id || price.metric_rates.length ? loadDefaultPricing : undefined"
             ref="priceEditor"
@@ -213,7 +218,7 @@
         <t-button
           theme="primary"
           :loading="saving"
-          :disabled="loading || loadFailed || preparing || preparationFailed"
+          :disabled="loading || loadFailed || preparing || preparationFailed || editLocked"
           @click="save"
           >{{ t(isEditing ? 'ma.save' : 'ma.create') }}</t-button
         >
@@ -302,6 +307,46 @@ const model = ref({ ...blankModel(), provider_id: props.providerId ?? '' }),
   price = ref(blankPricing()),
   defaultPrice = ref<Pricing>()
 const providerOptions = ref<Provider[]>([])
+const editProtocolOptions = ref<Array<{ protocol: string; default_path: string | null }>>([])
+const templateRequest = useLatestRequest()
+let templateKey = ''
+let templateResult: Awaited<ReturnType<typeof accessApi.metadataWithOptions>> | undefined
+let pendingTemplate: Promise<Awaited<ReturnType<typeof accessApi.metadataWithOptions>>> | undefined
+function loadTemplate(provider: string, upstream: string) {
+  const key = JSON.stringify([provider, upstream, locale.value])
+  if (templateKey === key && templateResult) return Promise.resolve(templateResult)
+  if (templateKey === key && pendingTemplate) return pendingTemplate
+  templateKey = key
+  templateResult = undefined
+  editProtocolOptions.value = []
+  const current = templateRequest.begin()
+  const pending = accessApi.metadataWithOptions(provider, upstream, { signal: current.signal })
+  pendingTemplate = pending
+  void pending
+    .then((result) => {
+      if (!current.isCurrent()) return
+      templateResult = result
+      editProtocolOptions.value = result.options
+    })
+    .catch(() => {})
+    .finally(() => {
+      if (pendingTemplate === pending) pendingTemplate = undefined
+    })
+  return pending
+}
+watch(
+  () => [model.value.provider_id, model.value.model_id_at_provider.trim(), locale.value] as const,
+  ([provider, upstream]) => {
+    if (provider) void loadTemplate(provider, upstream).catch(() => {})
+    else {
+      templateRequest.invalidate()
+      templateKey = ''
+      templateResult = undefined
+      editProtocolOptions.value = []
+    }
+  },
+  { immediate: true },
+)
 const providerOptionsLoading = ref(false)
 const providerOptionsRequest = useLatestRequest()
 let providersLoaded = false
@@ -341,6 +386,7 @@ function loadProviderOptions(): Promise<void> {
   pendingProviderOptions = pending
   return pending
 }
+const invocationEditor = ref<InstanceType<typeof InvocationEditor>>()
 const priceEditor = ref<InstanceType<typeof PricingEditor>>()
 let originalModel: Model | undefined
 const errorNotice = ref<HTMLElement>()
@@ -452,11 +498,21 @@ const configurationSignature = computed(() =>
     model.value.custom_invocation_apis.map((a) => a.path),
   ]),
 )
-const metadataLocked = computed(() => !user.permissions.includes('model.models:write'))
+const editLocked = computed(
+  () => isEditing && ['TESTING', 'PENDING_REVIEW'].includes(model.value.status),
+)
+const metadataLocked = computed(
+  () => editLocked.value || !user.permissions.includes('model.models:write'),
+)
+const identityLocked = computed(
+  () =>
+    !user.permissions.includes('model.models:write') ||
+    (isEditing && model.value.status !== 'DRAFT'),
+)
 const basicLocked = computed(
   () =>
     !user.permissions.includes('model.models:write') ||
-    (!!model.value.id && model.value.status !== 'DRAFT'),
+    (!!model.value.id && !['DRAFT', 'RETIRED'].includes(model.value.status)),
 )
 const contextK = computed({
   get: () => (model.value.context_window === null ? undefined : model.value.context_window / 1000),
@@ -529,11 +585,20 @@ async function fetchMetadata() {
     }
     const key = JSON.stringify([model.value.provider_id, name])
     if (loadedMetadataKey !== key) {
-      const metadata = await accessApi.metadata(model.value.provider_id, name, config)
+      const { metadata } = await loadTemplate(model.value.provider_id, name)
       if (!current.isCurrent()) return
       applyingMetadata = true
       try {
-        Object.assign(model.value, metadata)
+        const { supported_invocation_apis, custom_invocation_apis, ...otherMetadata } = metadata
+        Object.assign(model.value, otherMetadata)
+        if (
+          !model.value.supported_invocation_apis.length &&
+          !model.value.custom_invocation_apis.length
+        ) {
+          if (supported_invocation_apis)
+            model.value.supported_invocation_apis = supported_invocation_apis
+          if (custom_invocation_apis) model.value.custom_invocation_apis = custom_invocation_apis
+        }
         loadedMetadataKey = key
       } finally {
         applyingMetadata = false
@@ -637,11 +702,6 @@ const basicFieldErrors = computed(() => {
       issues.upstream = t('ma.providerFieldRequired', { field: t('ma.upstream') })
     if (!m.model_id_at_gateway.trim())
       issues.name = t('ma.providerFieldRequired', { field: t('ma.name') })
-    const invocationError = invocationConfigurationError(m)
-    if (invocationError)
-      issues.invocation = t(
-        invocationError === 'required' ? 'ma.invocationRequired' : 'ma.invalidApiPath',
-      )
   }
   for (const [key, value, label] of [
     ['context', m.context_window, 'context'],
@@ -663,9 +723,22 @@ watch(basicFieldErrors, (issues) => {
       ? t('ma.providerValidationSummary', { fields: Object.values(issues).join('；') })
       : ''
 })
+watch(
+  () => invocationEditor.value?.validationError,
+  (value) => {
+    if (value) return
+    if (
+      [t('ma.protocolDuplicate'), t('ma.invocationRequired'), t('ma.protocolIncomplete')].includes(
+        error.value,
+      )
+    )
+      error.value = ''
+  },
+)
 async function save() {
   if (
     loading.value ||
+    editLocked.value ||
     loadFailed.value ||
     saving.value ||
     preparing.value ||
@@ -677,6 +750,20 @@ async function save() {
   basicValidationFailed.value = false
   const m = model.value
   basicValidationAttempted.value = true
+  if (!basicLocked.value && invocationEditor.value) {
+    const invocationError = invocationEditor.value.validate()
+    if (invocationError) {
+      tab.value = 'basic'
+      error.value = t(
+        invocationError === 'required'
+          ? 'ma.invocationRequired'
+          : invocationError === 'duplicate'
+            ? 'ma.protocolDuplicate'
+            : 'ma.protocolIncomplete',
+      )
+      return
+    }
+  }
   if (Object.keys(basicFieldErrors.value).length) {
     basicValidationFailed.value = true
     tab.value = 'basic'
@@ -781,6 +868,16 @@ async function loadModel() {
       if (!current.isCurrent()) return
       model.value = loadedModel
       originalModel = JSON.parse(JSON.stringify(loadedModel)) as Model
+      const { metadata, options } = await loadTemplate(
+        loadedModel.provider_id,
+        loadedModel.model_id_at_provider,
+      )
+      if (!current.isCurrent()) return
+      editProtocolOptions.value = options
+      if (metadata.supported_invocation_apis && metadata.custom_invocation_apis) {
+        model.value.supported_invocation_apis = metadata.supported_invocation_apis
+        model.value.custom_invocation_apis = metadata.custom_invocation_apis
+      }
       price.value = loadedPrice
       originalPrice = JSON.stringify(price.value)
     }

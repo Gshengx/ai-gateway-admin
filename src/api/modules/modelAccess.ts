@@ -179,6 +179,9 @@ export interface TestRun {
   triggered_by: string
 }
 export interface Candidate {
+  discovery_id?: string
+  error_fields?: Record<string, unknown>
+  error_reason?: string
   context_window?: number | null
   max_output_tokens?: number | null
   model_id_at_provider: string

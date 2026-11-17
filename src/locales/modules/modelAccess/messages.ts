@@ -16,6 +16,8 @@ const labels: Record<string, [string, string]> = {
     '模型名称已被占用，请重新获取模型并修改名称后再添加。',
     'The model name is already in use. Fetch the models again, change the name, and add it again.',
   ],
+  continueImported: ['继续处理已导入模型', 'Continue with imported models'],
+  importSkipped: ['跳过已存在模型 {n} 个', 'Skipped {n} existing models'],
   importContinueNotice: [
     ' 下方已导入的模型可继续配置接口与检测。',
     ' You can continue configuring and testing the imported models below.',
@@ -38,6 +40,30 @@ const labels: Record<string, [string, string]> = {
     'Deleting “{name}” will also delete pricing, permissions, admission checks, and health check records.',
   ],
   noMeteringStandard: ['无计量标准', 'No metering standard'],
+  error_DISCOVERY_NOT_AVAILABLE: [
+    '发现快照不可用，请重新获取模型',
+    'The discovery snapshot is unavailable. Discover models again.',
+  ],
+  error_DISCOVERY_PROVIDER_VERSION_MISMATCH: [
+    '供应商配置已变化，请刷新供应商并重新发现',
+    'Provider configuration changed. Refresh and discover again.',
+  ],
+  error_DISCOVERY_CATALOG_MISMATCH: [
+    '目录已变化，请重新发现模型',
+    'The catalog changed. Discover models again.',
+  ],
+  error_MODEL_NOT_IN_DISCOVERY: [
+    '模型不在发现快照中，请重新选择',
+    'The model is not in the discovery snapshot. Select it again.',
+  ],
+  error_DUPLICATE_GATEWAY_ID_IN_BATCH: [
+    '本批模型名称重复，请修改名称',
+    'Model names are duplicated in this batch. Change the names.',
+  ],
+  error_GATEWAY_ID_TAKEN: [
+    '模型名称已被占用，请修改名称',
+    'The model name is already in use. Change it.',
+  ],
   error_fallback: [
     '模型操作未成功，请保留草稿并核对最新状态',
     'Model operation did not complete. Preserve the draft and check the current state.',
@@ -473,6 +499,19 @@ const labels: Record<string, [string, string]> = {
   renameHelp: [
     '修改模型名称会影响调用方，请确认已通知相关调用方。',
     'Changing the model name affects callers. Confirm callers have been informed.',
+  ],
+  protocol: ['协议', 'Protocol'],
+  protocolPath: ['路径', 'Path'],
+  chooseProtocol: ['请选择协议', 'Select a protocol'],
+  choosePath: ['请输入路径', 'Enter a path'],
+  customProtocol: ['自定义（透传）', 'Custom (passthrough)'],
+  addProtocol: ['新增协议', 'Add protocol'],
+  removeProtocol: ['删除协议', 'Remove protocol'],
+  protocolDuplicate: ['所选协议不能重复', 'Protocols cannot be duplicated'],
+  protocolIncomplete: ['请完善协议和路径配置', 'Complete the protocol and path configuration'],
+  protocolHelp: [
+    '标准协议会填入默认路径，可按上游配置修改；选择“自定义（透传）”后，请手动填写上游路径。',
+    'Standard protocols fill in a default path that you can adjust for your upstream. For Custom (passthrough), enter the upstream path manually.',
   ],
   supportedApis: ['支持的调用接口', 'Supported invocation APIs'],
   loadingRecipient: ['加载接收人…', 'Loading recipient…'],

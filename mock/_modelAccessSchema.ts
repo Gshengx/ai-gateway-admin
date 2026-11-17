@@ -105,10 +105,10 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
   ],
   CustomAPIInput: [
     {
-      key: 'id',
-      type: 'string / null',
-      required: false,
-      nullable: true,
+      key: 'protocol',
+      type: 'string',
+      required: true,
+      nullable: false,
       enum: null,
     },
     {
@@ -120,6 +120,7 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     },
   ],
   InvocationAPI: [
+    { key: 'protocol', type: 'string', required: true, nullable: false, enum: null },
     {
       key: 'id',
       type: 'string',
@@ -1762,6 +1763,13 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
   ],
   ModelTemplate: [
     {
+      key: 'suggested_custom_invocation_apis',
+      type: 'array<CustomAPIInput>',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
+    {
       key: 'template_key',
       type: 'string',
       required: true,
@@ -2084,6 +2092,7 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     },
   ],
   ImportItem: [
+    { key: 'discovery_id', type: 'string', required: false, nullable: false, enum: null },
     {
       key: 'model_id_at_provider',
       type: 'string',
@@ -2128,13 +2137,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     },
   ],
   ImportInput: [
-    {
-      key: 'discovery_id',
-      type: 'string / null',
-      required: false,
-      nullable: true,
-      enum: null,
-    },
     {
       key: 'models',
       type: 'array<ImportItem>',
@@ -3690,7 +3692,18 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
   ],
+  ProtocolOption: [
+    { key: 'protocol', type: 'string', required: true, nullable: false, enum: null },
+    { key: 'default_path', type: 'string / null', required: true, nullable: true, enum: null },
+  ],
   ModelTemplatePage: [
+    {
+      key: 'protocol_options',
+      type: 'array<ProtocolOption>',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
     {
       key: 'items',
       type: 'array<ModelTemplate>',
@@ -6800,7 +6813,7 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
   ],
   CustomAPIView: [
     {
-      key: 'id',
+      key: 'protocol',
       type: 'string',
       required: true,
       nullable: false,

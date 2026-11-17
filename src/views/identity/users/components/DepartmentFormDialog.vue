@@ -20,6 +20,7 @@
     <LoadingState :loading="loading" preserve-content :failed="loadFailed">
       <t-alert v-if="limitMessage" class="dept-limit" theme="warning" :message="limitMessage" />
       <t-form
+        :key="formSession"
         :disabled="submitting || validating"
         ref="formRef"
         :data="form"
@@ -92,16 +93,18 @@ const emit = defineEmits<{
   submit: [payload: CreateDepartmentPayload | UpdateDepartmentPayload]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const isEdit = computed(() => props.mode === 'edit')
 
 const validating = ref(false)
 const formRef = ref<FormInstanceFunctions | null>(null)
+const formSession = ref(0)
 const loading = ref(false)
 const loadFailed = ref(false)
 const translations = ref<Record<string, DepartmentTranslation>>({})
 const sortOrder = ref(0)
+const initialDescription = ref('')
 
 const form = reactive<DepartmentForm>({ name: '', description: '' })
 
@@ -151,12 +154,14 @@ watch(
       active = false
     })
     if (!visible) return
+    formSession.value++
     loading.value = false
     form.name = ''
     form.description = ''
     loadFailed.value = false
     translations.value = {}
     sortOrder.value = 0
+    initialDescription.value = ''
     loading.value = false
 
     if (isEdit.value && props.department) {
@@ -167,6 +172,7 @@ watch(
         if (!active) return
         form.name = detail.name
         form.description = detail.description
+        initialDescription.value = detail.description
         translations.value = detail.translations ?? {}
         sortOrder.value = detail.sort_order
       } catch {
@@ -197,11 +203,25 @@ async function handleSubmit() {
     const description = form.description.trim()
 
     if (isEdit.value) {
+      const translationKey = translations.value[locale.value]
+        ? locale.value
+        : locale.value === 'en-US' && translations.value.en
+          ? 'en'
+          : ''
       emit('submit', {
         name,
         description,
         sort_order: sortOrder.value,
-        translations: translations.value,
+        translations: translationKey
+          ? {
+              ...translations.value,
+              [translationKey]: {
+                ...translations.value[translationKey]!,
+                name,
+                ...(description !== initialDescription.value ? { description } : {}),
+              },
+            }
+          : translations.value,
       })
       return
     }

@@ -9,6 +9,7 @@
     @close="onClose"
   >
     <t-form
+      :key="formSession"
       autocomplete="off"
       :disabled="submitting || validating"
       ref="formRef"
@@ -21,7 +22,10 @@
         <t-input
           v-model="form.username"
           name="managed-account"
-          autocomplete="off"
+          autocomplete="section-managed-user username"
+          :readonly="focusedTextField !== 'username'"
+          @focus="focusedTextField = 'username'"
+          @blur="focusedTextField = ''"
           :disabled="!isCreate"
           :maxlength="128"
           :placeholder="t('users.form.usernamePlaceholder')"
@@ -32,6 +36,9 @@
           v-model="form.display_name"
           name="managed-display"
           autocomplete="off"
+          :readonly="focusedTextField !== 'display_name'"
+          @focus="focusedTextField = 'display_name'"
+          @blur="focusedTextField = ''"
           :maxlength="128"
           :placeholder="t('users.form.displayNamePlaceholder')"
         />
@@ -41,6 +48,9 @@
           v-model="form.email"
           name="managed-contact"
           autocomplete="off"
+          :readonly="focusedTextField !== 'email'"
+          @focus="focusedTextField = 'email'"
+          @blur="focusedTextField = ''"
           :placeholder="t('users.form.emailPlaceholder')"
         />
       </t-form-item>
@@ -49,22 +59,35 @@
           v-model="form.phone"
           name="managed-phone"
           autocomplete="off"
+          :readonly="focusedTextField !== 'phone'"
+          @focus="focusedTextField = 'phone'"
+          @blur="focusedTextField = ''"
           :placeholder="t('users.form.phonePlaceholder')"
         />
       </t-form-item>
-      <t-form-item :label="t('users.form.department')" name="department_id">
+      <t-form-item
+        :label="t('users.form.department')"
+        name="department_id"
+        @focusout="departmentSearchFocused = false"
+      >
         <t-tree-select
           v-model="form.department_id"
           :data="departmentTree"
           :tree-props="departmentTreeProps"
           :filter="() => true"
-          :value-display="selectedDepartmentName"
+          :value-display="() => selectedDepartmentName"
           :loading="departmentLoading"
           :loading-text="t('users.form.departmentLoading')"
           :empty="t('users.form.departmentEmpty')"
           @search="onDepartmentSearch"
+          @focus="departmentSearchFocused = true"
+          @blur="departmentSearchFocused = false"
           filterable
-          :input-props="{ name: 'managed-department-filter', autocomplete: 'off' }"
+          :input-props="{
+            name: 'managed-department-filter',
+            autocomplete: 'off',
+            readonly: !departmentSearchFocused,
+          }"
           :placeholder="t('users.form.departmentPlaceholder')"
         />
       </t-form-item>
@@ -75,12 +98,17 @@
           :placeholder="t('users.form.rolePlaceholder')"
         />
       </t-form-item>
-      <t-form-item v-if="isCreate" :label="t('users.form.password')" name="initial_password">
+      <t-form-item
+        v-if="isCreate"
+        class="password-form-item"
+        :label="t('users.form.password')"
+        name="initial_password"
+      >
         <t-input
           v-model="form.initial_password"
           name="managed-initial-password"
           type="password"
-          autocomplete="new-password"
+          autocomplete="section-managed-user new-password"
           :placeholder="t('users.form.passwordPlaceholder')"
         />
       </t-form-item>
@@ -147,6 +175,7 @@ const isCreate = computed(() => props.mode === 'create')
 
 const validating = ref(false)
 const formRef = ref<FormInstanceFunctions | null>(null)
+const formSession = ref(0)
 
 function emptyForm(): UserForm {
   return {
@@ -172,6 +201,8 @@ const lazyDepartments = ref<DepartmentNode[]>([])
 const searchDepartments = ref<DepartmentNode[]>([])
 const departmentKeyword = ref('')
 const departmentLoading = ref(false)
+const departmentSearchFocused = ref(false)
+const focusedTextField = ref('')
 const departmentNames = reactive(new Map<string, string>())
 let departmentSession = 0
 let searchVersion = 0
@@ -311,6 +342,8 @@ async function initializeDepartments() {
 }
 
 function resetDepartmentRequests() {
+  departmentSearchFocused.value = false
+  focusedTextField.value = ''
   departmentSession++
   searchVersion++
   clearTimeout(searchTimer)
@@ -381,6 +414,7 @@ watch(
   (visible) => {
     resetDepartmentRequests()
     if (!visible) return
+    formSession.value++
     lazyDepartments.value = []
     departmentNames.clear()
     Object.assign(form, emptyForm())
@@ -436,3 +470,12 @@ async function handleSubmit() {
   }
 }
 </script>
+
+<style scoped>
+.password-form-item :deep(.t-input__extra) {
+  position: static;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+</style>

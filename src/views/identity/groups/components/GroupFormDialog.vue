@@ -17,6 +17,7 @@
   >
     <LoadingState :loading="loading" preserve-content>
       <t-form
+        :key="formSession"
         :disabled="submitting || validating"
         ref="formRef"
         :data="form"
@@ -81,6 +82,7 @@ const isEdit = computed(() => props.mode === 'edit')
 
 const validating = ref(false)
 const formRef = ref<FormInstanceFunctions | null>(null)
+const formSession = ref(0)
 const loading = ref(false)
 
 const form = reactive<GroupForm>({ name: '', description: '' })
@@ -97,6 +99,7 @@ watch(
       active = false
     })
     if (!visible) return
+    formSession.value++
     loading.value = false
     form.name = ''
     form.description = ''

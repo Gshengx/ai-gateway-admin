@@ -83,12 +83,22 @@
               }}
             </div> </template
           ><template #model_id_at_gateway="{ row }"
-            ><t-input v-model="row.model_id_at_gateway" :disabled="row.already_added" /></template
+            ><t-input
+              v-model="row.model_id_at_gateway"
+              :disabled="row.already_added"
+              :status="row.error_fields?.model_id_at_gateway ? 'error' : undefined"
+              @change="row.error_fields = undefined" /></template
           ><template #status="{ row }"
-            ><span :class="{ 'ma-error': conflict(row) }">{{
+            ><span :class="{ 'ma-error': conflict(row) || row.error_reason }">{{
               conflict(row)
                 ? t(row.model_id_at_gateway.trim() ? 'ma.duplicateName' : 'ma.manualNameRequired')
-                : t(row.already_added ? 'ma.added' : 'ma.available')
+                : row.error_reason
+                  ? t(
+                      te(`ma.error_${row.error_reason}`)
+                        ? `ma.error_${row.error_reason}`
+                        : 'ma.error_fallback',
+                    )
+                  : t(row.already_added ? 'ma.added' : 'ma.available')
             }}</span></template
           ></t-table
         >
@@ -147,19 +157,23 @@
             <span class="ma-muted onboarding-model-card__status">{{
               t(results[model.id] ? 'ma.' + results[model.id]!.status : 'ma.awaitingTest')
             }}</span>
-            <t-form
-              class="ma-form onboarding-model-card__form"
-              label-align="top"
-              required-mark-position="right"
-            >
-              <InvocationEditor
-                :validate-required="testAttempted"
-                hide-help
-                v-model:standard="model.supported_invocation_apis"
-                v-model:custom="model.custom_invocation_apis"
-                :disabled="busy || model.status !== 'DRAFT'"
-              />
-            </t-form>
+            <div class="onboarding-model-card__configuration">
+              <t-form
+                class="ma-form onboarding-model-card__form"
+                label-align="top"
+                required-mark-position="right"
+              >
+                <InvocationEditor
+                  :initialize-if-empty="model.status === 'DRAFT'"
+                  :provider-id="model.provider_id"
+                  :upstream-id="model.model_id_at_provider"
+                  :validate-required="testAttempted"
+                  hide-help
+                  :configuration="model"
+                  :disabled="busy || model.status !== 'DRAFT'"
+                />
+              </t-form>
+            </div>
           </div>
         </div>
       </template>
@@ -216,6 +230,14 @@
           t(step === 4 ? 'ma.close' : 'ma.later')
         }}</t-button>
         <t-button
+          v-if="step === 1 && imported.length"
+          theme="default"
+          :disabled="busy"
+          @click="step = 2"
+        >
+          {{ t('ma.continueImported') }}
+        </t-button>
+        <t-button
           v-if="step === 1"
           v-permission.write="'model.models'"
           theme="primary"
@@ -270,8 +292,7 @@ const { t, te } = useI18n(),
 const step = ref(1),
   loading = ref(true),
   busy = ref(false),
-  notice = ref(''),
-  discoveryId = ref('')
+  notice = ref('')
 const candidates = ref<Candidate[]>([]),
   selected = ref<string[]>([]),
   imported = ref<Model[]>([]),
@@ -350,28 +371,39 @@ async function add() {
   if (busy.value) return
   busy.value = true
   try {
-    const result = await accessApi.import(
-      props.provider.id,
-      discoveryId.value,
-      selectedCandidates.value,
-      props.provider.version,
-    )
-    imported.value = result.items
+    const submitted = [...selectedCandidates.value]
+    const result = await accessApi.import(props.provider.id, submitted, props.provider.version)
+    imported.value.push(...result.items)
+    const rejected = result.result.items.filter((item) => item.status === 'REJECTED')
+    for (const item of result.result.items) {
+      const candidate = submitted[item.input_index]
+      if (!candidate) continue
+      candidate.error_fields = item.status === 'REJECTED' ? item.params.fields : undefined
+      candidate.error_reason =
+        item.status === 'REJECTED' ? (item.params.reason_code ?? item.code) : undefined
+      if (item.status !== 'REJECTED') candidate.already_added = true
+    }
+    selected.value = rejected.map((item) => submitted[item.input_index]?.model_id_at_provider ?? '')
     notice.value = failureNotice(
       'import',
       result.result.items
         .filter((item) => item.status === 'REJECTED')
         .map((item) => ({
-          name: selectedCandidates.value[item.input_index]?.model_id_at_gateway ?? '',
-          code: item.code,
+          name: submitted[item.input_index]?.model_id_at_gateway ?? '',
+          code: item.params.reason_code || item.code,
         })),
     )
-    if (notice.value && imported.value.length) notice.value += t('ma.importContinueNotice')
-    if (imported.value.length) {
+    if (result.result.skipped_count)
+      notice.value += ` ${t('ma.importSkipped', { n: result.result.skipped_count })}`
+    if (!rejected.length && imported.value.length) {
       step.value = 2
     }
-  } catch {
-    if (!closed) notice.value = t('common.loadFailed')
+  } catch (error) {
+    if (!closed) {
+      const failure = error as { code?: string; message?: string }
+      const code = failure.code ?? failure.message
+      notice.value = t(te(`ma.error_${code}`) ? `ma.error_${code}` : 'common.loadFailed')
+    }
   } finally {
     busy.value = false
   }
@@ -523,7 +555,6 @@ async function publish() {
 onMounted(async () => {
   try {
     const result = await accessApi.discover(props.provider.id)
-    discoveryId.value = result.discovery_id
     candidates.value = result.items
     selected.value = eligible.value.map((c) => c.model_id_at_provider)
     if (result.error_code) {

@@ -29,8 +29,5 @@ export function invocationConfigurationError(
 export function invocationTargets(
   model: Pick<Model, 'supported_invocation_apis' | 'custom_invocation_apis'>,
 ) {
-  return [
-    ...model.supported_invocation_apis.map((invocation_api) => ({ invocation_api, path: '' })),
-    ...model.custom_invocation_apis,
-  ]
+  return model.custom_invocation_apis
 }

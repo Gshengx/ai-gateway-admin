@@ -34,6 +34,7 @@
             >
               <t-tree
                 v-if="treeData.length"
+                ref="departmentTreeRef"
                 class="dept-tree"
                 :data="treeData"
                 lazy
@@ -43,6 +44,7 @@
                 activable
                 :actived="activedKeys"
                 :expanded="treeExpandedKeys"
+                :transition="false"
                 :draggable="canWriteUsers"
                 :allow-drop="allowDrop"
                 hover
@@ -414,6 +416,7 @@ import {
   type PaginationProps,
   type PrimaryTableCol,
   type TreeNodeModel,
+  type TreeInstanceFunctions,
   type TreeOptionData,
 } from 'tdesign-vue-next'
 
@@ -435,6 +438,7 @@ import {
   disableUserApi,
   enableUserApi,
   getDepartmentDeletePreviewApi,
+  getDepartmentDetailApi,
   getDepartmentListApi,
   getRoleOptionsApi,
   getUserRoleOptionsApi,
@@ -564,7 +568,9 @@ function buildTree(items: DepartmentItem[]): TreeDataNode[] {
 
 const lazyTree = ref<TreeDataNode[]>([])
 const searchTree = ref<TreeDataNode[]>([])
+const departmentTreeRef = ref<TreeInstanceFunctions<TreeDataNode> | null>(null)
 const departmentChildrenInFlight = new Map<string, Promise<TreeDataNode[]>>()
+const departmentBranchVersions = new Map<string, number>()
 let departmentSession = 0
 let searchVersion = 0
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -596,13 +602,18 @@ function loadDepartmentChildren(node: Pick<TreeNodeModel, 'value'>): Promise<Tre
   const session = departmentSession
   const parent = findTreeNode(lazyTree.value, String(node.value))
   if (!parent) return Promise.resolve([])
+  const version = departmentBranchVersions.get(parent.id) ?? 0
   const inFlight = departmentChildrenInFlight.get(parent.id)
   if (inFlight) return inFlight
   if (Array.isArray(parent.children)) return Promise.resolve(parent.children)
   const request = (async () => {
     try {
       const result = await getDepartmentListApi({ parent_id: parent.id })
-      if (session !== departmentSession) return []
+      if (
+        session !== departmentSession ||
+        version !== (departmentBranchVersions.get(parent.id) ?? 0)
+      )
+        return []
       const children = departmentNodes(result.items, parent.path)
       const attach = (nodes: TreeDataNode[]): boolean => {
         for (const item of nodes) {
@@ -820,7 +831,19 @@ async function onRefreshDepartments() {
   if (departmentRefreshing.value) return
   departmentRefreshing.value = true
   try {
-    await fetchDepartments()
+    const loadedIds: string[] = []
+    const collectLoaded = (nodes: TreeDataNode[]) => {
+      nodes.forEach((node) => {
+        if (Array.isArray(node.children)) {
+          loadedIds.push(node.id)
+          collectLoaded(node.children)
+        }
+      })
+    }
+    collectLoaded(lazyTree.value)
+    await refreshDepartmentBranch(null)
+    for (const id of loadedIds) await refreshDepartmentBranch(id)
+    if (isDepartmentSearching.value) searchDepartments()
     if (
       selectedDepartmentId.value &&
       !departments.value.some((department) => department.id === selectedDepartmentId.value)
@@ -990,6 +1013,72 @@ function findTreeNode(nodes: TreeDataNode[], id: string): TreeDataNode | undefin
   return undefined
 }
 
+/** Refresh one sibling list while retaining loaded descendants and their expanded state. */
+async function refreshDepartmentBranch(parentId: string | null) {
+  const key = parentId ?? ''
+  const version = (departmentBranchVersions.get(key) ?? 0) + 1
+  departmentBranchVersions.set(key, version)
+  departmentChildrenInFlight.delete(key)
+  const session = departmentSession
+  const parent = parentId ? findTreeNode(lazyTree.value, parentId) : undefined
+  if (parentId && !parent) return
+  const previous = parent ? (Array.isArray(parent.children) ? parent.children : []) : lazyTree.value
+  const result = await getDepartmentListApi(parentId ? { parent_id: parentId } : {})
+  if (session !== departmentSession || departmentBranchVersions.get(key) !== version) return
+  const oldById = new Map(previous.map((node) => [node.id, node]))
+  const next = departmentNodes(result.items, parent?.path)
+  const updatePaths = (node: TreeDataNode) => {
+    if (Array.isArray(node.children)) {
+      node.children.forEach((child) => {
+        child.path = `${node.path}/${child.name}`
+        updatePaths(child)
+      })
+    }
+  }
+  next.forEach((node) => {
+    const old = oldById.get(node.id)
+    if (node.has_children && old && Array.isArray(old.children)) node.children = old.children
+    updatePaths(node)
+  })
+  const removed = previous.filter((node) => !next.some((item) => item.id === node.id))
+  const removedIds = new Set<string>()
+  const collectRemoved = (node: TreeDataNode) => {
+    removedIds.add(node.id)
+    if (Array.isArray(node.children)) node.children.forEach(collectRemoved)
+  }
+  removed.forEach(collectRemoved)
+  departments.value = departments.value.filter((item) => !removedIds.has(item.id))
+  expandedKeys.value = expandedKeys.value.filter((id) => !removedIds.has(String(id)))
+  mergeDepartments(result.items)
+  if (parent) {
+    parent.children = next
+    parent.has_children = next.length > 0
+    if (!isDepartmentSearching.value) {
+      const treeParent = departmentTreeRef.value?.getItem(parent.id)
+      const children = treeParent?.getChildren(false)
+      if (Array.isArray(children)) {
+        const nextIds = new Set(next.map((node) => node.id))
+        children
+          .filter((child) => !nextIds.has(String(child.value)))
+          .forEach((child) => child.remove())
+      }
+      next.forEach((node, index) => {
+        if (departmentTreeRef.value?.getItem(node.id)) return
+        const following = next
+          .slice(index + 1)
+          .find((item) => departmentTreeRef.value?.getItem(item.id))
+        if (following) departmentTreeRef.value?.getItem(following.id)?.insertBefore(node)
+        else treeParent?.appendData(node)
+      })
+    }
+    const item = departmentMap.value.get(parent.id)
+    if (item) mergeDepartments([{ ...item, has_children: parent.has_children }])
+  } else {
+    lazyTree.value = next
+    defaultDepartmentId.value = result.scope_root_id ?? ''
+  }
+}
+
 function subtreeHeight(node: TreeDataNode): number {
   if (!Array.isArray(node.children) || !node.children.length) return 1
   return 1 + Math.max(...node.children.map(subtreeHeight))
@@ -1031,8 +1120,6 @@ async function onTreeDrop(context: TreeDropContext) {
   const placement: DepartmentPlacement =
     context.dropPosition === 0 ? 'inside' : context.dropPosition < 0 ? 'before' : 'after'
   const parentId = placement === 'inside' ? drop.id : drop.parent_id
-  // 组件内部会先行移动节点，这里按后端数据重建树恢复，确认后再提交
-  await fetchDepartments()
   if (!parentId) return
   try {
     await placeDepartmentApi(drag.id, {
@@ -1041,9 +1128,13 @@ async function onTreeDrop(context: TreeDropContext) {
       anchor_id: placement === 'inside' ? undefined : drop.id,
     })
     MessagePlugin.success(t('users.departments.moveSuccess'))
-    await refreshAll()
   } catch {
     // Request errors are handled by the interceptor.
+  } finally {
+    const affected = [...new Set([drag.parent_id, parentId].filter((id): id is string => !!id))]
+    for (const id of affected) await refreshDepartmentBranch(id)
+    if (isDepartmentSearching.value) searchDepartments()
+    await fetchUsers()
   }
 }
 
@@ -1119,7 +1210,9 @@ async function onDeleteDepartment(node: TreeDataNode) {
       if (selected && (selected === node.id || isDescendantOf(selected, node.id))) {
         selectedDepartmentId.value = ''
       }
-      await refreshAll()
+      if (node.parent_id) await refreshDepartmentBranch(node.parent_id)
+      if (isDepartmentSearching.value) searchDepartments()
+      await fetchUsers()
     },
   })
 }
@@ -1145,8 +1238,8 @@ function updateDepartmentNode(id: string, payload: UpdateDepartmentPayload) {
       updatePaths(node, departmentPath(id))
     }
   }
-  lazyTree.value = [...lazyTree.value]
-  searchTree.value = [...searchTree.value]
+  const visibleNode = findTreeNode(treeData.value, id)
+  if (visibleNode) departmentTreeRef.value?.getItem(id)?.setData(visibleNode)
   tableData.value.forEach((user) => {
     if (user.department?.id === id) {
       user.department.name = payload.name
@@ -1168,7 +1261,13 @@ async function onDepartmentSubmit(payload: CreateDepartmentPayload | UpdateDepar
       MessagePlugin.success(t('users.departments.updateSuccess'))
     }
     deptDialog.visible = false
-    if (deptDialog.mode === 'create') await refreshAll()
+    if (deptDialog.mode === 'create' && deptDialog.parent) {
+      await refreshDepartmentBranch(deptDialog.parent.id)
+      if (!expandedKeys.value.includes(deptDialog.parent.id)) {
+        expandedKeys.value = [...expandedKeys.value, deptDialog.parent.id]
+      }
+      if (isDepartmentSearching.value) searchDepartments()
+    }
   } catch {
     // 错误已由请求拦截器统一提示
   } finally {
@@ -1235,30 +1334,43 @@ watch(detailVisible, (visible) => {
   void router.replace({ query })
 })
 
-async function refreshDepartmentNode(id: string) {
-  const department = departmentMap.value.get(id)
-  if (!department) return
+async function refreshDepartmentNodes(ids: string[]) {
   const session = departmentSession
-  const result = await getDepartmentListApi({ parent_id: department.parent_id ?? undefined })
+  const affected = new Map<string, string | null>()
+  for (const id of ids.filter(Boolean)) {
+    let current: string | null = id
+    while (current && !affected.has(current)) {
+      const cached: DepartmentItem | undefined = departmentMap.value.get(current)
+      const parentId: string | null = cached
+        ? cached.parent_id
+        : (await getDepartmentDetailApi(current)).parent_id
+      if (session !== departmentSession) return
+      affected.set(current, parentId)
+      current = parentId
+    }
+  }
+  const parents = [...new Set(affected.values())]
+  const results = await Promise.all(
+    parents.map((parentId) => getDepartmentListApi(parentId ? { parent_id: parentId } : {})),
+  )
   if (session !== departmentSession) return
-  const updated = result.items.find((item) => item.id === id)
-  if (!updated) return
-  mergeDepartments([updated])
-  const updateCount = (nodes: TreeDataNode[]): TreeDataNode[] =>
-    nodes.map((node) => ({
-      ...node,
-      ...(node.id === id ? { user_count: updated.user_count } : {}),
-      ...(Array.isArray(node.children) ? { children: updateCount(node.children) } : {}),
-    }))
-  lazyTree.value = updateCount(lazyTree.value)
-  searchTree.value = updateCount(searchTree.value)
+  const updated = results.flatMap((result) => result.items).filter((item) => affected.has(item.id))
+  mergeDepartments(updated)
+  for (const item of updated) {
+    for (const tree of [lazyTree.value, searchTree.value]) {
+      const node = findTreeNode(tree, item.id)
+      if (node) node.user_count = item.user_count
+    }
+    const visibleNode = findTreeNode(treeData.value, item.id)
+    if (visibleNode) departmentTreeRef.value?.getItem(item.id)?.setData(visibleNode)
+  }
 }
 
 async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
   if (submitting.value) return
   submitting.value = true
   const creating = drawerMode.value === 'create'
-  const departmentId = selectedDepartmentId.value
+  const departmentIds = [payload.department_id ?? '', editingUser.value?.department?.id ?? '']
   try {
     if (creating) {
       await createUserApi(payload as CreateUserPayload)
@@ -1268,11 +1380,7 @@ async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
       MessagePlugin.success(t('users.updateSuccess'))
     }
     drawerVisible.value = false
-    if (creating) {
-      await Promise.all([refreshDepartmentNode(departmentId), fetchUsers()])
-    } else {
-      await refreshAll()
-    }
+    await Promise.all([refreshDepartmentNodes(departmentIds), fetchUsers()])
   } catch {
     // Request errors are handled by the interceptor.
   } finally {
@@ -1445,10 +1553,7 @@ async function openBatchDeleteDialog(ids: string[]) {
       const deleted = new Set(preview.deletable.map((item) => item.user_id))
       selectedKeys.value = selectedKeys.value.filter((id) => !deleted.has(id))
       MessagePlugin.success(t('common.deleteSuccess'))
-      await Promise.all([
-        fetchUsers(),
-        ...[...departmentIds].filter(Boolean).map(refreshDepartmentNode),
-      ])
+      await Promise.all([fetchUsers(), refreshDepartmentNodes([...departmentIds])])
     },
   })
 }

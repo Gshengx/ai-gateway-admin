@@ -23,11 +23,12 @@ export interface SubjectView {
 }
 
 export interface CustomAPIInput {
-  id?: string | null
+  protocol: string
   path: string
 }
 
 export interface InvocationAPI {
+  protocol?: string
   id: string
   api_key: string
   kind: 'STANDARD' | 'CUSTOM'
@@ -329,6 +330,7 @@ export interface ModelTemplate {
   model_id_at_provider: string
   metadata: ModelMetadata
   suggested_invocation_apis: Array<string>
+  suggested_custom_invocation_apis: Array<CustomAPIInput>
   metric_specs: Array<MetricSpec>
   builtin_pricing: BuiltinPricingTemplate | null
   pricing_state: 'AVAILABLE' | 'NEEDS_CONFIGURATION' | 'UNSUPPORTED_RULE' | 'HIDDEN'
@@ -377,6 +379,7 @@ export interface Discovery {
 }
 
 export interface ImportItem {
+  discovery_id?: string
   model_id_at_provider: string
   model_id_at_gateway: string
   supported_invocation_apis?: Array<string>
@@ -386,7 +389,6 @@ export interface ImportItem {
 }
 
 export interface ImportInput {
-  discovery_id?: string | null
   models: Array<ImportItem>
   expected_provider_version: number
 }
@@ -699,6 +701,7 @@ export interface ModelPage {
 }
 
 export interface ModelTemplatePage {
+  protocol_options: Array<{ protocol: string; default_path: string | null }>
   items: Array<ModelTemplate>
   page: number | null
   page_size: number | null
@@ -1137,6 +1140,7 @@ export interface LifecycleEventPage {
 }
 
 export interface InvocationAPIDisplay {
+  protocol?: string
   id: string
   api_key: string
   kind: 'STANDARD' | 'CUSTOM'
@@ -1308,7 +1312,7 @@ export interface ModelAuthorizationSummaryPage {
 }
 
 export interface CustomAPIView {
-  id: string
+  protocol: string
   path: string
 }
 

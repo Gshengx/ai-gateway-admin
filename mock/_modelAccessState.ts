@@ -8,6 +8,7 @@ export const modelAccessState = runtimeState('modelAccessV15', () => ({
   prices: new Map<string, D.PricingVersion[]>(),
   events: new Map<string, D.LifecycleEvent[]>(),
   jobs: new Map<string, D.CheckJob>(),
+  admissionEpochs: new Map<string, string>(),
   jobSnapshots: new Map<string, { model: D.Model; provider: D.Provider }>(),
   discoveries: new Map<string, { data: D.Discovery; connection: number }>(),
   configs: new Map<string, D.BalanceConfig>(),

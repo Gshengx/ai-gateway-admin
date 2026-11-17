@@ -89,6 +89,17 @@ function catalog(p: D.Provider): D.CatalogBinding {
     catalog_price_version_id: null,
   }
 }
+const protocolPaths: Record<string, string> = {
+  CHAT_COMPLETIONS: '/chat/completions',
+  RESPONSES: '/responses',
+  MESSAGES: '/v1/messages',
+  GENERATE_CONTENT: '/models/{model}:generateContent',
+  CONVERSE: '/model/{modelId}/converse',
+  EMBEDDINGS: '/embeddings',
+  IMAGE_GENERATIONS: '/images/generations',
+  AUDIO: '/audio/speech',
+  VIDEO: '/videos',
+}
 const unknownBinding = () =>
   make<D.OfficialModelBinding>('OfficialModelBinding', {
     state: 'UNKNOWN',
@@ -97,29 +108,18 @@ const unknownBinding = () =>
 function invocation(
   model: Pick<D.Model, 'id' | 'supported_invocation_apis' | 'custom_invocation_apis'>,
 ): D.InvocationAPI[] {
-  return [
-    ...model.supported_invocation_apis.map((api_key) =>
-      make<D.InvocationAPI>('InvocationAPI', {
-        id: uuid(`${model.id}-${api_key}`),
-        api_key,
-        kind: 'STANDARD',
-        adapter_key: api_key,
-        adapter_revision: revision,
-        streaming_applicable: true,
-      }),
-    ),
-    ...model.custom_invocation_apis.map((api) =>
-      make<D.InvocationAPI>('InvocationAPI', {
-        id: api.id,
-        api_key: api.id,
-        kind: 'CUSTOM',
-        path: api.path,
-        adapter_key: 'CHAT_COMPLETIONS',
-        adapter_revision: revision,
-        streaming_applicable: true,
-      }),
-    ),
-  ]
+  return model.custom_invocation_apis.map((api) =>
+    make<D.InvocationAPI>('InvocationAPI', {
+      id: uuid(`${model.id}-${api.protocol}`),
+      api_key: api.protocol,
+      protocol: api.protocol,
+      kind: api.protocol === 'CUSTOM_PASSTHROUGH' ? 'CUSTOM' : 'STANDARD',
+      path: api.path,
+      adapter_key: api.protocol,
+      adapter_revision: revision,
+      streaming_applicable: true,
+    }),
+  )
 }
 function specs(apis: string[]): D.MetricSpec[] {
   if (apis.includes('EMBEDDINGS')) return [metric('input_tokens', 'Input tokens')]
@@ -657,8 +657,42 @@ function grantDelta(m: D.Model, input: D.GrantDelta) {
     unchanged_count,
   }
 }
+function validateProtocolPairs(protocols: string[], paths: D.CustomAPIInput[]) {
+  if (
+    protocols.length !== paths.length ||
+    protocols.length > 32 ||
+    new Set(protocols).size !== protocols.length ||
+    paths.some(
+      (item, index) =>
+        item.protocol !== protocols[index] || !/^\/(?!\/)[^\s?#\\]*$/.test(item.path),
+    )
+  )
+    throw issue('VALIDATION_FAILED', 422)
+}
+function currentEpoch(model: D.Model) {
+  store.admissionEpochs ??= new Map<string, string>()
+  if (!store.admissionEpochs.has(model.id)) {
+    const latest = [...store.jobs.values()]
+      .filter((job) => job.physical_model_id === model.id && job.purpose === 'ADMISSION')
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
+    store.admissionEpochs.set(model.id, latest?.admission_epoch ?? uuid(`epoch-${model.id}-1`))
+  }
+  return store.admissionEpochs.get(model.id)!
+}
+function invalidateAdmission(model: D.Model) {
+  store.admissionEpochs ??= new Map<string, string>()
+  store.admissionEpochs.set(model.id, uuid(`epoch-${model.id}-change-${nextSequence('ma-epoch')}`))
+}
+function protocolSignature(provider: string, upstream: string, pairs: D.CustomAPIInput[]) {
+  return JSON.stringify([
+    provider,
+    upstream,
+    pairs.map((pair) => [pair.protocol, pair.path]).sort((a, b) => a[0]!.localeCompare(b[0]!)),
+  ])
+}
 function createModel(input: D.ModelCreate, p: D.Provider, importedDraft = false): D.Model {
   version(input.expected_provider_version, p.version)
+  validateProtocolPairs(input.supported_invocation_apis, input.custom_invocation_apis ?? [])
   const name = normalizeModelId(input.model_id_at_gateway)
   if (
     !validModelId(name) ||
@@ -683,7 +717,7 @@ function createModel(input: D.ModelCreate, p: D.Provider, importedDraft = false)
     model_id_at_provider: input.model_id_at_provider.trim(),
     description: input.description ?? null,
     custom_invocation_apis: (input.custom_invocation_apis ?? []).map((a) => ({
-      id: uuid(`custom-${nextSequence('ma-custom')}`),
+      protocol: a.protocol,
       path: a.path,
     })),
     input_modalities: input.input_modalities ?? [],
@@ -775,7 +809,7 @@ function startJob(
       source.physical_model_id !== m.id ||
       source.purpose !== 'ADMISSION' ||
       source.result !== 'PASS' ||
-      source.base_version !== m.versions.base ||
+      source.admission_epoch !== currentEpoch(m) ||
       source.provider_version !== p.version)
   )
     throw issue('ADMISSION_STALE')
@@ -816,7 +850,7 @@ function startJob(
     base_version: m.versions.base,
     metadata_version: m.versions.metadata,
     provider_version: p.version,
-    admission_epoch: uuid(`${id}-epoch`),
+    admission_epoch: currentEpoch(m),
     created_at,
     deadline_at: new Date(Date.now() + 300000).toISOString(),
     planned_model_calls: display.length,
@@ -997,6 +1031,10 @@ function initialize() {
           model_id_at_gateway: sample.model_id_at_gateway,
           model_id_at_provider: sample.model_id_at_provider,
           supported_invocation_apis: sample.supported_invocation_apis,
+          custom_invocation_apis: sample.supported_invocation_apis.map((protocol) => ({
+            protocol,
+            path: protocolPaths[protocol] ?? '',
+          })),
           expected_provider_version: 1,
           pricing,
           input_modalities: sample.input_modalities,
@@ -1286,9 +1324,17 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     const input = body as D.ModelUpdate
     if (!input.base && !input.metadata && !input.grants && !input.pricing && !input.health)
       throw issue('VALIDATION_FAILED', 422)
+    if (['TESTING', 'PENDING_REVIEW'].includes(m!.status)) throw issue('STATE_CONFLICT')
     if (input.base) {
       version(input.expected_base_version, m!.versions.base)
-      if (m!.status !== 'DRAFT') throw issue('STATE_CONFLICT')
+      if (!['DRAFT', 'RETIRED'].includes(m!.status)) throw issue('STATE_CONFLICT')
+      validateProtocolPairs(input.base.supported_invocation_apis, input.base.custom_invocation_apis)
+      if (
+        m!.status === 'RETIRED' &&
+        (input.base.provider_id !== m!.provider_id ||
+          input.base.model_id_at_provider !== m!.model_id_at_provider)
+      )
+        throw issue('STATE_CONFLICT')
       if (
         !validModelId(input.base.model_id_at_gateway) ||
         store.models.some(
@@ -1298,10 +1344,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
         )
       )
         throw issue('NAME_CONFLICT')
-      if (
-        !input.base.supported_invocation_apis.length &&
-        !input.base.custom_invocation_apis?.length
-      )
+      if (m!.status === 'RETIRED' && !input.base.supported_invocation_apis.length)
         throw issue('VALIDATION_FAILED', 422)
     }
     if (input.metadata) {
@@ -1315,11 +1358,20 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     if (input.pricing) checkPrice(input.pricing, { ...m!, ...input.base })
     // All domain checks precede mutation, preserving M05 atomicity.
     if (input.base) {
+      if (
+        protocolSignature(m!.provider_id, m!.model_id_at_provider, m!.custom_invocation_apis) !==
+        protocolSignature(
+          input.base.provider_id,
+          input.base.model_id_at_provider,
+          input.base.custom_invocation_apis,
+        )
+      )
+        invalidateAdmission(m!)
       const { custom_invocation_apis, ...base } = input.base
       Object.assign(m!, base, {
         model_id_at_gateway: normalizeModelId(base.model_id_at_gateway),
         custom_invocation_apis: (custom_invocation_apis ?? []).map((a) => ({
-          id: a.id ?? uuid(`custom-${nextSequence('ma-custom')}`),
+          protocol: a.protocol,
           path: a.path,
         })),
       })
@@ -1383,6 +1435,10 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
           official_model_binding: unknownBinding(),
         }),
         suggested_invocation_apis: sample.supported_invocation_apis,
+        suggested_custom_invocation_apis: sample.supported_invocation_apis.map((protocol) => ({
+          protocol,
+          path: protocolPaths[protocol] ?? '',
+        })),
         metric_specs: metrics,
         builtin_pricing: null,
         pricing_state: 'NEEDS_CONFIGURATION',
@@ -1395,7 +1451,25 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
         catalog_revision: revision,
       })
     })
-    return { ...page(items, req), catalog_release_id: release, catalog_revision: revision }
+    const allowed =
+      provider?.template_key === 'openai'
+        ? ['CHAT_COMPLETIONS', 'RESPONSES', 'EMBEDDINGS', 'IMAGE_GENERATIONS', 'AUDIO', 'VIDEO']
+        : provider?.template_key === 'anthropic'
+          ? ['MESSAGES']
+          : provider
+            ? templateFor(provider).suggested_invocation_apis
+            : []
+    const protocols = provider ? [...new Set([...allowed, 'CUSTOM_PASSTHROUGH'])] : []
+    const protocol_options = protocols.map((protocol) => ({
+      protocol,
+      default_path: protocolPaths[protocol] ?? null,
+    }))
+    return {
+      ...page(items, req),
+      protocol_options,
+      catalog_release_id: release,
+      catalog_revision: revision,
+    }
   }
   if (op === 'M09')
     return page(
@@ -1435,7 +1509,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     if (query.exclude_model_id) {
       const excluded = store.models.find((m) => m.id === query.exclude_model_id)
       if (!excluded) throw issue('NOT_FOUND', 404)
-      if (excluded.status !== 'DRAFT') throw issue('STATE_CONFLICT')
+      if (!['DRAFT', 'RETIRED'].includes(excluded.status)) throw issue('STATE_CONFLICT')
     }
     if (!validModelId(name)) throw issue('VALIDATION_FAILED', 422)
     return {
@@ -1459,7 +1533,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
       throw issue('VALIDATION_FAILED', 422)
     if (
       !apis.length &&
-      !(model?.custom_invocation_apis.length ?? queryList(req, 'custom_api_paths').length)
+      !(model?.custom_invocation_apis.length ?? queryList(req, 'upstream_paths').length)
     )
       throw issue('VALIDATION_FAILED', 422)
     const prepared = preparation(
@@ -1503,12 +1577,14 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
         jobs.map((j) => ({ ...j, counts: j.summary })),
         req,
       )
-    if (op === 'C04' || op === 'H03') return jobs[0] ?? null
+    if (op === 'C04') return jobs.find((job) => job.admission_epoch === currentEpoch(m!)) ?? null
+    if (op === 'H03') return jobs[0] ?? null
     const job = jobs.find((j) => j.id === ids.test_id)
     if (!job) throw issue('NOT_FOUND', 404)
     return job
   }
   if (op === 'H04') {
+    if (['TESTING', 'PENDING_REVIEW'].includes(m!.status)) throw issue('STATE_CONFLICT')
     version(body.expected_health_config_version, m!.versions.health)
     m!.health = {
       auto_health_check: Boolean(body.auto_health_check),
@@ -2040,26 +2116,26 @@ function discoveryOperation(
   if (op === 'D02') {
     const b = req.body as unknown as D.ImportInput
     version(b.expected_provider_version, p.version)
-    if (b.discovery_id) {
-      const d = store.discoveries.get(b.discovery_id)
-      if (!d || Date.parse(d.data.expires_at) < Date.now()) throw issue('DISCOVERY_EXPIRED', 410)
-      if (d.connection !== p.connection_revision) throw issue('DISCOVERY_STALE')
-    }
     const items = b.models.map((input, input_index): D.ImportBatchItem => {
-      const existing = store.models.find(
-        (m) => m.provider_id === p.id && m.model_id_at_provider === input.model_id_at_provider,
-      )
-      if (existing)
-        return {
-          input_index,
-          physical_model_id: existing.id,
-          status: 'SKIPPED_EXISTING',
-          code: 'OK',
-          params: {},
-          model: { ...existing, physical_model_id: existing.id },
-        }
       try {
         if (input.pricing != null) throw issue('VALIDATION_FAILED', 422)
+        if (
+          input.discovery_id !== undefined &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            input.discovery_id,
+          )
+        )
+          throw issue('VALIDATION_FAILED', 422, {
+            reason_code: 'INVALID_DISCOVERY_ID',
+            fields: { discovery_id: 'INVALID' },
+          })
+        if (
+          (input.supported_invocation_apis === undefined) !==
+          (input.custom_invocation_apis === undefined)
+        )
+          throw issue('VALIDATION_FAILED', 422)
+        if (input.supported_invocation_apis && input.custom_invocation_apis)
+          validateProtocolPairs(input.supported_invocation_apis, input.custom_invocation_apis)
         if (
           b.models.filter(
             (x) =>
@@ -2068,13 +2144,60 @@ function discoveryOperation(
           ).length > 1
         )
           throw issue('NAME_CONFLICT')
-        const metadata = b.discovery_id
+        const discovery = input.discovery_id ? store.discoveries.get(input.discovery_id) : undefined
+        if (input.discovery_id && (!discovery || discovery.data.provider_id !== p.id))
+          throw issue('NOT_FOUND', 404, {
+            reason_code: 'DISCOVERY_NOT_AVAILABLE',
+            fields: { discovery_id: 'NOT_FOUND' },
+          })
+        if (discovery && Date.parse(discovery.data.expires_at) < Date.now())
+          throw issue('DISCOVERY_EXPIRED', 410, {
+            reason_code: 'DISCOVERY_EXPIRED',
+            fields: { discovery_id: 'EXPIRED' },
+          })
+        if (discovery && discovery.connection !== p.connection_revision)
+          throw issue('VERSION_CONFLICT', 409, {
+            reason_code: 'DISCOVERY_PROVIDER_VERSION_MISMATCH',
+            fields: { discovery_id: 'STALE' },
+          })
+        if (
+          discovery &&
+          !discovery.data.items.some(
+            (item) => item.model_id_at_provider === input.model_id_at_provider,
+          )
+        )
+          throw issue('VALIDATION_FAILED', 422, {
+            reason_code: 'MODEL_NOT_IN_DISCOVERY',
+            fields: { model_id_at_provider: 'NOT_FOUND' },
+          })
+        const existing = store.models.find(
+          (m) => m.provider_id === p.id && m.model_id_at_provider === input.model_id_at_provider,
+        )
+        if (existing)
+          return {
+            input_index,
+            physical_model_id: existing.id,
+            status: 'SKIPPED_EXISTING',
+            code: 'OK',
+            params: {},
+            model: { ...existing, physical_model_id: existing.id },
+          }
+        const metadata = input.discovery_id
           ? store.discoveries
-              .get(b.discovery_id)
+              .get(input.discovery_id)
               ?.data.items.find(
                 (candidate) => candidate.model_id_at_provider === input.model_id_at_provider,
               )?.metadata
           : undefined
+        const sample =
+          discovery &&
+          modelCatalog.find(
+            (item) =>
+              item.template_key === p.template_key &&
+              item.model_id_at_provider === input.model_id_at_provider,
+          )
+        const suggested =
+          sample?.supported_invocation_apis.filter((protocol) => protocolPaths[protocol]) ?? []
         const model = createModel(
           {
             ...input,
@@ -2091,8 +2214,10 @@ function discoveryOperation(
             provider_id: p.id,
             pricing: null,
             expected_provider_version: b.expected_provider_version,
-            supported_invocation_apis:
-              input.supported_invocation_apis ?? templateFor(p).suggested_invocation_apis,
+            supported_invocation_apis: input.supported_invocation_apis ?? suggested,
+            custom_invocation_apis:
+              input.custom_invocation_apis ??
+              suggested.map((protocol) => ({ protocol, path: protocolPaths[protocol]! })),
           },
           p,
           true,
@@ -2111,7 +2236,7 @@ function discoveryOperation(
           physical_model_id: null,
           status: 'REJECTED',
           code: (e as Error).message,
-          params: {},
+          params: (e as Error & { params?: D.ErrorParams }).params ?? {},
           model: null,
         }
       }
@@ -2154,9 +2279,15 @@ function discoveryOperation(
           JSON.stringify(custom.map((a) => a.path)) !==
             JSON.stringify(m.custom_invocation_apis.map((a) => a.path))
         if (changed) {
+          validateProtocolPairs(row.supported_invocation_apis, custom)
+          if (
+            protocolSignature(m.provider_id, m.model_id_at_provider, m.custom_invocation_apis) !==
+            protocolSignature(m.provider_id, m.model_id_at_provider, custom)
+          )
+            invalidateAdmission(m)
           m.supported_invocation_apis = row.supported_invocation_apis
           m.custom_invocation_apis = custom.map((a) => ({
-            id: a.id ?? uuid(`custom-${nextSequence('ma-custom')}`),
+            protocol: a.protocol,
             path: a.path,
           }))
           m.invocation_apis = invocation(m)

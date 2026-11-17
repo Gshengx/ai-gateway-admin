@@ -21,6 +21,7 @@ import { normalizeModelId } from '@/utils/modelContract'
 
 // View models describe the existing controls; only explicit new-contract DTOs cross HTTP.
 const balanceAttempts = new Map<string, string>()
+const importAttempts = new Map<string, { signature: string; key: string }>()
 const modelVersions = new Map<string, D.ModelVersions>()
 const modelFacts = new Map<string, D.Model>()
 const providerFacts = new Map<string, D.Provider>()
@@ -69,7 +70,7 @@ export function modelView(m: D.Model): Model {
     ...m,
     description: 'description' in m ? (m.description ?? '') : '',
     custom_invocation_apis: ('custom_invocation_apis' in m ? m.custom_invocation_apis : []).map(
-      (a) => ({ invocation_api: a.id, path: a.path }),
+      (a) => ({ invocation_api: a.protocol, path: a.path }),
     ),
     ...('health' in m ? m.health : {}),
     admission_valid: m.status === 'PENDING_REVIEW',
@@ -210,7 +211,7 @@ function baseInput(m: Model): D.ModelIdentityInput & D.ModelMetadataInput {
     model_id_at_provider: m.model_id_at_provider,
     supported_invocation_apis: m.supported_invocation_apis,
     custom_invocation_apis: m.custom_invocation_apis.map((a) => ({
-      ...(a.invocation_api ? { id: a.invocation_api } : {}),
+      protocol: a.invocation_api,
       path: a.path,
     })),
     input_modalities: m.input_modalities,
@@ -236,8 +237,8 @@ export function testView(j: D.CheckJob | D.CheckJobSummary): TestRun {
     model_id: j.physical_model_id,
     purpose: j.purpose,
     trigger_type: j.trigger_type,
-    invocation_api: j.invocation_apis[0]?.api_key ?? '',
-    invocation_apis: j.invocation_apis.map((a) => a.api_key),
+    invocation_api: j.invocation_apis[0]?.protocol ?? j.invocation_apis[0]?.api_key ?? '',
+    invocation_apis: j.invocation_apis.map((a) => a.protocol ?? a.api_key),
     status,
     counts: {
       passed_items: counts.passed_items,
@@ -251,7 +252,7 @@ export function testView(j: D.CheckJob | D.CheckJobSummary): TestRun {
     checks:
       'items' in j
         ? j.items.map((i) => ({
-            invocation_api: i.invocation_api.api_key,
+            invocation_api: i.invocation_api.protocol ?? i.invocation_api.api_key,
             upstream_path: i.invocation_api.path ?? undefined,
             key: i.check_type === 'MODEL_REQUEST' ? 'CONNECTIVITY' : i.check_type,
             status: (
@@ -285,18 +286,50 @@ async function facts(id: string): Promise<D.Model> {
   modelFacts.set(id, m)
   return m
 }
+function modelTemplates(providerId: string, upstreamId: string, config?: RequestConfig) {
+  return api.M08({
+    params: {
+      provider_id: providerId,
+      model_id_at_provider: upstreamId || undefined,
+      paginate: false,
+    },
+    ...config,
+  })
+}
+function templateMetadata(
+  result: Awaited<ReturnType<typeof api.M08>>,
+  upstreamId: string,
+): Partial<Model> {
+  const found = result.items.find((m) => m.model_id_at_provider === upstreamId)
+  if (!found) return {}
+  return {
+    ...found.metadata,
+    description: found.metadata.description ?? '',
+    supported_invocation_apis: [...(found.suggested_invocation_apis ?? [])],
+    custom_invocation_apis: (found.suggested_custom_invocation_apis ?? []).map((a) => ({
+      invocation_api: a.protocol,
+      path: a.path,
+    })),
+  }
+}
 export const transport = {
   tags: (q = '', config?: RequestConfig) => api.M10({ params: { q, paginate: false }, ...config }),
-  metadata: async (provider_id: string, model_id_at_provider: string, config?: RequestConfig) => {
-    const result = await api.M08({
-      params: { provider_id, model_id_at_provider, paginate: false },
-      ...config,
-    })
-    const found = result.items.find((m) => m.model_id_at_provider === model_id_at_provider)
-    return {
-      ...(found ? { ...found.metadata, description: found.metadata.description ?? '' } : {}),
-      supported_invocation_apis: [...(found?.suggested_invocation_apis ?? [])],
-    }
+  protocolOptions: async (
+    provider_id: string,
+    model_id_at_provider: string,
+    config?: RequestConfig,
+  ) => (await modelTemplates(provider_id, model_id_at_provider, config)).protocol_options,
+  metadata: async (
+    provider_id: string,
+    model_id_at_provider: string,
+    config?: RequestConfig,
+  ): Promise<Partial<Model>> => {
+    const result = await modelTemplates(provider_id, model_id_at_provider, config)
+    return templateMetadata(result, model_id_at_provider)
+  },
+  metadataWithOptions: async (providerId: string, upstreamId: string, config?: RequestConfig) => {
+    const result = await modelTemplates(providerId, upstreamId, config)
+    return { metadata: templateMetadata(result, upstreamId), options: result.protocol_options }
   },
   prepare: async (m: Model, config?: RequestConfig) => {
     const key = preparedKey(m.provider_id, m.model_id_at_provider)
@@ -305,7 +338,7 @@ export const transport = {
       model_id_at_provider: m.model_id_at_provider,
     })
     m.supported_invocation_apis.forEach((a) => params.append('supported_invocation_apis', a))
-    m.custom_invocation_apis.forEach((a) => params.append('custom_api_paths', a.path))
+    m.custom_invocation_apis.forEach((a) => params.append('upstream_paths', a.path))
     const result = await api.M13({ params, ...config })
     preparations.set(key, result)
     return result
@@ -341,7 +374,7 @@ export const transport = {
       model.supported_invocation_apis.forEach((api) =>
         params.append('supported_invocation_apis', api),
       )
-      model.custom_invocation_apis.forEach((api) => params.append('custom_api_paths', api.path))
+      model.custom_invocation_apis.forEach((api) => params.append('upstream_paths', api.path))
     }
     const result = await api.M14({ ...config, params })
     return {
@@ -544,6 +577,7 @@ export const transport = {
       discovery_id: result.id,
       items: result.items.map((c): Candidate => ({
         ...c.metadata,
+        discovery_id: result.id,
         model_id_at_provider: c.model_id_at_provider,
         model_id_at_gateway: c.suggested_gateway_name,
         display_name: c.provider_model_name ?? c.model_id_at_provider,
@@ -553,28 +587,46 @@ export const transport = {
       })),
     }
   },
-  import: async (
-    id: string,
-    discovery_id: string,
-    items: Candidate[],
-    providerVersion: number | undefined,
-  ) => {
+  import: async (id: string, items: Candidate[], providerVersion: number | undefined) => {
     if (!providerVersion) throw new Error('VERSION_CONFLICT')
-    const result = await api.D02(id, {
-      discovery_id: discovery_id || null,
+    const body: D.ImportInput = {
       expected_provider_version: providerVersion,
       models: items.map((c) => ({
+        ...(c.discovery_id ? { discovery_id: c.discovery_id } : {}),
         model_id_at_provider: c.model_id_at_provider,
         model_id_at_gateway: normalizeModelId(c.model_id_at_gateway),
-        supported_invocation_apis: c.supported_invocation_apis,
-        custom_invocation_apis: c.custom_invocation_apis.map((a) => ({ path: a.path })),
+        ...(c.discovery_id ? {} : { supported_invocation_apis: [], custom_invocation_apis: [] }),
       })),
-    })
+    }
+    const signature = JSON.stringify(body)
+    const attempt = importAttempts.get(id)
+    if (attempt && attempt.signature !== signature) throw new Error('OPERATION_RESULT_UNKNOWN')
+    const key = attempt?.key ?? createIdempotencyKey()
+    importAttempts.set(id, { signature, key })
+    let result: D.ImportBatchResult
+    try {
+      result = await api.D02(id, body, { idempotencyKey: key })
+      importAttempts.delete(id)
+    } catch (error) {
+      const failure = error as {
+        code?: string
+        status?: number
+        params?: { result_state?: string }
+      }
+      if (
+        failure.status &&
+        failure.code !== 'OPERATION_RESULT_UNKNOWN' &&
+        failure.params?.result_state !== 'UNCONFIRMED'
+      ) {
+        importAttempts.delete(id)
+      }
+      throw error
+    }
     result.items.forEach((item) => {
       if (item.model) modelVersions.set(item.model.physical_model_id, item.model.versions)
     })
     const models = result.items.flatMap((item) => {
-      if (!item.model) return []
+      if (item.status !== 'CREATED' || !item.model) return []
       const summary = item.model
       const candidate = items[item.input_index]
       const model: Model = {
@@ -584,7 +636,7 @@ export const transport = {
         id: summary.physical_model_id,
         admission_valid: summary.status === 'PENDING_REVIEW',
         custom_invocation_apis: summary.custom_invocation_apis.map((a) => ({
-          invocation_api: a.id,
+          invocation_api: a.protocol,
           path: a.path,
         })),
       }
@@ -606,7 +658,7 @@ export const transport = {
               modelVersions.get(m.id)?.base ?? (await facts(m.id)).versions.base,
             supported_invocation_apis: m.supported_invocation_apis,
             custom_invocation_apis: m.custom_invocation_apis.map((a) => ({
-              id: a.invocation_api || undefined,
+              protocol: a.invocation_api,
               path: a.path,
             })),
           })),

@@ -60,6 +60,9 @@
 .invocation-editor.ma-stack {
   gap: var(--td-comp-margin-m);
   margin-bottom: var(--td-comp-margin-l);
+  padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
+  border-radius: var(--td-radius-medium);
+  background: var(--td-bg-color-secondarycontainer);
 }
 .invocation-editor :deep(.t-input__tips),
 .onboarding-manual :deep(.t-input__tips) {
@@ -340,7 +343,7 @@
 .pricing-condition,
 .pricing-fallback,
 .pricing-cell {
-  background: var(--td-bg-color-page);
+  background: var(--td-bg-color-secondarycontainer);
 }
 .pricing-period {
   background: var(--td-bg-color-container);
@@ -440,7 +443,7 @@
   width: 100%;
 }
 .model-health-card {
-  background: var(--td-bg-color-page);
+  background: var(--td-bg-color-secondarycontainer);
 }
 .provider-alert-threshold :deep(.t-input-number) {
   /* 分组内侧缩进不改变阈值与外层安全等级的半列宽度。 */
@@ -530,33 +533,47 @@
 /* Compact onboarding card follows the confirmed reference; business fields remain unchanged. */
 .onboarding-model-card {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
 }
-.onboarding-model-card__name,
-.onboarding-model-card__metadata {
+.onboarding-model-card__configuration {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--td-comp-margin-s);
+  padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
+  border-radius: var(--td-radius-medium);
+  background: var(--td-bg-color-secondarycontainer);
+}
+.onboarding-model-card__name {
+  grid-column: 1;
+}
+.onboarding-model-card__metadata {
+  grid-column: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .onboarding-model-card__name {
-  font-weight: var(--td-font-weight-400);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: var(--td-font-title-small);
 }
 .onboarding-model-card__form {
-  grid-column: 1;
-  grid-row: 4;
   min-width: 0;
 }
 .onboarding-model-card__status {
   grid-column: 2;
-  grid-row: 4;
+  grid-row: 1 / 4;
+  align-self: center;
   justify-self: end;
-  padding-top: var(--td-comp-paddingTB-l);
 }
 .onboarding-model-card :deep(.invocation-editor.ma-stack) {
   margin-bottom: 0;
   gap: var(--td-comp-margin-s);
+  padding: 0;
+  background: transparent;
 }
 .provider-balance.ma-stack {
   gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
@@ -569,4 +586,42 @@
 }
 .provider-balance .provider-balance-fields {
   row-gap: var(--td-comp-margin-s);
+}
+
+/* Paired protocol/path fields follow the supplied model form reference. */
+.invocation-editor__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--td-comp-size-m);
+  gap: var(--td-comp-margin-l);
+  color: var(--td-text-color-primary);
+  font-size: var(--td-font-size-body-medium);
+  line-height: var(--td-line-height-body-medium);
+}
+.invocation-editor__required::after {
+  content: '*';
+  margin-left: var(--td-comp-margin-xs);
+  color: var(--td-error-color);
+}
+.invocation-editor__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--td-comp-size-m);
+  align-items: start;
+  gap: var(--td-comp-margin-l);
+}
+.invocation-editor__row > .t-button {
+  width: var(--td-comp-size-m);
+  padding: 0;
+}
+.invocation-editor__row :deep(.t-input__wrap) {
+  width: 100%;
+  min-width: 0;
+}
+.invocation-editor__help {
+  margin: 0;
+  color: var(--td-text-color-secondary);
+  font-size: var(--td-font-size-body-small);
+}
+.invocation-editor__actions {
+  display: flex;
+  justify-content: flex-end;
 }
