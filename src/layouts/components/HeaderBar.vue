@@ -4,8 +4,12 @@
       <t-button variant="text" shape="square" @click="emit('toggle')">
         <t-icon :name="collapsed ? 'chevron-right-double' : 'chevron-left-double'" />
       </t-button>
-      <t-breadcrumb>
-        <t-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
+      <t-breadcrumb class="header-bar__breadcrumbs">
+        <t-breadcrumb-item
+          v-for="item in breadcrumbs"
+          :key="item.path"
+          :title="item.titleKey ? t(item.titleKey) : item.title"
+        >
           {{ item.titleKey ? t(item.titleKey) : item.title }}
         </t-breadcrumb-item>
       </t-breadcrumb>
@@ -23,7 +27,11 @@
       <t-dropdown trigger="click" :options="userOptions" @click="onUserAction">
         <t-button variant="text" class="header-bar__user">
           <t-icon name="user-circle" class="header-bar__user-icon" />
-          <span>{{ userLabel(userStore.userInfo?.name, userStore.userInfo?.username) }}</span>
+          <span
+            class="header-bar__username"
+            :title="userLabel(userStore.userInfo?.name, userStore.userInfo?.username)"
+            >{{ userLabel(userStore.userInfo?.name, userStore.userInfo?.username) }}</span
+          >
           <t-icon name="chevron-down" class="header-bar__user-arrow" />
         </t-button>
       </t-dropdown>
@@ -156,36 +164,71 @@ onMounted(loadLocales)
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--td-comp-margin-m);
   height: 100%;
   padding: 0 var(--td-comp-paddingLR-xl);
 }
 
 .header-bar__left {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: var(--td-comp-margin-m);
 }
 
+.header-bar__breadcrumbs {
+  /* 从零宽度参与分配，避免面包屑文本抬高左区的固有最小宽度。 */
+  width: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header-bar__breadcrumbs :deep(.t-breadcrumb__item),
+.header-bar__breadcrumbs :deep(.t-breadcrumb__item > *),
+.header-bar__breadcrumbs :deep(.t-breadcrumb__inner) {
+  min-width: 0;
+}
+
+.header-bar__breadcrumbs :deep(.t-breadcrumb__separator) {
+  flex-shrink: 0;
+}
+
 .header-bar__right {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: var(--td-comp-margin-m);
 }
 
 .header-bar__language {
   width: 160px;
+  flex-shrink: 0;
+}
+
+.header-bar__user {
+  min-width: 0;
 }
 
 .header-bar__user :deep(.t-button__text) {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+}
+
+.header-bar__username {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-bar__user-icon {
+  flex-shrink: 0;
   margin-right: var(--td-comp-margin-xs);
 }
 
 .header-bar__user-arrow {
+  flex-shrink: 0;
   margin-left: var(--td-comp-margin-xs);
 }
 </style>
