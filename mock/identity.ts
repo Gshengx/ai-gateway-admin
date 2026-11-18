@@ -1,5 +1,6 @@
+import { accessibleModelCount } from './modelAccess'
 import { runtimeState, nextSequence, directory, apiKeys, preferencesFor } from './_runtime'
-import { userProjects } from './_projects'
+import { removeProjectMember, userProjects, wouldRemoveAllProjectAdmins } from './_projects'
 import { mockAccounts, mockRoles } from './_accounts'
 import { CAPABILITIES, CAPABILITY_NAMES } from './_capabilities'
 import { getPasswordRules } from './settings'
@@ -53,6 +54,7 @@ interface MockRole {
 }
 
 interface MockUser {
+  is_initial_admin: boolean
   id: string
   username: string
   display_name: string
@@ -346,6 +348,7 @@ function buildUsers(): MockUser[] {
     return {
       id: `u-${String(index + 1).padStart(4, '0')}`,
       username,
+      is_initial_admin: isAdmin,
       display_name: isAdmin ? '陈知远' : `${surname}${given}`,
       // 每 9 条留一个空邮箱，覆盖 email 为 null 的展示分支
       email: isAdmin
@@ -369,6 +372,9 @@ function buildUsers(): MockUser[] {
 }
 
 const users = runtimeState('users', buildUsers)
+for (const user of users) {
+  if (typeof user.is_initial_admin !== 'boolean') user.is_initial_admin = user.id === 'u-0001'
+}
 const GROUPS = runtimeState('groups', buildGroups)
 const org = runtimeState('orgVersion', () => ({ value: 1 }))
 
@@ -378,6 +384,7 @@ runtimeState('configuredUsers', () => {
       users.push({
         id: mockId(account.username),
         username: account.username,
+        is_initial_admin: false,
         display_name: account.username,
         email: null,
         phone: null,
@@ -393,6 +400,7 @@ runtimeState('configuredUsers', () => {
 })
 for (const user of users) directory.set(user.username, user)
 function cleanUser(user: MockUser) {
+  removeProjectMember(user.id)
   directory.delete(user.username)
   mockAccounts.delete(user.username)
   revokeUserTokens(user.username)
@@ -630,6 +638,7 @@ function toApiUser(user: MockUser, locale: string) {
   return {
     id: user.id,
     username: user.username,
+    is_initial_admin: user.is_initial_admin,
     display_name: user.display_name,
     email: user.email,
     phone: user.phone,
@@ -754,6 +763,7 @@ function createUser(fields: {
   const user: MockUser = {
     id: nextUserId(),
     username: fields.username,
+    is_initial_admin: false,
     display_name: fields.display_name,
     email: fields.email || null,
     phone: fields.phone || null,
@@ -1062,7 +1072,19 @@ export default auditedMock([
       const locale = requestLocale(req)
       const user = users.find((u) => u.id === pathId(req))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      return success({ user: toApiUser(user, locale), terms: userTermsInfo(user.username) })
+      const account = mockAccounts.get(usernameFromToken(req) ?? '')
+      const capabilities =
+        account?.role === 'super_admin' ? CAPABILITIES : (mockRoles.get(account?.role ?? '') ?? [])
+      const canRead = (resource: string) =>
+        capabilities.some((c) => c.resource_code === resource && c.can_read)
+      return success({
+        user: toApiUser(user, locale),
+        terms: userTermsInfo(user.username),
+        accessible_model_count: canRead('model.permissions') ? accessibleModelCount(user.id) : null,
+        api_key_count: canRead('identity.keys')
+          ? apiKeys.filter((key) => key.user_id === user.id).length
+          : null,
+      })
     },
   },
   {
@@ -1799,6 +1821,9 @@ export default auditedMock([
       if (!userIds.length || userIds.length > 100) {
         return fail('INVALID_ARGUMENT', 'user_ids 数量需为 1-100')
       }
+      if (users.some((user) => user.is_initial_admin && userIds.includes(user.id))) {
+        return fail('INITIAL_ADMIN_PROTECTED', '内置管理员状态不允许修改')
+      }
       let changed = 0
       userIds.forEach((id) => {
         const user = users.find((u) => u.id === id)
@@ -1827,10 +1852,12 @@ export default auditedMock([
       if (!userIds.length || userIds.length > 100) {
         return fail('INVALID_ARGUMENT', 'user_ids 数量需为 1-100')
       }
+      if (users.some((user) => user.is_initial_admin && userIds.includes(user.id))) {
+        return fail('INITIAL_ADMIN_PROTECTED', '内置管理员不允许停用')
+      }
       let changed = 0
       userIds.forEach((id) => {
         const user = users.find((u) => u.id === id)
-        if (user && user.username === 'admin') return
         if (user && user.status !== 'DISABLED') {
           user.status = 'DISABLED'
           revokeUserTokens(user.username)
@@ -1861,10 +1888,19 @@ export default auditedMock([
       if (requested.length !== new Set(userIds).size) return fail('NOT_FOUND', '用户不存在')
       const currentUsername = usernameFromToken(req)
       const excluded = requested
-        .filter((u) => u.username === currentUsername || u.role_id === 'role-super-admin')
+        .filter(
+          (u) =>
+            u.is_initial_admin ||
+            u.username === currentUsername ||
+            u.role_id === 'role-super-admin',
+        )
         .map((u) => ({
           display_name: u.display_name,
-          reason: u.username === currentUsername ? 'SELF_PROTECTED' : 'SUPER_ADMIN_PROTECTED',
+          reason: u.is_initial_admin
+            ? 'INITIAL_ADMIN_PROTECTED'
+            : u.username === currentUsername
+              ? 'SELF_PROTECTED'
+              : 'SUPER_ADMIN_PROTECTED',
           user_id: u.id,
           username: u.username,
         }))
@@ -1876,12 +1912,13 @@ export default auditedMock([
           user_id: u.id,
           username: u.username,
         }))
+      const projectBlocked = wouldRemoveAllProjectAdmins(deletable.map((user) => user.user_id))
       return success({
-        allowed: deletable.length > 0,
+        allowed: deletable.length > 0 && !projectBlocked,
         api_key_count: apiKeys.filter((key) =>
           deletable.some((user) => user.user_id === key.user_id),
         ).length,
-        block_reason: '',
+        block_reason: projectBlocked ? 'EXTERNAL_REFERENCE_BLOCKED' : '',
         deletable,
         dependency_count: 0,
         excluded,
@@ -1907,7 +1944,8 @@ export default auditedMock([
       const requested = users.filter((u) => userIds.includes(u.id))
       if (requested.length !== new Set(userIds).size) return fail('NOT_FOUND', '用户不存在')
       const excludedUsers = requested.filter(
-        (u) => u.username === currentUsername || u.role_id === 'role-super-admin',
+        (u) =>
+          u.is_initial_admin || u.username === currentUsername || u.role_id === 'role-super-admin',
       )
       const deletableUsers = requested.filter((u) => !excludedUsers.includes(u))
       if (!deletableUsers.length) return fail('ACTION_CHANGED', '没有可删除的用户')
@@ -1919,7 +1957,11 @@ export default auditedMock([
       }))
       const excluded = excludedUsers.map((u) => ({
         display_name: u.display_name,
-        reason: u.username === currentUsername ? 'SELF_PROTECTED' : 'SUPER_ADMIN_PROTECTED',
+        reason: u.is_initial_admin
+          ? 'INITIAL_ADMIN_PROTECTED'
+          : u.username === currentUsername
+            ? 'SELF_PROTECTED'
+            : 'SUPER_ADMIN_PROTECTED',
         user_id: u.id,
         username: u.username,
       }))
@@ -1927,6 +1969,8 @@ export default auditedMock([
       if (batchDeleteDigest(deletable, excluded) !== digest) {
         return fail('TARGET_SET_CHANGED', '目标集合已变化，请重新预览')
       }
+      if (wouldRemoveAllProjectAdmins(deletableUsers.map((user) => user.id)))
+        return fail('EXTERNAL_REFERENCE_BLOCKED', '请先转交项目管理员再删除用户')
       const removedKeyCount = apiKeys.filter((key) =>
         deletableUsers.some((u) => u.id === key.user_id),
       ).length
@@ -2114,6 +2158,10 @@ export default auditedMock([
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'reset-password'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
 
+      if (user.is_initial_admin && usernameFromToken(req) !== user.username) {
+        return fail('INITIAL_ADMIN_PROTECTED', '内置管理员仅允许本人重置密码')
+      }
+
       const temporary = `Tmp@${Math.random().toString(36).slice(2, 8)}${Math.floor(
         Math.random() * 90 + 10,
       )}`
@@ -2141,6 +2189,7 @@ export default auditedMock([
       if (!checkToken(req)) return unauthorized()
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'enable'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
+      if (user.is_initial_admin) return fail('INITIAL_ADMIN_PROTECTED', '内置管理员状态不允许修改')
 
       const changed = user.status !== 'ACTIVE'
       user.status = 'ACTIVE'
@@ -2162,7 +2211,7 @@ export default auditedMock([
       if (!checkToken(req)) return unauthorized()
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'disable'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (user.username === 'admin') return fail('FORBIDDEN', '内置管理员不允许停用')
+      if (user.is_initial_admin) return fail('INITIAL_ADMIN_PROTECTED', '内置管理员不允许停用')
 
       const changed = user.status !== 'DISABLED'
       user.status = 'DISABLED'
@@ -2186,12 +2235,17 @@ export default auditedMock([
       const user = users.find((u) => u.id === pathSegmentBefore(req, 'delete-preview'))
       if (!user) return fail('NOT_FOUND', '用户不存在')
       const allowed =
-        user.username !== 'admin' &&
+        !user.is_initial_admin &&
         user.username !== usernameFromToken(req) &&
-        user.role_id !== 'role-super-admin'
+        user.role_id !== 'role-super-admin' &&
+        !wouldRemoveAllProjectAdmins([user.id])
       return success({
         allowed,
-        block_reason: allowed ? '' : '内置管理员不允许删除',
+        block_reason: allowed
+          ? ''
+          : wouldRemoveAllProjectAdmins([user.id])
+            ? 'EXTERNAL_REFERENCE_BLOCKED'
+            : '内置管理员不允许删除',
         dependency_count:
           apiKeys.filter((key) => key.user_id === user.id).length +
           GROUPS.filter((group) => group.member_ids.includes(user.id)).length,
@@ -2213,6 +2267,15 @@ export default auditedMock([
       if (!user) return fail('NOT_FOUND', '用户不存在')
 
       const body = req.body ?? {}
+      if (
+        user.is_initial_admin &&
+        (usernameFromToken(req) !== user.username ||
+          Object.keys(body).some(
+            (key) => key !== 'display_name' && key !== 'email' && key !== 'phone',
+          ))
+      ) {
+        return fail('INITIAL_ADMIN_PROTECTED', '初始管理员仅允许本人修改姓名、手机号和邮箱')
+      }
       const payload = {
         display_name: 'display_name' in body ? str(body.display_name) : user.display_name,
         email: 'email' in body ? str(body.email) : (user.email ?? ''),
@@ -2242,13 +2305,12 @@ export default auditedMock([
 
       const user = users.find((u) => u.id === pathId(req))
       if (!user) return fail('NOT_FOUND', '用户不存在')
-      if (
-        user.username === 'admin' ||
-        user.username === usernameFromToken(req) ||
-        user.role_id === 'role-super-admin'
-      )
+      if (user.is_initial_admin) return fail('INITIAL_ADMIN_PROTECTED', '初始管理员不允许删除')
+      if (user.username === usernameFromToken(req) || user.role_id === 'role-super-admin')
         return fail('FORBIDDEN', '管理员不允许删除')
 
+      if (wouldRemoveAllProjectAdmins([user.id]))
+        return fail('EXTERNAL_REFERENCE_BLOCKED', '请先转交项目管理员再删除用户')
       cleanUser(user)
       // 就地删除，保持 users 数组引用不变（各 mock 路由共享同一实例）
       users.splice(

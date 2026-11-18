@@ -9,7 +9,6 @@
     @close="onClose"
   >
     <t-form
-      :key="formSession"
       autocomplete="off"
       :disabled="submitting || validating"
       ref="formRef"
@@ -72,6 +71,7 @@
       >
         <t-tree-select
           v-model="form.department_id"
+          :disabled="isInitialAdmin"
           :data="departmentTree"
           :tree-props="departmentTreeProps"
           :filter="() => true"
@@ -94,6 +94,7 @@
       <t-form-item :label="t('users.form.role')" name="role_id">
         <t-select
           v-model="form.role_id"
+          :disabled="isInitialAdmin"
           :options="roleSelectOptions"
           :placeholder="t('users.form.rolePlaceholder')"
         />
@@ -128,8 +129,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useTreeBranches } from '@/utils/useTreeBranches'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useUserStore } from '@/stores/modules/user'
 import type { FormInstanceFunctions, FormRules, TreeProps } from 'tdesign-vue-next'
 
 import { getDepartmentDetailApi, getDepartmentListApi } from '@/api/modules/identity'
@@ -166,16 +169,17 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
+const userStore = useUserStore()
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^1[3-9]\d{9}$/
 const USERNAME_RE = /^[A-Za-z0-9._-]{2,128}$/
 
 const isCreate = computed(() => props.mode === 'create')
+const isInitialAdmin = computed(() => !isCreate.value && props.user?.is_initial_admin === true)
 
 const validating = ref(false)
 const formRef = ref<FormInstanceFunctions | null>(null)
-const formSession = ref(0)
 
 function emptyForm(): UserForm {
   return {
@@ -220,6 +224,11 @@ function departmentNodes(items: DepartmentItem[]): DepartmentNode[] {
   })
 }
 
+const departmentBranches = useTreeBranches(lazyDepartments, async (id, signal) => {
+  const result = await getDepartmentListApi({ parent_id: id })
+  return signal.aborted ? [] : departmentNodes(result.items)
+})
+
 const departmentTreeProps = computed<TreeProps>(() => ({
   lazy: true,
   label: (h, nodeModel) => {
@@ -248,34 +257,13 @@ const departmentTreeProps = computed<TreeProps>(() => ({
       text.slice(end),
     ])
   },
-  load: async (node) => {
-    if (departmentKeyword.value) return []
-    const session = departmentSession
-    try {
-      const result = await getDepartmentListApi({ parent_id: String(node.value) })
-      if (session !== departmentSession) return []
-      const children = departmentNodes(result.items)
-      const attach = (nodes: DepartmentNode[]): boolean => {
-        for (const item of nodes) {
-          if (item.value === node.value) {
-            item.children = children
-            return true
-          }
-          if (Array.isArray(item.children) && attach(item.children)) return true
-        }
-        return false
-      }
-      attach(lazyDepartments.value)
-      return children
-    } catch {
-      // Request errors are reported by the request interceptor.
-      return []
-    }
-  },
+  onExpand: departmentBranches.onExpand,
+  icon: departmentBranches.icon,
   expandAll: Boolean(departmentKeyword.value),
 }))
 
 function onDepartmentSearch(value: string) {
+  departmentBranches.invalidate()
   clearTimeout(searchTimer)
   const version = ++searchVersion
   const session = departmentSession
@@ -342,6 +330,7 @@ async function initializeDepartments() {
 }
 
 function resetDepartmentRequests() {
+  departmentBranches.invalidate()
   departmentSearchFocused.value = false
   focusedTextField.value = ''
   departmentSession++
@@ -355,9 +344,11 @@ function resetDepartmentRequests() {
 onBeforeUnmount(resetDepartmentRequests)
 
 function isWeakPassword(password: string): boolean {
-  if (password.length < 8 || password.length > 32) return true
+  const policy = userStore.context.password_rules
+  if (!policy || password.length < policy.min_length || password.length > policy.max_length)
+    return true
   const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length
-  return classes < 3
+  return classes < policy.complexity_categories
 }
 
 const rules = computed<FormRules<UserForm>>(() => ({
@@ -398,7 +389,12 @@ const rules = computed<FormRules<UserForm>>(() => ({
             const text = String(value ?? '')
             return !text || !isWeakPassword(text)
               ? true
-              : { result: false, message: t('users.form.passwordRule') }
+              : {
+                  result: false,
+                  message: userStore.context.password_rules
+                    ? t('users.form.passwordRule', { ...userStore.context.password_rules })
+                    : t('common.loadFailed'),
+                }
           },
         },
       ]
@@ -414,7 +410,6 @@ watch(
   (visible) => {
     resetDepartmentRequests()
     if (!visible) return
-    formSession.value++
     lazyDepartments.value = []
     departmentNames.clear()
     Object.assign(form, emptyForm())
@@ -431,7 +426,6 @@ watch(
       form.department_id = props.defaultDepartmentId
     }
     void initializeDepartments()
-    nextTick(() => formRef.value?.clearValidate())
   },
   { immediate: true },
 )
@@ -464,7 +458,12 @@ async function handleSubmit() {
       })
       return
     }
-    emit('submit', base)
+    emit(
+      'submit',
+      isInitialAdmin.value
+        ? { display_name: base.display_name, email: base.email, phone: base.phone }
+        : base,
+    )
   } finally {
     validating.value = false
   }

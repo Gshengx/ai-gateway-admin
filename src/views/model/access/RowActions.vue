@@ -1,12 +1,10 @@
 <template>
   <div class="ma-actions">
-    <t-link
-      v-for="item in inline"
-      :key="item.label"
-      :theme="item.danger ? 'danger' : 'primary'"
-      @click="item.run"
-      >{{ item.label }}</t-link
-    >
+    <template v-for="item in inline" :key="item.label">
+      <t-link :theme="item.danger ? 'danger' : 'primary'" @click="item.run">
+        {{ item.label }}
+      </t-link>
+    </template>
     <t-dropdown v-if="overflow.length" trigger="click"
       ><t-link theme="primary">{{ t('ma.more') }}<t-icon name="chevron-down" /></t-link
       ><t-dropdown-menu
@@ -28,19 +26,30 @@ import { useUserStore, canWriteResource } from '@/stores/modules/user'
 export interface RowAction {
   label: string
   permission?: string
+  overflow?: boolean
   danger?: boolean
   run: () => unknown
 }
-const props = defineProps<{ actions: RowAction[] }>()
+const props = defineProps<{ actions: RowAction[]; expanded?: boolean; grouped?: boolean }>()
 const user = useUserStore(),
   { t } = useI18n()
 const available = computed(() =>
   props.actions.filter((a) => !a.permission || canWriteResource(user.permissions, a.permission)),
 )
 const inline = computed(() =>
-  available.value.length > 2 ? available.value.slice(0, 1) : available.value,
+  props.grouped
+    ? available.value.filter((item) => !item.overflow)
+    : !props.expanded && available.value.length > 2
+      ? available.value.slice(0, 1)
+      : available.value,
 )
-const overflow = computed(() => (available.value.length > 2 ? available.value.slice(1) : []))
+const overflow = computed(() =>
+  props.grouped
+    ? available.value.filter((item) => item.overflow)
+    : !props.expanded && available.value.length > 2
+      ? available.value.slice(1)
+      : [],
+)
 </script>
 <style scoped>
 .ma-actions {

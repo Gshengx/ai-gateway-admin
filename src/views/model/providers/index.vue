@@ -307,6 +307,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -375,6 +376,7 @@ const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'notes', width: 'auto', title: t('ma.notes'), ellipsis: true },
   {
     colKey: 'action',
+    fixed: 'right',
     title: t('ma.actions'),
     width: actionColumnWidth.value,
     className: 'ma-action-cell',
@@ -504,9 +506,13 @@ async function openDetail(row: Provider) {
     await loadTemplates(provider.id, provider.template_version_id)
     if (version !== detailVersion) return
     const session = useUserStore().context.session
-    if (session) recipientNames.value[session.user_id] = session.display_name || session.username
+    if (session)
+      recipientNames.value[session.user_id] = userLabel(session.display_name, session.username)
     for (const recipient of provider.recipient_users ?? [])
-      recipientNames.value[recipient.user_id] = recipient.display_name ?? t('ma.unavailable')
+      recipientNames.value[recipient.user_id] = userLabel(
+        recipient.display_name,
+        recipient.username,
+      )
     if (version !== detailVersion) return
     relatedPage.value = 1
     await loadRelated()

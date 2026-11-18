@@ -1,5 +1,5 @@
 import { expenseRecords, summarize } from './_costRecords'
-import { costDirectory, effectiveDepartment } from '../src/api/mock/cost'
+import { costDepartmentId, costDirectory, effectiveDepartment } from '../src/api/mock/cost'
 import { projects } from './_projects'
 import { budgetLedger } from './_projectBudgets'
 import type { Bill, BillItem, Dimension } from '../src/api/modules/cost'
@@ -7,15 +7,7 @@ import type { ExpenseRecord } from '../src/api/modules/expenses'
 import type { State } from '../src/api/mock/cost'
 import { budgetDates, allocateBudget } from '../src/utils/projectBudget'
 const { departments } = costDirectory()
-const departmentAliases: Record<string, string> = {
-  'd-root': 'hq',
-  'd-tech': 'tech',
-  'd-algo': 'algorithm',
-  'd-platform': 'platform',
-  'd-ops': 'operations',
-  'd-hr': 'hr',
-}
-export const costDepartmentId = (id: string) => departmentAliases[id] ?? id.replace(/^d-/, '')
+export { costDepartmentId } from '../src/api/mock/cost'
 export function costSubtree(id: string): string[] {
   return [id, ...departments.filter((d) => d.parent_id === id).flatMap((d) => costSubtree(d.id))]
 }
@@ -44,6 +36,18 @@ export function updateBill(bill: Bill) {
     project_cost: summarize(rows.filter((r) => r.project_id)).cost,
   })
   return bill
+}
+export function completeBill(bill: Bill) {
+  if (bill.status !== 'GENERATING') return
+  try {
+    const records = billRecords(bill)
+    if (records.some((record) => !Number.isFinite(record.total_cost)))
+      throw new Error('Invalid expense amount')
+    updateBill(bill)
+    bill.status = 'COMPLETED'
+  } catch {
+    bill.status = 'FAILED'
+  }
 }
 export function refreshCostConsumption(state: State) {
   state.allocations = {}

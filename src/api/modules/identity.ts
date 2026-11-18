@@ -1,4 +1,8 @@
-import type { AccessibleModel, ModelAuthorizationSummary } from './modelAccessContract'
+import type {
+  AccessibleModel,
+  ModelAuthorizationSummary,
+  UserGrantDelta,
+} from './modelAccessContract'
 import { modelAccessApi } from './modelAccessApi'
 import {
   subjectGrants,
@@ -158,6 +162,8 @@ export type UserRole = LocalizedRef
 
 /** 用户列表项（GET /users） */
 export interface UserItem {
+  /** Read-only protection flag supplied by the backend. */
+  is_initial_admin: boolean
   id: string
   username: string
   display_name: string
@@ -528,7 +534,13 @@ export type UserTermsInfo =
 
 /** 用户详情（GET /users/{id}） */
 export function getUserDetailApi(id: string, config?: RequestConfig) {
-  return request.get<{ user: UserItem; terms: UserTermsInfo | null }>(`/users/${id}`, config)
+  return request.get<{
+    user: UserItem
+    terms: UserTermsInfo | null
+    api_key_count: number | null
+    accessible_model_count: number | null
+    authorized_model_count?: number | null
+  }>(`/users/${id}`, config)
 }
 
 /** Model authorization projections belong to the model-access contract. */
@@ -598,8 +610,8 @@ export function getUserApiKeysApi(params: UserApiKeyQuery, config?: RequestConfi
   return getManagedKeysApi(params, config)
 }
 
-export function getDepartmentListApi(params: DepartmentQuery = {}) {
-  return request.get<DepartmentListResult>('/departments', { params })
+export function getDepartmentListApi(params: DepartmentQuery = {}, signal?: AbortSignal) {
+  return request.get<DepartmentListResult>('/departments', { params, signal })
 }
 
 export function getDepartmentDetailApi(id: string) {
@@ -1053,4 +1065,11 @@ export function getGroupApi(id: string) {
   return request.get<{ group: UserGroupItem; translations: UserGroupTranslationPayload[] }>(
     `/groups/${id}`,
   )
+}
+
+export function addUserModelGrantsApi(id: string, body: UserGrantDelta, config?: RequestConfig) {
+  return modelAccessApi.A14(id, body, config)
+}
+export function removeUserModelGrantsApi(id: string, body: UserGrantDelta, config?: RequestConfig) {
+  return modelAccessApi.A15(id, body, config)
 }

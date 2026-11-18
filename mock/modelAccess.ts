@@ -105,21 +105,18 @@ const unknownBinding = () =>
     state: 'UNKNOWN',
     reason_code: 'UNVERIFIED',
   })
-function invocation(
-  model: Pick<D.Model, 'id' | 'supported_invocation_apis' | 'custom_invocation_apis'>,
-): D.InvocationAPI[] {
-  return model.custom_invocation_apis.map((api) =>
-    make<D.InvocationAPI>('InvocationAPI', {
-      id: uuid(`${model.id}-${api.protocol}`),
-      api_key: api.protocol,
-      protocol: api.protocol,
-      kind: api.protocol === 'CUSTOM_PASSTHROUGH' ? 'CUSTOM' : 'STANDARD',
-      path: api.path,
-      adapter_key: api.protocol,
-      adapter_revision: revision,
-      streaming_applicable: true,
-    }),
-  )
+function invocation(model: {
+  id: string
+  invocation_apis: D.InvocationAPIInput[]
+}): D.InvocationAPI[] {
+  return model.invocation_apis.map((api) => ({
+    id: api.id ?? uuid(`${model.id}-api-${nextSequence('ma-api')}`),
+    protocol: api.protocol,
+    path: api.path,
+    adapter_key: api.protocol,
+    adapter_revision: revision,
+    streaming_applicable: api.protocol !== 'CUSTOM_PASSTHROUGH',
+  }))
 }
 function specs(apis: string[]): D.MetricSpec[] {
   if (apis.includes('EMBEDDINGS')) return [metric('input_tokens', 'Input tokens')]
@@ -420,7 +417,7 @@ function changeStatus(m: D.Model, input: D.StatusCommand) {
   if (!from.includes(m.status)) throw issue('STATE_CONFLICT')
   if (['REJECT', 'SUSPEND'].includes(input.action) && !input.reason?.trim())
     throw issue('VALIDATION_FAILED', 422)
-  if (input.action === 'APPROVE' && specs(m.supported_invocation_apis).length) {
+  if (input.action === 'APPROVE' && specs(m.invocation_apis.map((a) => a.protocol)).length) {
     const price = store.prices.get(m.id)?.[0]
     if (!price) throw issue('PRICE_RULE_INVALID', 422)
     checkPrice(savedPriceInput(price), m)
@@ -454,9 +451,11 @@ function savedPriceInput(price: D.PricingVersion): D.PricingInput {
 }
 function checkPrice(
   input: D.PricingInput | null,
-  m: Pick<D.Model, 'id' | 'provider_id' | 'model_id_at_provider' | 'supported_invocation_apis'>,
+  m: Pick<D.Model, 'id' | 'provider_id' | 'model_id_at_provider'> & {
+    invocation_apis: D.InvocationAPIInput[]
+  },
 ) {
-  const metrics = specs(m.supported_invocation_apis),
+  const metrics = specs(m.invocation_apis.map((a) => a.protocol)),
     history = store.prices.get(m.id) ?? []
   if (input === null) {
     if (metrics.length) throw issue('PRICE_RULE_INVALID', 422)
@@ -529,7 +528,7 @@ function checkPrice(
 }
 function savePrice(input: D.PricingInput, m: D.Model) {
   const history = store.prices.get(m.id) ?? [],
-    metrics = specs(m.supported_invocation_apis)
+    metrics = specs(m.invocation_apis.map((a) => a.protocol))
   const provider = store.providers.find((provider) => provider.id === m.provider_id)!
   const defaultId =
     input.catalog_default_price_version_id === undefined
@@ -657,17 +656,63 @@ function grantDelta(m: D.Model, input: D.GrantDelta) {
     unchanged_count,
   }
 }
-function validateProtocolPairs(protocols: string[], paths: D.CustomAPIInput[]) {
-  if (
-    protocols.length !== paths.length ||
-    protocols.length > 32 ||
-    new Set(protocols).size !== protocols.length ||
-    paths.some(
-      (item, index) =>
-        item.protocol !== protocols[index] || !/^\/(?!\/)[^\s?#\\]*$/.test(item.path),
-    )
-  )
-    throw issue('VALIDATION_FAILED', 422)
+function validateInvocation(rows: D.InvocationAPIInput[], model?: D.Model, prefix = '') {
+  if (!Array.isArray(rows) || rows.length > 32) throw issue('VALIDATION_FAILED', 422)
+  const standards = new Set<string>(),
+    paths = new Set<string>(),
+    ids = new Set<string>()
+  const routes = [
+    '/v1/chat/completions',
+    '/v1/responses',
+    '/v1/messages',
+    '/v1/embeddings',
+    '/v1/images/generations',
+    '/v1/audio/speech',
+    '/v1/audio/transcriptions',
+    '/v1/audio/translations',
+    '/v1/videos',
+  ]
+  for (const [index, row] of rows.entries()) {
+    if (!row.protocol || !/^\/(?!\/)[^\s?#\\]*$/.test(row.path) || row.path.includes('://'))
+      throw issue('VALIDATION_FAILED', 422)
+    if (row.id && (!model?.invocation_apis.some((a) => a.id === row.id) || ids.has(row.id)))
+      throw issue('VALIDATION_FAILED', 422)
+    if (row.id) ids.add(row.id)
+    if (row.protocol === 'CUSTOM_PASSTHROUGH') {
+      if (paths.has(row.path)) throw issue('VALIDATION_FAILED', 422)
+      paths.add(row.path)
+      const route =
+        routes.find((path) => path === row.path) ??
+        (/^\/v1beta\/models\/[^/]+:(?:generateContent|streamGenerateContent)$/.test(row.path)
+          ? '/v1beta/models/{model}:generateContent'
+          : undefined)
+      if (route)
+        throw issue('VALIDATION_FAILED', 422, {
+          fields: { [`${prefix}invocation_apis[${index}].path`]: 'STANDARD_ROUTE_CONFLICT' },
+          standard_route: { method: 'POST', path: route },
+        })
+    } else {
+      if (!protocolPaths[row.protocol] || standards.has(row.protocol))
+        throw issue('VALIDATION_FAILED', 422)
+      standards.add(row.protocol)
+    }
+  }
+}
+function pricingCheck(
+  model: Pick<D.Model, 'id' | 'provider_id' | 'model_id_at_provider'> & {
+    invocation_apis: D.InvocationAPIInput[]
+  },
+): D.AdmissionPricingCheckResult {
+  if (!specs(model.invocation_apis.map((a) => a.protocol)).length)
+    return { pricing_check_passed: true, reason: 'NO_BILLING_ITEMS' }
+  const price = store.prices.get(model.id)?.[0]
+  if (!price) return { pricing_check_passed: false, reason: 'PRICE_NOT_CONFIGURED' }
+  try {
+    checkPrice(savedPriceInput(price), model)
+  } catch {
+    return { pricing_check_passed: false, reason: 'PRICE_NOT_APPLICABLE' }
+  }
+  return { pricing_check_passed: true, reason: 'PRICE_CONFIGURED' }
 }
 function currentEpoch(model: D.Model) {
   store.admissionEpochs ??= new Map<string, string>()
@@ -687,19 +732,19 @@ function protocolSignature(provider: string, upstream: string, pairs: D.CustomAP
   return JSON.stringify([
     provider,
     upstream,
-    pairs.map((pair) => [pair.protocol, pair.path]).sort((a, b) => a[0]!.localeCompare(b[0]!)),
+    pairs
+      .map((pair) => [pair.protocol, pair.path])
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
   ])
 }
 function createModel(input: D.ModelCreate, p: D.Provider, importedDraft = false): D.Model {
   version(input.expected_provider_version, p.version)
-  validateProtocolPairs(input.supported_invocation_apis, input.custom_invocation_apis ?? [])
+  validateInvocation(input.invocation_apis)
   const name = normalizeModelId(input.model_id_at_gateway)
   if (
     !validModelId(name) ||
     !input.model_id_at_provider.trim() ||
-    (!importedDraft &&
-      !input.supported_invocation_apis.length &&
-      !input.custom_invocation_apis?.length)
+    (!importedDraft && !input.invocation_apis.length)
   )
     throw issue('VALIDATION_FAILED', 422)
   if (store.models.some((m) => m.model_id_at_gateway === name)) throw issue('NAME_CONFLICT')
@@ -716,10 +761,7 @@ function createModel(input: D.ModelCreate, p: D.Provider, importedDraft = false)
     model_id_at_gateway: name,
     model_id_at_provider: input.model_id_at_provider.trim(),
     description: input.description ?? null,
-    custom_invocation_apis: (input.custom_invocation_apis ?? []).map((a) => ({
-      protocol: a.protocol,
-      path: a.path,
-    })),
+    invocation_apis: [],
     input_modalities: input.input_modalities ?? [],
     output_modalities: input.output_modalities ?? [],
     tags: input.tags ?? [],
@@ -744,8 +786,8 @@ function createModel(input: D.ModelCreate, p: D.Provider, importedDraft = false)
   delete (m as unknown as Record<string, unknown>).pricing
   delete (m as unknown as Record<string, unknown>).expected_provider_version
   delete (m as unknown as Record<string, unknown>).initial_grants
-  m.invocation_apis = invocation(m)
-  if (!importedDraft) checkPrice(input.pricing, m)
+  m.invocation_apis = invocation({ id: m.id, invocation_apis: input.invocation_apis })
+  if (input.pricing) checkPrice(input.pricing, m)
   if (input.initial_grants?.some((s) => !subjectExists(s))) throw issue('NOT_FOUND', 404)
   store.models.push(m)
   event(m, 'CREATED', null)
@@ -815,30 +857,29 @@ function startJob(
     throw issue('ADMISSION_STALE')
   if (purpose === 'ADMISSION') {
     if (!m.invocation_apis.length) throw issue('VALIDATION_FAILED', 422)
-    const price = store.prices.get(m.id)?.[0]
-    if (price) {
-      // Preserve a valid saved price; a changed profile requires an explicit price edit.
-      checkPrice(savedPriceInput(price), m)
-    } else {
-      const initial = preparation(
-        p,
-        m.model_id_at_provider,
-        m.supported_invocation_apis,
-      ).internal_pricing_prefill
-      if (initial) {
-        checkPrice(initial, m)
-        savePrice(initial, m)
-      }
-    }
+    const check = pricingCheck(m)
+    if (!check.pricing_check_passed)
+      throw issue(
+        check.reason === 'PRICE_NOT_CONFIGURED' ? 'PRICE_NOT_CONFIGURED' : 'PRICE_RULE_INVALID',
+        check.reason === 'PRICE_NOT_CONFIGURED' ? 409 : 422,
+      )
   }
-  const display = m.invocation_apis.map((a) => ({
+  const display = m.invocation_apis.map<D.InvocationAPIDisplay>((a) => ({
     id: a.id,
-    api_key: a.api_key,
-    kind: a.kind,
+    api_key: a.protocol,
+    protocol: a.protocol,
+    kind: a.protocol === 'CUSTOM_PASSTHROUGH' ? 'CUSTOM' : 'STANDARD',
     path: a.path,
-    display_name: a.path ?? a.api_key,
+    display_name: a.path,
   }))
-  const types = ['MODEL_REQUEST', 'PROTOCOL', 'STREAMING'] as const
+  const standardTypes = ['MODEL_REQUEST', 'PROTOCOL', 'STREAMING'] as const
+  const types: D.CheckItem['check_type'][] = [
+    ...new Set(
+      display.flatMap((api) =>
+        api.kind === 'CUSTOM' ? ['CONNECTIVITY' as const] : [...standardTypes],
+      ),
+    ),
+  ]
   const j = make<D.CheckJob>('CheckJob', {
     id,
     physical_model_id: m.id,
@@ -869,7 +910,7 @@ function startJob(
     check_types: [...types],
     invocation_apis: display,
     items: display.flatMap((a) =>
-      types.map((type) =>
+      (a.kind === 'CUSTOM' ? ['CONNECTIVITY' as const] : standardTypes).map((type) =>
         make<D.CheckItem>('CheckItem', {
           id: uuid(`${id}-${a.id}-${type}`),
           api_key: a.api_key,
@@ -928,7 +969,10 @@ function startJob(
         source_result: structuredClone(original.result_detail),
       }
     }
-  j.planned_model_calls = j.items.filter((item) => item.status === 'WAITING').length
+  j.planned_model_calls = j.items.filter(
+    (item) => item.status === 'WAITING' && item.check_type !== 'CONNECTIVITY',
+  ).length
+  j.auxiliary_http_calls = 0
   store.jobs.set(id, j)
   store.jobSnapshots.set(id, { model: structuredClone(m), provider: structuredClone(p) })
   if (purpose === 'ADMISSION') {
@@ -949,9 +993,13 @@ function progress(j: D.CheckJob): D.CheckJob {
   j.result = 'PASS'
   j.completed_at = timestamp()
   j.actual_model_calls = j.planned_model_calls
+  j.auxiliary_http_calls = j.items.filter(
+    (item) => item.check_type === 'CONNECTIVITY' && item.status !== 'REUSED',
+  ).length
   for (const item of j.items) {
     if (item.status === 'NOT_APPLICABLE' || item.status === 'REUSED') continue
     item.status = 'PASS'
+    if (item.check_type === 'CONNECTIVITY') item.cost = null
     item.dispatch_state = 'FINISHED'
     item.dispatch_count = 1
     item.request_started_at = j.started_at
@@ -1030,8 +1078,7 @@ function initialize() {
           provider_id: p.id,
           model_id_at_gateway: sample.model_id_at_gateway,
           model_id_at_provider: sample.model_id_at_provider,
-          supported_invocation_apis: sample.supported_invocation_apis,
-          custom_invocation_apis: sample.supported_invocation_apis.map((protocol) => ({
+          invocation_apis: sample.supported_invocation_apis.map((protocol) => ({
             protocol,
             path: protocolPaths[protocol] ?? '',
           })),
@@ -1328,7 +1375,8 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     if (input.base) {
       version(input.expected_base_version, m!.versions.base)
       if (!['DRAFT', 'RETIRED'].includes(m!.status)) throw issue('STATE_CONFLICT')
-      validateProtocolPairs(input.base.supported_invocation_apis, input.base.custom_invocation_apis)
+      validateInvocation(input.base.invocation_apis, m!, 'base.')
+      if (!input.base.invocation_apis.length) throw issue('VALIDATION_FAILED', 422)
       if (
         m!.status === 'RETIRED' &&
         (input.base.provider_id !== m!.provider_id ||
@@ -1344,7 +1392,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
         )
       )
         throw issue('NAME_CONFLICT')
-      if (m!.status === 'RETIRED' && !input.base.supported_invocation_apis.length)
+      if (m!.status === 'RETIRED' && !input.base.invocation_apis.length)
         throw issue('VALIDATION_FAILED', 422)
     }
     if (input.metadata) {
@@ -1359,21 +1407,18 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     // All domain checks precede mutation, preserving M05 atomicity.
     if (input.base) {
       if (
-        protocolSignature(m!.provider_id, m!.model_id_at_provider, m!.custom_invocation_apis) !==
+        protocolSignature(m!.provider_id, m!.model_id_at_provider, m!.invocation_apis) !==
         protocolSignature(
           input.base.provider_id,
           input.base.model_id_at_provider,
-          input.base.custom_invocation_apis,
+          input.base.invocation_apis,
         )
       )
         invalidateAdmission(m!)
-      const { custom_invocation_apis, ...base } = input.base
+      const { invocation_apis, ...base } = input.base
       Object.assign(m!, base, {
         model_id_at_gateway: normalizeModelId(base.model_id_at_gateway),
-        custom_invocation_apis: (custom_invocation_apis ?? []).map((a) => ({
-          protocol: a.protocol,
-          path: a.path,
-        })),
+        invocation_apis: invocation({ id: m!.id, invocation_apis }),
       })
       m!.versions.base++
       m!.invocation_apis = invocation(m!)
@@ -1459,7 +1504,9 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
           : provider
             ? templateFor(provider).suggested_invocation_apis
             : []
-    const protocols = provider ? [...new Set([...allowed, 'CUSTOM_PASSTHROUGH'])] : []
+    const protocols = provider
+      ? [...new Set(allowed)].filter((p) => p !== 'CUSTOM_PASSTHROUGH')
+      : []
     const protocol_options = protocols.map((protocol) => ({
       protocol,
       default_path: protocolPaths[protocol] ?? null,
@@ -1467,6 +1514,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     return {
       ...page(items, req),
       protocol_options,
+      custom_passthrough_supported: provider ? true : null,
       catalog_release_id: release,
       catalog_revision: revision,
     }
@@ -1528,13 +1576,11 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
       throw issue(model ? 'MALFORMED_REQUEST' : 'NOT_FOUND', model ? 400 : 404)
     const provider = store.providers.find((p) => p.id === (model?.provider_id ?? query.provider_id))
     if (!provider) throw issue('NOT_FOUND', 404)
-    const apis = model?.supported_invocation_apis ?? queryList(req, 'supported_invocation_apis')
+    const apis =
+      model?.invocation_apis.map((a) => a.protocol) ?? queryList(req, 'supported_invocation_apis')
     if (!model && !String(query.model_id_at_provider ?? '').trim())
       throw issue('VALIDATION_FAILED', 422)
-    if (
-      !apis.length &&
-      !(model?.custom_invocation_apis.length ?? queryList(req, 'upstream_paths').length)
-    )
+    if (!apis.length && !(model?.invocation_apis.length ?? queryList(req, 'upstream_paths').length))
       throw issue('VALIDATION_FAILED', 422)
     const prepared = preparation(
       provider,
@@ -1557,6 +1603,16 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
           : 'NOT_CONFIGURED',
       internal_pricing_prefill: prefill,
     }
+  }
+  if (op === 'C05') {
+    const input = body as unknown as D.AdmissionPricingCheckInput
+    version(input.expected_base_version, m!.versions.base)
+    if (m!.status !== 'DRAFT')
+      throw issue(m!.status === 'TESTING' ? 'CHECK_IN_PROGRESS' : 'STATE_CONFLICT')
+    const rows = input.invocation_apis ?? m!.invocation_apis
+    validateInvocation(rows, m!)
+    if (!rows.length) throw issue('VALIDATION_FAILED', 422)
+    return pricingCheck({ ...m!, invocation_apis: rows })
   }
   if (op === 'C01' || op === 'H01')
     return startJob(
@@ -1710,7 +1766,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
       state: price ? 'PRICED' : 'UNPRICED',
       price,
       price_version: price?.version ?? 0,
-      metric_specs: specs(m!.supported_invocation_apis),
+      metric_specs: specs(m!.invocation_apis.map((a) => a.protocol)),
       billing_currency: 'CNY',
       billing_time_zone: 'Asia/Shanghai',
       currency_source: 'DEFAULT_CNY',
@@ -1719,7 +1775,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
         ? null
         : !m!.invocation_apis.length
           ? 'INTERFACES_NOT_CONFIGURED'
-          : !specs(m!.supported_invocation_apis).length
+          : !specs(m!.invocation_apis.map((a) => a.protocol)).length
             ? 'METRIC_SPEC_UNAVAILABLE'
             : 'PRICE_UNAVAILABLE',
     }
@@ -1952,6 +2008,10 @@ function effectiveGrants(modelId: string, userId: string): D.Grant[] {
           : memberships.includes(g.subject_id)),
   )
 }
+export function accessibleModelCount(userId: string) {
+  seedLinkedGrants()
+  return store.models.filter((m) => effectiveGrants(m.id, userId).length > 0).length
+}
 function subjectOperation(op: string, req: MockRequest, ids: Record<string, string>) {
   const subject: D.Subject = {
     subject_type: ids.user_id ? 'USER' : ids.department_id ? 'DEPARTMENT' : 'USER_GROUP',
@@ -2129,13 +2189,7 @@ function discoveryOperation(
             reason_code: 'INVALID_DISCOVERY_ID',
             fields: { discovery_id: 'INVALID' },
           })
-        if (
-          (input.supported_invocation_apis === undefined) !==
-          (input.custom_invocation_apis === undefined)
-        )
-          throw issue('VALIDATION_FAILED', 422)
-        if (input.supported_invocation_apis && input.custom_invocation_apis)
-          validateProtocolPairs(input.supported_invocation_apis, input.custom_invocation_apis)
+        if (input.invocation_apis) validateInvocation(input.invocation_apis)
         if (
           b.models.filter(
             (x) =>
@@ -2214,9 +2268,8 @@ function discoveryOperation(
             provider_id: p.id,
             pricing: null,
             expected_provider_version: b.expected_provider_version,
-            supported_invocation_apis: input.supported_invocation_apis ?? suggested,
-            custom_invocation_apis:
-              input.custom_invocation_apis ??
+            invocation_apis:
+              input.invocation_apis ??
               suggested.map((protocol) => ({ protocol, path: protocolPaths[protocol]! })),
           },
           p,
@@ -2270,27 +2323,25 @@ function discoveryOperation(
           )
         )
           throw issue('CHECK_IN_PROGRESS')
-        const custom = row.custom_invocation_apis ?? []
-        if (!row.supported_invocation_apis.length && !custom.length)
-          throw issue('VALIDATION_FAILED', 422)
+        const rows = row.invocation_apis
+        validateInvocation(rows, m)
+        if (!rows.length) throw issue('VALIDATION_FAILED', 422)
+        const check = pricingCheck({ ...m, invocation_apis: rows })
+        if (!check.pricing_check_passed)
+          throw issue(
+            check.reason === 'PRICE_NOT_CONFIGURED' ? 'PRICE_NOT_CONFIGURED' : 'PRICE_RULE_INVALID',
+            check.reason === 'PRICE_NOT_CONFIGURED' ? 409 : 422,
+          )
         const changed =
-          JSON.stringify(row.supported_invocation_apis) !==
-            JSON.stringify(m.supported_invocation_apis) ||
-          JSON.stringify(custom.map((a) => a.path)) !==
-            JSON.stringify(m.custom_invocation_apis.map((a) => a.path))
+          JSON.stringify(rows.map((a) => [a.id, a.protocol, a.path])) !==
+          JSON.stringify(m.invocation_apis.map((a) => [a.id, a.protocol, a.path]))
         if (changed) {
-          validateProtocolPairs(row.supported_invocation_apis, custom)
           if (
-            protocolSignature(m.provider_id, m.model_id_at_provider, m.custom_invocation_apis) !==
-            protocolSignature(m.provider_id, m.model_id_at_provider, custom)
+            protocolSignature(m.provider_id, m.model_id_at_provider, m.invocation_apis) !==
+            protocolSignature(m.provider_id, m.model_id_at_provider, rows)
           )
             invalidateAdmission(m)
-          m.supported_invocation_apis = row.supported_invocation_apis
-          m.custom_invocation_apis = custom.map((a) => ({
-            protocol: a.protocol,
-            path: a.path,
-          }))
-          m.invocation_apis = invocation(m)
+          m.invocation_apis = invocation({ id: m.id, invocation_apis: rows })
           m.versions.base++
         }
         job = startJob(m, 'ADMISSION', m.versions.base)
@@ -2315,7 +2366,7 @@ function discoveryOperation(
         physical_model_id: m?.id ?? null,
         status: 'REJECTED',
         code: (e as Error).message,
-        params: {},
+        params: (e as { params?: D.ErrorParams }).params ?? {},
         job_id: null,
         model: null,
       }
@@ -2531,6 +2582,13 @@ const operations: {
     path: '/models/{model_id}/admission-tests/{test_id}',
     body: null,
     output: 'CheckJob',
+  },
+  {
+    id: 'C05',
+    method: 'post',
+    path: '/models/{model_id}/admission-tests/pricing-check',
+    body: 'AdmissionPricingCheckInput',
+    output: 'AdmissionPricingCheckResult',
   },
   {
     id: 'C04',
@@ -2812,7 +2870,8 @@ export default operations
             throw issue('FORBIDDEN', 403)
           if (
             (op.id === 'D02' && !allowed('model.models')) ||
-            (op.id === 'D03' && !allowed('model.admission'))
+            (op.id === 'D03' && !allowed('model.admission')) ||
+            (op.id === 'C05' && req.body?.invocation_apis && !allowed('model.models', true))
           )
             throw issue('FORBIDDEN', 403)
           const actor = directory.get(usernameFromToken(req) ?? '')
@@ -2844,7 +2903,7 @@ export default operations
           const key = String(req.headers?.['idempotency-key'] ?? '')
           const signature = JSON.stringify([op.id, ids, req.body, req.query])
           const commandKey = `${usernameFromToken(req)}:${key}`
-          if (op.method !== 'get') {
+          if (op.method !== 'get' && op.id !== 'C05') {
             if (!key) throw issue('MALFORMED_REQUEST', 400)
             const previous = store.commands.get(commandKey)
             if (previous) {
@@ -2878,7 +2937,7 @@ export default operations
               ? 202
               : 200
           this.res.statusCode = status
-          if (op.method !== 'get') {
+          if (op.method !== 'get' && op.id !== 'C05') {
             store.commands.set(commandKey, { signature, data, status })
             const target = data as {
               id?: string

@@ -149,10 +149,12 @@ export interface Model {
   admission_valid: boolean
 }
 export interface CustomInvocationApi {
+  id?: string
   invocation_api: string
   path: string
 }
 export interface Check {
+  invocation_api_id?: string
   display_name?: string
   invocation_api?: string
   upstream_path?: string

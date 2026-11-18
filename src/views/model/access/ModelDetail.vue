@@ -100,7 +100,7 @@
           class="ma-stack"
         >
           <h3>{{ t(purpose === 'HEALTH' ? 'ma.healthHistory' : 'ma.admissionHistory') }}</h3>
-          <p class="test-history-meta">{{ t('ma.matrixHelp') }}</p>
+          <p v-if="histories[purpose].length" class="test-history-meta">{{ t('ma.matrixHelp') }}</p>
           <LoadingState
             height="var(--stable-detail-section-height)"
             :loading="historyLoading[purpose]"
@@ -249,6 +249,30 @@ const historyLoading = ref({ ADMISSION: false, HEALTH: false })
 const historyFailed = ref({ ADMISSION: false, HEALTH: false })
 const pricesRequest = useLatestRequest()
 const historyRequests = { ADMISSION: useLatestRequest(), HEALTH: useLatestRequest() }
+const admissionSummaryRequest = useLatestRequest()
+const admissionSummary = ref<{ completedAt?: string; failed: boolean }>({ failed: false })
+async function loadAdmissionSummary() {
+  if (!canReadChecks.value) return
+  const current = admissionSummaryRequest.begin()
+  admissionSummary.value = { failed: false }
+  try {
+    let page = 1
+    while (current.isCurrent()) {
+      const result = await accessApi.history(props.id, 'ADMISSION', page, 100, {
+        signal: current.signal,
+      })
+      if (!current.isCurrent()) return
+      const passed = result.items.find((record) => record.status === 'PASSED')
+      if (passed || page >= result.total_pages) {
+        admissionSummary.value = { completedAt: passed?.completed_at ?? undefined, failed: false }
+        return
+      }
+      page++
+    }
+  } catch {
+    if (current.isCurrent()) admissionSummary.value = { failed: true }
+  }
+}
 const modelRequest = useLatestRequest()
 const loadRequest = useLatestRequest()
 async function loadHistory(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestRun) {
@@ -337,11 +361,9 @@ const info = computed(() => {
       : []),
     [
       t('ma.admissionAt'),
-      historyFailed.value.ADMISSION
+      admissionSummary.value.failed
         ? t('common.loadFailed')
-        : formatDateTime(
-            histories.value.ADMISSION.find((x) => x.status === 'PASSED')?.completed_at,
-          ) || '—',
+        : formatDateTime(admissionSummary.value.completedAt) || '—',
     ],
     [t('ma.description'), m.description || '—'],
     [t('ma.created'), formatDateTime(m.created_at)],
@@ -375,6 +397,7 @@ async function refresh() {
   const [updated] = await Promise.all([
     accessApi.model(props.id, true, { signal: current.signal }),
     loadPrices(),
+    loadAdmissionSummary(),
     ...(['ADMISSION', 'HEALTH'] as const).map((purpose) => loadHistory(purpose)),
   ])
   if (current.isCurrent()) model.value = updated
@@ -385,6 +408,7 @@ async function refreshTest(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestR
     accessApi.model(props.id, purpose !== 'HEALTH', { signal: current.signal }),
     loadHistory(purpose, completedRun),
     purpose === 'ADMISSION' ? loadPrices() : undefined,
+    purpose === 'ADMISSION' ? loadAdmissionSummary() : undefined,
   ])
   if (!current.isCurrent()) return
   if (purpose === 'HEALTH' && model.value) {

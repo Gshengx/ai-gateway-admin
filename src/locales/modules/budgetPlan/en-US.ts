@@ -37,7 +37,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   FIXED: 'Equal per-period limit',
   evenHint: 'Distribute the total equally; any rounding remainder goes to the last period.',
   limit: 'Per-user limit per period',
-  memberLimit: 'Per-member limit per period',
+  memberLimit: 'Project member limit per period',
   limitHint: 'No individual limit; consumption still draws from the source budget.',
   count: '{count} periods',
   sum: 'Allocation total',

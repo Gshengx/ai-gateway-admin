@@ -93,15 +93,16 @@
           ><span class="key-ellipsis">{{ row.name }}</span></t-tooltip
         ></template
       >
-      <template #user="{ row }">
+      <template #username="{ row }">
         <t-link
           v-if="canReadUsers"
           theme="primary"
           :href="router.resolve({ path: '/identity/users', query: { user: row.user_id } }).href"
-          >{{ row.user_display_name || row.username }}</t-link
+          >{{ row.username || '—' }}</t-link
         >
-        <span v-else>{{ row.user_display_name || row.username }}</span>
+        <span v-else>{{ row.username || '—' }}</span>
       </template>
+      <template #user="{ row }">{{ row.user_display_name || '—' }}</template>
       <template #department="{ row }">{{
         row.department_display_name || row.department_name || '—'
       }}</template>
@@ -239,7 +240,6 @@ const listFailed = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const paginationTotal = ref(0)
-let listRequest = 0
 let disposed = false
 const departmentFilter = ref<InstanceType<typeof DepartmentTreeSelect>>()
 const requireAcceptance = computed(
@@ -273,6 +273,7 @@ const columns = computed<PrimaryTableCol<ManagedKeyItem>[]>(() => [
   { colKey: 'id', title: t('myKeys.id'), width: 150 },
   { colKey: 'masked_value', title: t('myKeys.masked'), width: 160 },
   { colKey: 'name', title: t('managedKeys.name'), width: 'auto' },
+  { colKey: 'username', title: t('managedKeys.username'), width: 150 },
   { colKey: 'user', title: t('managedKeys.user'), width: 150 },
   { colKey: 'department', title: t('managedKeys.department'), width: 140 },
   { colKey: 'status', title: t('managedKeys.status'), width: 110 },
@@ -317,9 +318,7 @@ function selectRows(keys: Array<string | number>) {
   updateSelection(keys)
 }
 async function fetchList(): Promise<void> {
-  if (disposed) return
   const current = latestList.begin()
-  const requestId = ++listRequest
   loading.value = true
   listFailed.value = false
   try {
@@ -334,7 +333,7 @@ async function fetchList(): Promise<void> {
       },
       { signal: current.signal },
     )
-    if (!current.isCurrent() || disposed || requestId !== listRequest) return
+    if (!current.isCurrent()) return
     paginationTotal.value = result.total
     pageSize.value = result.page_size
     const lastPage = Math.max(1, result.total_pages)
@@ -346,13 +345,13 @@ async function fetchList(): Promise<void> {
     page.value = result.page
     items.value = result.items
   } catch (error) {
-    if (!current.isCurrent() || disposed || requestId !== listRequest) return
+    if (!current.isCurrent()) return
     listFailed.value = true
     items.value = []
     paginationTotal.value = 0
     showError(error)
   } finally {
-    if (current.isCurrent() && requestId === listRequest) loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
 }
 function changePage(info: PageInfo) {
@@ -490,7 +489,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   disposed = true
-  ++listRequest
 })
 </script>
 

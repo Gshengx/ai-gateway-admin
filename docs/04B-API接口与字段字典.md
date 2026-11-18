@@ -1,25 +1,37 @@
 # 模型接入 API 接口与字段字典
 
-本文件迁入时保留原仓 `b8d9ca71` 已更新的 D02 混合导入说明。下列 V1.5 规则及更新后的对应小节用于当前前端接入。其余 V1.4 设计章节作为历史材料，运行契约以 [现行 OpenAPI](../../../contracts/current/openapi.json) 为准。联调步骤见 [前端协同指南](07-前端协同对接指南.md)和 [M05 V1.5 设计](M05-V1.5-详细设计与实施计划.md)。
+本文的 V33 协议配置、用户批量增量授权及对应接口小节用于当前联调。标为历史的 V1.4、V1.5 设计保留原有内容，现网字段以 [现行 OpenAPI](../../../contracts/current/openapi.json) 为准。联调步骤见[前端协同指南](07-前端协同对接指南.md)和[多条自定义透传设计](同模型多条自定义透传详细设计.md)。
 
-## V1.5 协议路径和接口索引
+## V33 协议配置和接口索引
 
-`supported_invocation_apis` 保存协议标识顺序，`custom_invocation_apis` 保存同序的 `{protocol,path}`。两个数组由同一套编辑行生成，每个协议出现一次。标准协议预填适配规格默认路径，允许编辑。选择 `CUSTOM_PASSTHROUGH` 后手填路径。路径以 `/` 开头，不含空白、绝对 URL 或自填查询参数。M04 回显保存值。
+模型写入统一提交有序的 `invocation_apis`，编辑时回传已有行的 `id`，新增行由后端分配 ID。每个标准协议在一个模型内只可保存一行，`path` 是出站路径。模型可保存多条 `CUSTOM_PASSTHROUGH`，首版固定为 POST，每条完整 `path` 同时用于入站匹配和出站。模型内的透传路径须唯一，并且不能匹配标准入站路由。
 
-M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，选中可信目录型号时加 `catalog_model_version_id`。顶层 `protocol_options[]` 返回 `{protocol,default_path}`，自定义的默认路径为 null。目录项使用 `suggested_invocation_apis` 和 `suggested_custom_invocation_apis` 同序预填。价格权限不足时仍可读取协议候选。M13/M14 创建前用同序重复 GET 参数 `supported_invocation_apis` 与 `upstream_paths`，例如 `supported_invocation_apis=EMBEDDINGS&upstream_paths=%2Fembeddings`。M14 已有模型模式只传 `model_id`。
+M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，选中可信目录型号时加 `catalog_model_version_id`。顶层 `protocol_options[]` 只返回标准协议及默认出站路径。`custom_passthrough_supported` 返回实例模板的配置能力，未指定供应商时为 `null`。M04 的 `invocation_apis[]` 是已保存配置的唯一视图。目录项继续使用 `suggested_invocation_apis` 和 `suggested_custom_invocation_apis` 同序预填。M13/M14 创建前仍用同序重复 GET 参数 `supported_invocation_apis` 与 `upstream_paths`，例如 `supported_invocation_apis=EMBEDDINGS&upstream_paths=%2Fembeddings`。M14 已有模型模式只传 `model_id`。
 
-失败重试通过 `reuse_job_id` 引用同一模型、同一准入代次下的已终结任务。服务端以协议和检测类型核对冻结计划、路径和适配内容，只复用完整通过的协议。仅调整行序更新 `versions.base`，原准入结果保持有效。增删协议、修改路径或变更实际目标使旧准入失效。C04 查询当前准入代次，无匹配任务时返回 HTTP 200 且 data 为 null。C02/C03 仍可看历史，健康任务从自身快照回显。
+失败重试通过 `reuse_job_id` 引用同一模型、同一准入代次下的已终结任务。服务端按配置行 ID 和检测类型核对冻结计划、路径和适配内容，只复用完整通过的配置行。仅调整行序更新 `versions.base`，原准入结果保持有效。增删配置行、修改路径或变更实际目标使旧准入失效。C04 查询当前准入代次，无匹配任务时返回 HTTP 200 且 data 为 null。C02/C03 仍可看历史，健康任务从自身快照回显。
 
-`CUSTOM_PASSTHROUGH` 只生成一个 `CONNECTIVITY` 项。对已存路径发送使用供应商认证的无请求体 `HEAD`。仅 `2xx`、或 `405` 且 `Allow` 含实际转发方法（当前为 `POST`）通过，其他状态及网络失败阻止本次准入。检测费用不含连通性项，`cost=null`，调用计入 `auxiliary_http_calls`。界面保留 HTTP 状态和原因，并显示「连通性通过」或失败。所有适用项通过后进入待审核。
+每条 `CUSTOM_PASSTHROUGH` 行独立生成一个 `CONNECTIVITY` 项。探针对该行完整路径发送使用供应商认证的无请求体 `HEAD`。收到 `2xx` 或 `405` 且 `Allow` 含 `POST` 时通过。连通性项的 `cost=null`，调用计入 `auxiliary_http_calls`。所有适用项均通过后进入待审核。
 
-| 接口                                                                                | V1.5 契约和字段                                                                                                          |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| [M03](#api-m03)、[M04](#api-m04)、[M05](#api-m05)、[M07](#api-m07)、[H04](#api-h04) | 模型协议字段全部按同一个有序集合投影。`invocation_apis` 提供只读的 `id`、`protocol`、`path` 和适配器信息。M03 至少一对。 |
-| [D02](#api-d02)                                                                     | 行内 `discovery_id` 和混合导入规则保持。发现行可同时省略协议数组以采用可信建议；任一来源均可显式传两个空数组留空草稿。   |
-| [M08](#api-m08)、[M12](#api-m12)                                                    | M08 读取候选和默认路径。M12 放开 RETIRED 的自身排除。                                                                    |
-| [D03](#api-d03)、[C01](#api-c01)、C02–C04、H01–H05                                  | D03 配置至少一对再发起，C01 用已保存的至少一对。检测快照和回执按实际协议及路径。检查项增加 `CONNECTIVITY`。              |
-| [D04](#api-d04)、[M07](#api-m07)                                                    | 上架使用当前准入代次的通过记录，并复核适用价格。                                                                         |
-| [M13](#api-m13)、[M14](#api-m14)、R02/R03                                           | 通过同序路径对或已保存模型解析计量。现有价格历史继续按价格快照展示。                                                     |
+| 接口                                                                                | V33 契约和字段                                                                                                |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [M03](#api-m03)、[M04](#api-m04)、[M05](#api-m05)、[M07](#api-m07)、[H04](#api-h04) | 模型统一回显已保存的 `invocation_apis`。行包含 `id`、`protocol`、`path` 和只读适配器信息。M03 至少一行。      |
+| [D02](#api-d02)                                                                     | 保留行内 `discovery_id` 和混合导入。省略 `invocation_apis` 采用可信建议，显式 `[]` 保存空草稿。               |
+| [M08](#api-m08)、[M12](#api-m12)                                                    | M08 返回标准候选和默认路径，另返回透传配置能力。M12 放开 RETIRED 的自身排除。                                 |
+| [D03](#api-d03)、[C01](#api-c01)、C02–C04、H01–H05                                  | D03 提交至少一行，C01 使用已保存的配置。按配置行 ID 和检测类型标识检查项。                                    |
+| [C05](#api-c05)                                                                     | 对已保存或拟提交的协议预检价格。有计费项时须有适用的已保存价格，无计费项时通过。C01 与 D03 在受理事务内复核。 |
+| [D04](#api-d04)、[M07](#api-m07)                                                    | 上架使用当前准入代次的通过记录，并复核适用价格。                                                              |
+| [M13](#api-m13)、[M14](#api-m14)、R02/R03                                           | 通过同序路径对或已保存模型解析计量。现有价格历史继续按价格快照展示。                                          |
+
+## 用户批量增量授权与详情计数
+
+用户详情的添加、撤销动作分别通过 [A14](#api-a14)、[A15](#api-a15) 批量修改 1～100 个物理模型的 USER 直授，整批成功或回滚。A04/A11 新增必返的 `authorization_version`，空列表也返回；前端直接使用当前列表版本提交增量，无需先读 A05 全部直授。A05/A06 继续提供完整集合编辑。
+
+`GET /api/v1/users/{user_id}` 的 `data.authorized_model_count` 是同一操作者 A11 的 `total`：用户直授、可见部门继承及可见用户组继承按物理模型去重，包含用户停用、AI 冻结或模型非 ACTIVE 的授权事实。原 `accessible_model_count` 仍对应 A04 `total`，要求用户、AI 访问和模型均 ACTIVE。两数都受当前管理范围约束；无 `model.permissions:READ` 或服务身份不适用时均为 null，正常无模型才为 0。数据库错误不降为零或 null。两字段均必返，不能按来源条数或当前页长度求数量；同一详情快照非空时满足可访问数不大于已授权数。
+
+| 用户详情字段                  | 类型           | 必返/可空 | 统计口径                  |
+| ----------------------------- | -------------- | --------- | ------------------------- |
+| `data.accessible_model_count` | integer，最小0 | 是/是     | A04 `total`               |
+| `data.authorized_model_count` | integer，最小0 | 是/是     | A11 `total`，含不可用模型 |
 
 ## 1. 新契约边界与公共约定
 
@@ -45,18 +57,29 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 
 ### 1.2 通用错误
 
-| HTTP | 错误码                                                                                                                                                                                 | 处理语义                                                                 |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 400  | MALFORMED_REQUEST                                                                                                                                                                      | 无效 JSON、未知键或参数形状错误                                          |
-| 401  | UNAUTHENTICATED                                                                                                                                                                        | 按共享身份登录处理，不自动重放模型检测                                   |
-| 403  | FORBIDDEN / CSRF_INVALID / OUT_OF_SCOPE / RESOURCE_DISABLED / PASSWORD_CHANGE_REQUIRED / TERMS_ACCEPTANCE_REQUIRED                                                                     | 当前会话、权限、范围或共享账号限制                                       |
-| 404  | NOT_FOUND                                                                                                                                                                              | 不存在或不可见，路径子资源必须属于其父对象                               |
-| 409  | VERSION_CONFLICT / STATE_CONFLICT / IDEMPOTENCY_CONFLICT / IDEMPOTENCY_IN_PROGRESS / CHECK_IN_PROGRESS / OPERATION_BUSY / DISCOVERY_STALE / OPERATION_RESULT_UNKNOWN / CATALOG_CHANGED | 重新读取受影响对象；禁止自动覆盖或换键重试                               |
-| 410  | DISCOVERY_EXPIRED                                                                                                                                                                      | 发现快照过期，重新获取或手工录入                                         |
-| 422  | VALIDATION_FAILED 及各接口业务字段错误                                                                                                                                                 | 按 params.fields 定位字段；不向上游补发猜测请求                          |
-| 422  | CATALOG_INCOMPATIBLE                                                                                                                                                                   | 模板/型号/价格版本关联不匹配，保留草稿并重新选择正确目录来源；不自动混版 |
-| 503  | CATALOG_UNAVAILABLE                                                                                                                                                                    | 目录数据不可用或代码不支持；不回退代码目录，由运维恢复后明确继续         |
-| 500  | INTERNAL_ERROR                                                                                                                                                                         | 保留 request_id；先确认原动作结果，不自动发起第二次探测                  |
+| HTTP | 错误码                                                                                                                                                                                 | 处理语义                                                                                                                                    |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400  | MALFORMED_REQUEST                                                                                                                                                                      | 无效 JSON 语法、请求体超过声明字节上限等边界错误；A14/A15 合法 JSON 的未知键、结构和类型问题使用 422                                        |
+| 401  | UNAUTHENTICATED                                                                                                                                                                        | 按共享身份登录处理，不自动重放模型检测                                                                                                      |
+| 403  | FORBIDDEN / CSRF_INVALID / OUT_OF_SCOPE / RESOURCE_DISABLED / PASSWORD_CHANGE_REQUIRED / TERMS_ACCEPTANCE_REQUIRED                                                                     | 当前会话、权限、范围或共享账号限制                                                                                                          |
+| 404  | NOT_FOUND                                                                                                                                                                              | 不存在或不可见，路径子资源必须属于其父对象                                                                                                  |
+| 409  | VERSION_CONFLICT / STATE_CONFLICT / IDEMPOTENCY_CONFLICT / IDEMPOTENCY_IN_PROGRESS / CHECK_IN_PROGRESS / OPERATION_BUSY / DISCOVERY_STALE / OPERATION_RESULT_UNKNOWN / CATALOG_CHANGED | 重新读取受影响对象；禁止自动覆盖或换键重试                                                                                                  |
+| 409  | PRICE_NOT_CONFIGURED                                                                                                                                                                   | C01 发现有计费项且未配置价格。先保存适用价格再发起准入。D03 用同一业务码逐项拒绝。                                                          |
+| 410  | DISCOVERY_EXPIRED                                                                                                                                                                      | 发现快照过期，重新获取或手工录入                                                                                                            |
+| 422  | VALIDATION_FAILED 及各接口业务字段错误                                                                                                                                                 | 按 params.fields 定位字段；不向上游补发猜测请求                                                                                             |
+| 422  | VALIDATION_FAILED，字段规则 `STANDARD_ROUTE_CONFLICT`                                                                                                                                  | 按 `params.fields` 定位路径字段。用 `params.standard_route` 的 `method`、`path` 提示冲突的标准入口。D02、D03 在各自批量回执的拒绝项中返回。 |
+| 422  | CATALOG_INCOMPATIBLE                                                                                                                                                                   | 模板/型号/价格版本关联不匹配，保留草稿并重新选择正确目录来源；不自动混版                                                                    |
+| 503  | CATALOG_UNAVAILABLE                                                                                                                                                                    | 目录数据不可用或代码不支持；不回退代码目录，由运维恢复后明确继续                                                                            |
+| 500  | INTERNAL_ERROR                                                                                                                                                                         | 保留 request_id；先确认原动作结果，不自动发起第二次探测                                                                                     |
+
+`CUSTOM_PASSTHROUGH` 路径 `/v1/chat/completions` 与固定标准入口冲突。路径 `/v1beta/models/foo:generateContent` 与参数化标准入口冲突，以下是该例的错误参数。M03、M05 和 C05 返回 HTTP 422，M05 字段路径以 `base.` 开头。D02 的 HTTP 200 与 D03 的 HTTP 202 回执在对应 `REJECTED` 项的 `params` 返回相同结构，字段路径相对于该项。
+
+```json
+{
+  "fields": { "invocation_apis[0].path": "STANDARD_ROUTE_CONFLICT" },
+  "standard_route": { "method": "POST", "path": "/v1beta/models/{model}:generateContent" }
+}
+```
 
 错误体完整组件：[Error](#schema-error)。每个接口均列出完整错误码集合；含 body 的写请求使用 `Content-Type: application/json`，GET/DELETE 无请求体。`Accept: application/json` 可省略。Cookie/CSRF 真实名称在正式开发后与公共认证接口一起校准，不把示意名当上线契约。
 
@@ -78,7 +101,7 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 | 空值与范围     | 页面必需键必返；未知用null/[]；不可见已选人只给配置中原已知ID和通用不可用占位        | UUID当显示名称；越界选中ID自动补查资料；unknown当0              |
 | 列表与详情     | ProviderListItem、ModelListItem、CheckJobSummary只含该表需要字段；详情接口按点击读取 | 整页为补显示发N次详情；把所有完整配置塞入每个列表行             |
 
-本次增加M09/M10/M11/A13/B06五项只读接口，补齐原型已有供应商选项、标签目录、生命周期时间线、已上架模型授权选择器和余额接收人选择器；不是新增产品模块。模型选择器不要求供应商管理权限，授权选择器不要求模型详情权限，余额选人不借用模型授权的主体范围。
+既有M09/M10/M11/A13/B06五项只读接口补齐供应商选项、标签目录、生命周期时间线、已上架模型授权选择器和余额接收人选择器。A14/A15补齐用户详情的批量增量添加与撤销，复用现有身份与模型授权资源。模型选择器不要求供应商管理权限，授权选择器不要求模型详情权限，余额选人不借用模型授权的主体范围。
 
 ## 2. 全量接口索引
 
@@ -113,6 +136,7 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 | [C02](#api-c02) | `GET /api/v1/model-access/models/{model_id}/admission-tests`                        | 无                                                       | [CheckJobPage](#schema-checkjobpage)                                   | 200  |
 | [C03](#api-c03) | `GET /api/v1/model-access/models/{model_id}/admission-tests/{test_id}`              | 无                                                       | [CheckJob](#schema-checkjob)                                           | 200  |
 | [C04](#api-c04) | `GET /api/v1/model-access/models/{model_id}/admission-tests/latest`                 | 无                                                       | [CheckJob](#schema-checkjob)                                           | 200  |
+| [C05](#api-c05) | `POST /api/v1/model-access/models/{model_id}/admission-tests/pricing-check`         | [预检请求](#c05-request)                                 | [预检结果](#c05-response)                                              | 200  |
 | [H01](#api-h01) | `POST /api/v1/model-access/models/{model_id}/health-checks`                         | [HealthCheckInput](#schema-healthcheckinput)             | [CheckJob](#schema-checkjob)                                           | 202  |
 | [H02](#api-h02) | `GET /api/v1/model-access/models/{model_id}/health-checks`                          | 无                                                       | [CheckJobPage](#schema-checkjobpage)                                   | 200  |
 | [H03](#api-h03) | `GET /api/v1/model-access/models/{model_id}/health-checks/latest`                   | 无                                                       | [CheckJob](#schema-checkjob)                                           | 200  |
@@ -131,6 +155,8 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 | [A11](#api-a11) | `GET /api/v1/model-access/users/{user_id}/model-grant-sources`                      | 无                                                       | [AccessibleModelPage](#schema-accessiblemodelpage)                     | 200  |
 | [A12](#api-a12) | `GET /api/v1/model-access/model-permission-subjects`                                | 无                                                       | [SubjectViewPage](#schema-subjectviewpage)                             | 200  |
 | [A13](#api-a13) | `GET /api/v1/model-access/model-permission-models`                                  | 无                                                       | [ModelAuthorizationSummaryPage](#schema-modelauthorizationsummarypage) | 200  |
+| [A14](#api-a14) | `POST /api/v1/model-access/users/{user_id}/model-grants/add`                        | [UserGrantDelta](#schema-usergrantdelta)                 | [UserGrantDeltaResult](#schema-usergrantdeltaresult)                   | 200  |
+| [A15](#api-a15) | `POST /api/v1/model-access/users/{user_id}/model-grants/remove`                     | [UserGrantDelta](#schema-usergrantdelta)                 | [UserGrantDeltaResult](#schema-usergrantdeltaresult)                   | 200  |
 | [R01](#api-r01) | `GET /api/v1/model-access/models/{model_id}/pricing`                                | 无                                                       | [PricingVersionPage](#schema-pricingversionpage)                       | 200  |
 | [R02](#api-r02) | `POST /api/v1/model-access/models/{model_id}/pricing`                               | [PricingInput](#schema-pricinginput)                     | [PricingVersion](#schema-pricingversion)                               | 201  |
 | [R03](#api-r03) | `GET /api/v1/model-access/models/{model_id}/pricing/current`                        | 无                                                       | [CurrentPricing](#schema-currentpricing)                               | 200  |
@@ -338,7 +364,7 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 - 手工行省略 `discovery_id`。行级 `null` 或非字符串属于整批结构错误，返回 422，定位 `models[n].discovery_id`。字符串为空或不是有效的 UUID 时，仅拒绝该行。顶层 `discovery_id` 已移除，任何值（包括 `null`）均导致整批 422，并定位至 `params.fields.discovery_id`。只有发现项或只有手工项时也提交同一结构。
 - `model_id_at_provider` 是供应商内上游 ID 或部署名，用于匹配快照和判断已有物理模型。`model_id_at_gateway` 是用户编辑的网关对外调用 ID，按服务端规范化结果全局唯一，区分大小写。
 - 提交该供应商当前 `expected_provider_version`（如 P04 `version`）以及 1 至 100 行。目录型号来源未明确选择时省略 `catalog_model_version_id`，不要发送 `null`。D02 不依赖 M13。
-- D02 行内两个协议数组同时省略时采用可信建议，没有建议则保留空草稿。显式提交两个 `[]` 保留空草稿。非空时两数组必须等长、同序、逐项协议一致，`custom_invocation_apis` 包含全部协议的 `{protocol,path}`。只提交一列、顺序不匹配、重复协议或路径不合法拒绝对应行。数组为 `null`、行结构无效或旧 `id` 字段属于整批结构错误。成功创建 DRAFT，价格版本为 0，提交不发起检测。`pricing` 只接受省略或 `null`。
+- D02 行内省略 `invocation_apis` 时采用可信目录建议，没有建议则保留空草稿。显式 `[]` 保留空草稿。非空时逐条提交 `{protocol,path}`，由后端分配行 ID。路径冲突等配置值错误只拒绝该模型行，`params.fields` 使用相对于本行的路径。数组为 `null`、元素类型无效或包含未知键会触发整批结构校验。成功创建 DRAFT，价格版本为 0。导入不会发起检测，`pricing` 只接受省略或 `null`。
 
 示例请求使用一个合法发现项、一个合法手工项和一个过期发现项。示例 ID 和版本仅演示结构，实际值来自当前读取结果。
 
@@ -358,21 +384,18 @@ Idempotency-Key: d02-import-20261116-example
       "discovery_id": "50000000-0000-4000-8000-000000000001",
       "model_id_at_provider": "mock-chat",
       "model_id_at_gateway": "研发对话模型",
-      "supported_invocation_apis": [],
-      "custom_invocation_apis": []
+      "invocation_apis": []
     },
     {
       "model_id_at_provider": "mock-test",
       "model_id_at_gateway": "手工测试模型",
-      "supported_invocation_apis": [],
-      "custom_invocation_apis": []
+      "invocation_apis": []
     },
     {
       "discovery_id": "50000000-0000-4000-8000-000000000002",
       "model_id_at_provider": "mock-embedding",
       "model_id_at_gateway": "研发向量模型",
-      "supported_invocation_apis": [],
-      "custom_invocation_apis": []
+      "invocation_apis": []
     }
   ]
 }
@@ -406,8 +429,6 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
             "price": 0,
             "metadata": 1
           },
-          "supported_invocation_apis": [],
-          "custom_invocation_apis": [],
           "invocation_apis": [],
           "catalog_model_version_id": null
         }
@@ -433,8 +454,6 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
             "price": 0,
             "metadata": 1
           },
-          "supported_invocation_apis": [],
-          "custom_invocation_apis": [],
           "invocation_apis": [],
           "catalog_model_version_id": null
         }
@@ -486,7 +505,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 首次提交时，请求结构、会话、权限与 CSRF 校验失败会阻止受理。供应商不可用返回整批 HTTP 404（`NOT_FOUND / PROVIDER_NOT_AVAILABLE`，定位 `provider_id`）。当前供应商版本与 `expected_provider_version` 不同返回整批 HTTP 409（`VERSION_CONFLICT / PROVIDER_VERSION_MISMATCH`，定位 `expected_provider_version`）。已经受理的同键请求先按幂等记录重放或恢复。单条快照或模型校验失败返回逐行结果，外层仍为 HTTP 200。
 
-非 200 响应沿用 `code/data/params/request_id` 封套，`data` 为 `null`。以 `params.reason_code` 给出本地化提示，按 `params.fields` 精确标注输入或请求头，例如 `models[2].supported_invocation_apis`、`expected_provider_version` 或 `headers.Idempotency-Key`。无可定位字段时在批次级展示原因和 `request_id`。
+非 200 响应沿用 `code/data/params/request_id` 封套，`data` 为 `null`。以 `params.reason_code` 给出本地化提示，按 `params.fields` 精确标注输入或请求头，例如 `models[2].invocation_apis`、`expected_provider_version` 或 `headers.Idempotency-Key`。无可定位字段时在批次级展示原因和 `request_id`。
 
 例如，传入旧的顶层发现字段：
 
@@ -523,7 +542,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 权限：`model.models:WRITE,model.admission:WRITE`。
 
-逐模型校验 DRAFT、base 版本、作用域及准入权限。协议数组需等长同序且至少一对。固定供应商/目录/计量/币种上下文后保留有效内部价；无价时按企业默认、可表达官方参考、真实缺价全0准备首价，F40-01～04已确认，复杂官方规则无法表达且metric非空时全0并保存UNSUPPORTED_RULE；metric确为空时保留未定价、不建价且继续检测。接口保存、初价、冻结检测事实及任务/审计同事务，提交后才调用供应商。自动初价只接纳服务端可信规则，不接受客户端任意费率、不增加人工价格写权限。C01复用同一准备能力。复用任务仍核验源计划、全部项目及探针语义；新增流式不得复用不完整PASS。旧检测费用不因初价/改价重算。
+逐模型校验 DRAFT、基础版本、作用域及准入权限。提交有序 `invocation_apis`，至少一行。触发标准入站冲突时拒绝该行，并返回 `params.fields` 和 `params.standard_route`。客户端可用 [C05](#api-c05) 对拟提交的协议预检。D03 在正式事务中按实际协议复核计量指标和适用的当前价格。有指标但未保存价格时，该行返回 `REJECTED / PRICE_NOT_CONFIGURED`，该行协议修改一并回滚。协议合法且无指标时可继续检测。有指标且价格适用时冻结检测价格。接口保存、任务与审计同事务，提交后才调用供应商。复用任务仍核验源计划、全部项目及探针语义。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -656,7 +675,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 权限：`model.models:WRITE；有计量规格并提交pricing对象需model.pricing:WRITE；提交initial_grants另需model.permissions:WRITE`。
 
-业务、并发与事务规则：全部创建域同一事务，不触发检测。40修订：expected_provider_version仍必填；pricing省略/null不配置，不再要求必须确无metric；主动提交对象时仍须完整内部价及价格写权限，首次expected_price_version=0。M13只准备建议，保存才确认内部价；官方参考数字不是换汇或已生效费用。服务端重验目录/可信型号、提供商版本、预算币种及适配指标；有可用官方参考时回传准确参考ID并冻结原币快照。首次无适用产品默认、有metric、真实缺价且确认FIXED全指标0记BUILT_IN/ENTERPRISE_DEFAULT_ZERO；有适用默认按本文默认确认规则，其他记ENTERPRISE_CUSTOM；复杂官方规则无法表达且有metric、无适用企业默认时按F40-02形成完整零价，不修改官方事实。调用ID同M12规范化、全局区分大小写，由数据库唯一约束兜底409 NAME_CONFLICT；标准或已适配自定义至少一项。 首次内部价格按M13默认优先规则：适用产品默认及官方参考ID分别回传并冻结；原样确认完整默认可为非零或分时BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED，修改默认仍保留引用而记ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED；不能将默认0当缺配置。 首次是否原样采用默认：先按is_fallback及规范化conditions定位对应时段，再比较完整指标/Decimal费率/模式；name可为该同一时段已发布的任一语言标签，同语言下时段标签发布时必须唯一，不能以当前请求语言变化误判自定义。非已发布别名或改规则/费率记ENTERPRISE_CUSTOM。
+业务、并发与事务规则：全部创建域同一事务，不触发检测。40修订：expected_provider_version仍必填；pricing省略/null不配置，不再要求必须确无metric；主动提交对象时仍须完整内部价及价格写权限，首次expected_price_version=0。M13只准备建议，保存才确认内部价；官方参考数字不是换汇或已生效费用。服务端重验目录/可信型号、提供商版本、预算币种及适配指标；有可用官方参考时回传准确参考ID并冻结原币快照。首次无适用产品默认、有metric、真实缺价且确认FIXED全指标0记BUILT_IN/ENTERPRISE_DEFAULT_ZERO；有适用默认按本文默认确认规则，其他记ENTERPRISE_CUSTOM；复杂官方规则无法表达且有metric、无适用企业默认时按F40-02形成完整零价，不修改官方事实。调用ID同M12规范化、全局区分大小写，由数据库唯一约束兜底409 NAME_CONFLICT；提交 `invocation_apis` 至少一行，创建时由后端分配行 ID。 首次内部价格按M13默认优先规则：适用产品默认及官方参考ID分别回传并冻结；原样确认完整默认可为非零或分时BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED，修改默认仍保留引用而记ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED；不能将默认0当缺配置。 首次是否原样采用默认：先按is_fallback及规范化conditions定位对应时段，再比较完整指标/Decimal费率/模式；name可为该同一时段已发布的任一语言标签，同语言下时段标签发布时必须唯一，不能以当前请求语言变化误判自定义。非已发布别名或改规则/费率记ENTERPRISE_CUSTOM。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -670,7 +689,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`NAME_CONFLICT`、`PROVIDER_MODEL_CONFLICT`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`、`BILLING_CURRENCY_CHANGED`、`PRICE_RULE_INVALID`、`METRIC_UNSUPPORTED`、`VERSION_CONFLICT`；HTTP与恢复语义见§1.2，完整错误体见[Error](#schema-error)。
 
-该接口使用的嵌套组件：[CustomAPIInput](#schema-customapiinput), [CustomAPIView](#schema-customapiview), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput), [Subject](#schema-subject)。
+该接口使用的嵌套组件：[InvocationAPIInput](#schema-invocationapiinput), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput), [Subject](#schema-subject)。
 
 <a id="api-m04"></a>
 
@@ -680,7 +699,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 权限：`model.models:READ`。
 
-业务、并发与事务规则：授权/价格/检查历史由独立READ权限接口读取，不因看模型就泄露全部主体
+业务、并发与事务规则：授权、价格和检查历史由各自的 READ 权限接口读取。`invocation_apis` 按保存顺序回显。未配置透传时数组没有 `CUSTOM_PASSTHROUGH` 行。没有任何配置的草稿返回 `invocation_apis: []`。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                           |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------- |
@@ -693,7 +712,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`；每项 HTTP 与恢复语义见 §1.2，错误体见 [Error](#schema-error)。
 
-该接口使用的嵌套组件：[CustomAPIView](#schema-customapiview), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding)。
+该接口使用的嵌套组件：[HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding)。
 
 <a id="api-m05"></a>
 
@@ -703,14 +722,14 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 权限：`按提交域model.models/permissions/pricing:WRITE`。
 
-业务规则：按修改域和各自预期版本提交，同一请求整体事务。TESTING、PENDING_REVIEW 拒绝 M05。RETIRED 可以改网关名称、协议及路径，供应商和上游标识必须保持原值。只有 DRAFT 可以改上游，或显式传双空数组清空最后一对。RETIRED 保存协议时至少保留一对，可以同次替换。配置发生实际变化时重新准入，仅顺序变化保持原准入代次。
+业务规则：按修改域和各自预期版本提交，同一请求整体事务。TESTING、PENDING_REVIEW 拒绝 M05。RETIRED 可以改网关名称、协议及路径，供应商和上游标识必须保持原值。只有 DRAFT 可以改上游，或显式传 `base.invocation_apis: []` 清空配置。RETIRED 保存协议时至少保留一行，可以同次替换。编辑配置时提交完整有序数组，已有行回传 ID。配置发生实际变化时重新准入，仅顺序变化保持原准入代次。
 
-| 状态                    | 供应商实例、供应商侧模型标识 | 网关名称、协议与路径     | 其他 M05 域 |
-| ----------------------- | ---------------------------- | ------------------------ | ----------- |
-| DRAFT                   | 按权限可改                   | 可改，允许提交两个空数组 | 按权限可改  |
-| TESTING、PENDING_REVIEW | 锁定                         | 锁定                     | 全部锁定    |
-| ACTIVE、SUSPENDED       | 锁定                         | 锁定                     | 按权限可改  |
-| RETIRED                 | 锁定                         | 可改，至少保留一对       | 按权限可改  |
+| 状态                    | 供应商实例、供应商侧模型标识 | 网关名称、协议与路径                 | 其他 M05 域 |
+| ----------------------- | ---------------------------- | ------------------------------------ | ----------- |
+| DRAFT                   | 按权限可改                   | 可改，允许提交 `invocation_apis: []` | 按权限可改  |
+| TESTING、PENDING_REVIEW | 锁定                         | 锁定                                 | 全部锁定    |
+| ACTIVE、SUSPENDED       | 锁定                         | 锁定                                 | 按权限可改  |
+| RETIRED                 | 锁定                         | 可改，至少保留一行                   | 按权限可改  |
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -725,7 +744,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`VERSION_CONFLICT`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`、`NAME_CONFLICT`、`BILLING_CURRENCY_CHANGED`、`PRICE_RULE_INVALID`、`METRIC_UNSUPPORTED`；HTTP与恢复语义见§1.2，完整错误体见[Error](#schema-error)。
 
-该接口使用的嵌套组件：[CustomAPIView](#schema-customapiview), [GrantDelta](#schema-grantdelta), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelIdentityInput](#schema-modelidentityinput), [ModelMetadataInput](#schema-modelmetadatainput), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput)。
+该接口使用的嵌套组件：[InvocationAPIInput](#schema-invocationapiinput), [GrantDelta](#schema-grantdelta), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelIdentityInput](#schema-modelidentityinput), [ModelMetadataInput](#schema-modelmetadatainput), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput)。
 
 <a id="api-m06"></a>
 
@@ -779,7 +798,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`VERSION_CONFLICT`、`ADMISSION_STALE`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`；每项 HTTP 与恢复语义见 §1.2，错误体见 [Error](#schema-error)。
 
-该接口使用的嵌套组件：[CustomAPIView](#schema-customapiview), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding)。
+该接口使用的嵌套组件：[HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding)。
 
 <a id="api-m08"></a>
 
@@ -806,6 +825,8 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 请求体：无。不要发送 JSON body；DELETE 的版本在 query。
 
 成功：HTTP **200**，封装字段见 §1.1；`data` 完整字段见 [ModelTemplatePage](#schema-modeltemplatepage)。
+
+分页参数只影响 `items`。未传 `provider_id` 时 `protocol_options` 为空且 `custom_passthrough_supported` 为 `null`。有供应商时，即使 `items` 为空，照常返回该实例的标准候选和透传配置能力。模型实际已配置的行由 M04 回显。
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`；HTTP与恢复语义见§1.2，完整错误体见[Error](#schema-error)。
 
@@ -892,13 +913,13 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 ### C01 提交准入检测
 
-> **40修订设计（未实施）**：直接准入复用D03的计量解析、价格准备和检测事实冻结，禁止绕过初价与失败处理；不重复保存无变化的接口配置。
+C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺价时返回 HTTP 409 `PRICE_NOT_CONFIGURED`。价格失配沿用 `PRICE_RULE_INVALID` 或 `BILLING_CURRENCY_CHANGED`。页面可先调用 [C05](#api-c05) 取得价格判定。
 
 `POST /api/v1/model-access/models/{model_id}/admission-tests`；operationId：`modelAccessV14C01`。
 
 权限：`model.admission:WRITE`。
 
-业务、并发与事务规则：DRAFT、同模型互斥；每接口每项目一次，无自动重试；未执行项 result_detail=null、cost=null；等待项计数按计划返回，不能以空对象假充结果。；triggered_by_display/model_display及每项invocation_api与detail_text/suggestion_text独立于pricing权限，从任务时快照投影。 显式reuse_job_id还须比较当前所需接口计划、全部检测项目与源任务冻结探针输入语义；新加流式不能复用缺STREAMING的旧完整接口PASS。metadata_version差异本身不使复用或审核失效，纯描述修改可复用；计划/有效探针不同返回409 STATE_CONFLICT，要求管理员明确新检测，不自动补发。 连续复用按内部冻结六字段元信息及实际探针/计划事实验证；内部源快照完整扁平复制，不依赖API最小投影、当前模型或已清理源任务补值。
+业务、并发与事务规则：DRAFT、同模型互斥；每配置行每检测类型一次，无自动重试；未执行项 result_detail=null、cost=null；等待项计数按计划返回，不能以空对象假充结果。；triggered_by_display/model_display及每项invocation_api与detail_text/suggestion_text独立于pricing权限，从任务时快照投影。 显式reuse_job_id还须比较当前所需接口计划、全部检测项目与源任务冻结探针输入语义；新加流式不能复用缺STREAMING的旧完整接口PASS。metadata_version差异本身不使复用或审核失效，纯描述修改可复用；计划/有效探针不同返回409 STATE_CONFLICT，要求管理员明确新检测，不自动补发。 连续复用按内部冻结六字段元信息及实际探针/计划事实验证；内部源快照完整扁平复制，不依赖API最小投影、当前模型或已清理源任务补值。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -911,7 +932,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 成功：HTTP **202**，封装字段见 §1.1；`data` 完整字段见 [CheckJob](#schema-checkjob)。
 
-错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`CHECK_IN_PROGRESS`、`VERSION_CONFLICT`、`CUSTOM_API_UNSUPPORTED`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`；每项 HTTP 与恢复语义见 §1.2，错误体见 [Error](#schema-error)。
+除上述价格错误外，常见错误包括 `UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`CHECK_IN_PROGRESS`、`VERSION_CONFLICT`、`CUSTOM_API_UNSUPPORTED`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`。完整契约见 [实际 OpenAPI](../../../contracts/current/openapi.json)。
 
 该接口使用的嵌套组件：[CheckItem](#schema-checkitem), [CheckSummary](#schema-checksummary), [IdentitySnapshot](#schema-identitysnapshot), [InvocationAPIDisplay](#schema-invocationapidisplay), [ModelDisplaySnapshot](#schema-modeldisplaysnapshot)。
 
@@ -986,6 +1007,58 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`；每项 HTTP 与恢复语义见 §1.2，错误体见 [Error](#schema-error)。
 
 该接口使用的嵌套组件：[CheckItem](#schema-checkitem), [CheckSummary](#schema-checksummary), [IdentitySnapshot](#schema-identitysnapshot), [InvocationAPIDisplay](#schema-invocationapidisplay), [ModelDisplaySnapshot](#schema-modeldisplaysnapshot)。
+
+<a id="api-c05"></a>
+
+### C05 准入价格预检
+
+`POST /api/v1/model-access/models/{model_id}/admission-tests/pricing-check`，operationId 为 `modelAccessV14C05`。
+
+需要完整会话和 `model.admission:WRITE`。提交拟变更的协议时再校验 `model.models:WRITE`。预检只读取数据，调用时无需幂等键或价格读取权限。
+
+<a id="c05-request"></a>
+
+#### 请求字段
+
+| 位置   | 字段                    | 类型                                               | 必填 | 约束与说明                                     |
+| ------ | ----------------------- | -------------------------------------------------- | ---- | ---------------------------------------------- |
+| 路径   | `model_id`              | string (UUID)                                      | 是   | 物理模型 ID                                    |
+| 请求头 | `Origin`                | string                                             | 是   | 与控制面配置匹配的请求来源                     |
+| 请求头 | `X-CSRF-Token`          | string                                             | 是   | 当前会话的 CSRF 令牌                           |
+| JSON   | `expected_base_version` | integer (int64)                                    | 是   | 当前模型 `versions.base`，最小为 1             |
+| JSON   | `invocation_apis`       | [InvocationAPIInput](#schema-invocationapiinput)[] | 否   | 拟检测的 1 至 32 条有序配置。已有行可回传 ID。 |
+
+模型须处于 DRAFT。省略 `invocation_apis` 时按已保存配置预检，提供时按拟提交配置预检。数组须非空且不可为 `null`。配置路径与标准入站路由冲突时，返回 422 并在 `params.standard_route` 中报告冲突入口。
+
+<a id="c05-response"></a>
+
+#### 返回字段
+
+完成判定时返回 HTTP 200（`code=OK`），通过和未通过都使用下列字段。结果仅表示价格门槛。
+
+| `data` 字段            | 类型    | 必填 | 说明                         |
+| ---------------------- | ------- | ---- | ---------------------------- |
+| `pricing_check_passed` | boolean | 是   | 本次配置是否满足准入价格要求 |
+| `reason`               | string  | 是   | 下表定义的稳定判定枚举       |
+
+| `reason`               | 是否通过 | 条件                                   |
+| ---------------------- | -------- | -------------------------------------- |
+| `PRICE_CONFIGURED`     | true     | 有计费项且存在完整适用的已保存价格     |
+| `NO_BILLING_ITEMS`     | true     | 协议配置合法且没有适用计费项           |
+| `PRICE_NOT_CONFIGURED` | false    | 有计费项但没有已保存价格               |
+| `PRICE_NOT_APPLICABLE` | false    | 已保存价格与当前计费项或预算币种不匹配 |
+
+| HTTP | 业务码                                                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400  | `MALFORMED_REQUEST`                                                                                                                          |
+| 401  | `UNAUTHENTICATED`                                                                                                                            |
+| 403  | `CSRF_INVALID`、`FORBIDDEN`、`ORIGIN_REJECTED`、`OUT_OF_SCOPE`、`PASSWORD_CHANGE_REQUIRED`、`RESOURCE_DISABLED`、`TERMS_ACCEPTANCE_REQUIRED` |
+| 404  | `NOT_FOUND`                                                                                                                                  |
+| 409  | `VERSION_CONFLICT`（基础版本变化）、`CHECK_IN_PROGRESS`（检测中）、`STATE_CONFLICT`（其他非 DRAFT 状态）、`CATALOG_CHANGED`                  |
+| 415  | `UNSUPPORTED_MEDIA_TYPE`                                                                                                                     |
+| 422  | `VALIDATION_FAILED`（例如无有效配置或透传路径与标准入口冲突）、`CATALOG_INCOMPATIBLE`、`CUSTOM_API_UNSUPPORTED`、`METRIC_UNSUPPORTED`        |
+| 500  | `INTERNAL_ERROR`                                                                                                                             |
+| 503  | `AUTHENTICATION_BUSY`、`CATALOG_UNAVAILABLE`                                                                                                 |
 
 <a id="api-h01"></a>
 
@@ -1083,7 +1156,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`VERSION_CONFLICT`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`；每项 HTTP 与恢复语义见 §1.2，错误体见 [Error](#schema-error)。
 
-该接口使用的嵌套组件：[CustomAPIView](#schema-customapiview), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding)。
+该接口使用的嵌套组件：[HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding)。
 
 <a id="api-h05"></a>
 
@@ -1443,6 +1516,34 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 该接口使用的嵌套组件：[ModelAuthorizationSummary](#schema-modelauthorizationsummary)。
 
+<a id="api-a14"></a>
+
+### A14 批量添加用户直接授权
+
+`POST /api/v1/model-access/users/{user_id}/model-grants/add`；operationId：`modelAccessV14A14`。
+
+权限：`model.permissions:WRITE AND identity.users:WRITE`，目标用户及模型在当前可管理范围；完整会话、Origin、CSRF、整批幂等校验继续执行。
+
+请求：路径 `user_id` 为目标用户 UUID；必填请求头 `X-CSRF-Token`、`Idempotency-Key`，媒体类型 `application/json`。请求体见 [UserGrantDelta](#schema-usergrantdelta)。只添加指定模型的 USER 直授，不覆盖其他直授，不修改部门、组继承。
+
+一个请求同一用户、同一动作，1～100 个物理模型，整个请求一个事务。对象、范围、版本及所有本次新增的模型状态有任一不满足，则全部回滚。真正新增要求模型 ACTIVE；已有非 ACTIVE 直授仍允许无变化成功。继承模型可再直授；停用、冻结用户沿现主体配置规则仍可管理直授，不代表立即可调用。
+
+成功：HTTP **200**，`data` 见 [UserGrantDeltaResult](#schema-usergrantdeltaresult)。所有项 `direct_granted=true`，是否实变由各项 `changed` 表示。
+
+新命令先校验 `expected_authorization_version`，即使全批可无变化，旧版本仍返回 409。至少一项实变时全局授权版本仅加 1，各实变模型授权版本各加 1；全批无变化不推进。相同幂等命令返回原整批回执；目标用户、模型集、期望版本或原因改变则幂等冲突，模型集合换序不改变规范语义。
+
+错误：沿公共会话、对象、权限及输入边界；额外关注 `409 VERSION_CONFLICT / IDEMPOTENCY_CONFLICT / IDEMPOTENCY_IN_PROGRESS / OPERATION_RESULT_UNKNOWN`、`422 VALIDATION_FAILED`（含本次新增非 ACTIVE、UUID 重复、项数不合规）、`503 COMMAND_HMAC_KEY_UNAVAILABLE`。合法 JSON 的类型、未知键及约束不合规返回 422；JSON 语法或超过 64 KiB 返回 400。没有部分成功结果。
+
+<a id="api-a15"></a>
+
+### A15 批量撤销用户直接授权
+
+`POST /api/v1/model-access/users/{user_id}/model-grants/remove`；operationId：`modelAccessV14A15`。
+
+路径、权限、请求头、请求体、整批原子性、严格版本及幂等规则与 A14 相同。仅按 `目标用户 + physical_model_id` 撤销 USER 关系，不接受部门/组关系 ID；未提交模型及继承关系保持。暂停、退役等非 ACTIVE 模型和停用/冻结用户允许撤销。对象仍存在且可管理但无该用户直授时，无变化成功；用户/模型不存在或不可见仍为 404，不能伪装成无变化。
+
+成功：HTTP **200**，`data` 见 [UserGrantDeltaResult](#schema-usergrantdeltaresult)，所有项 `direct_granted=false`。false 只表示本用户直授不存在，仍可能由继承访问。错误沿 A14 的公共规则，不要求撤销目标模型 ACTIVE。成功后刷新 A04/A11、用户详情两计数及候选，不能用 `changed_count` 直接加减模型数量。
+
 <a id="api-r01"></a>
 
 ### R01 价格历史
@@ -1699,14 +1800,14 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 业务、并发与事务规则：先验model.models:WRITE及实例模型用途范围，再解析完整适配metric_specs。确空时NOT_APPLICABLE，两个reference及prefill均null、origin=NONE，不读取价格且不需pricing:READ；非空另验pricing:READ，403不得解释为免费。实例固定批次、可信型号及接口范围共同确定产品默认和官方参考；不猜部署名。适用ENTERPRISE_DEFAULT完整规则优先预填（包括0及TIME_BASED），不与官方逐项拼价；没有默认才按可表达官方数字预填，再无默认且PRICE_UNAVAILABLE/NO_PUBLIC_PRICE才完整FIXED全0。无默认且UNSUPPORTED_RULE按F40-02预填完整FIXED全指标0并保留真实原因；存在但不完整/不兼容默认不能静默回退，返回目录错误。官方reference_state仍独立反映官方事实；有默认且官方复杂也能预填默认。默认和官方引用可同时冻结，首选官方币种按目录而非预算筛选。内部币种预算配置缺省CNY，默认数值模板亦按此解释，不换汇。【历史创建前置，40修订替代】原创建/导入必须显式提交完整pricing和返回的两个参考ID；新设计D02不提交非空pricing，M03不强制价格；独立手工价格保存仍须完整来源与权限校验。首次完整语义原样采用默认为BUILT_IN/ENTERPRISE_DEFAULT_CONFIRMED，修改默认为ENTERPRISE_CUSTOM/ENTERPRISE_CONFIGURED；无默认才沿官方确认或真实缺价0规则。无指标显式pricing=null且UNPRICED。保存重验provider_version、预算币种、固定批次、完整适配指标和来源；只读no-store，不预留、不写命令、不请求供应商。 默认时段名是产品模板文案：M13/M14的default_reference.periods[].name和内部预填按Accept-Language从固定批次period_name_labels投影，缺译用所属模板fallback_locale。官方参考时段名保持官方原文，管理员已保存的period.name保持确认原文，切语言不重命名既有内部价。
 
-| 位置   | 参数                        | 类型                | 必填 | 可空 | 默认/限制                              | 参数说明                                                                        |
-| ------ | --------------------------- | ------------------- | ---- | ---- | -------------------------------------- | ------------------------------------------------------------------------------- |
-| query  | `provider_id`               | string              | 是   | 否   | format="uuid"                          | 必须可管理；不存在/越界统一404。                                                |
-| query  | `model_id_at_provider`      | string              | 是   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 纯手工和目录型号均必填；不从名称猜官方绑定。                                    |
-| query  | `supported_invocation_apis` | array&lt;string&gt; | 否   | 否   | uniqueItems=true                       | 重复query参数form/explode；与 upstream_paths 按序配对，至少一对。               |
-| query  | `upstream_paths`            | array&lt;string&gt; | 是   | 否   | 同序                                   | 重复 query 参数，逐项对应 supported_invocation_apis，允许不同协议共用相同路径。 |
-| query  | `catalog_model_version_id`  | string              | 否   | 否   | format="uuid"                          | 选择目录时回传，校验实例固定批次/模板和可信型号；不匹配拒绝。                   |
-| header | `Accept-Language`           | string              | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                              |
+| 位置   | 参数                        | 类型                | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                            |
+| ------ | --------------------------- | ------------------- | ---- | ---- | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| query  | `provider_id`               | string              | 是   | 否   | format="uuid"                          | 必须可管理；不存在/越界统一404。                                                                    |
+| query  | `model_id_at_provider`      | string              | 是   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 纯手工和目录型号均必填；不从名称猜官方绑定。                                                        |
+| query  | `supported_invocation_apis` | array&lt;string&gt; | 是   | 否   | 与路径同序，1 至 32 项                 | 使用重复 query 参数。标准协议不可重复。多个 `CUSTOM_PASSTHROUGH` 各配不同路径，本协议不产生计费项。 |
+| query  | `upstream_paths`            | array&lt;string&gt; | 是   | 否   | 同序                                   | 重复 query 参数，逐项对应 supported_invocation_apis，允许不同协议共用相同路径。                     |
+| query  | `catalog_model_version_id`  | string              | 否   | 否   | format="uuid"                          | 选择目录时回传，校验实例固定批次/模板和可信型号；不匹配拒绝。                                       |
+| header | `Accept-Language`           | string              | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                                  |
 
 请求体：无。
 
@@ -1731,7 +1832,7 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 | query  | `model_id`                  | string              | 条件，见模式 | 否   | format="uuid"                          | 已有模型价格页读取默认用此模式；只校验pricing:READ及该模型价格管理范围，无需models READ/WRITE或providers权限；不存在/不可见统一404。 |
 | query  | `provider_id`               | string              | 条件，见模式 | 否   | format="uuid"                          | 无model_id的创建前模式必填；有model_id时禁止提交。必须可管理；不存在/越界统一404。                                                   |
 | query  | `model_id_at_provider`      | string              | 条件，见模式 | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 无model_id的创建前模式必填；有model_id时禁止提交。纯手工和目录型号均必填；不从名称猜官方绑定。                                       |
-| query  | `supported_invocation_apis` | array&lt;string&gt; | 条件，见模式 | 否   | uniqueItems=true                       | 仅创建前模式可传；有model_id时禁止提交。重复query参数form/explode；与 upstream_paths 按序配对，至少一对。                            |
+| query  | `supported_invocation_apis` | array&lt;string&gt; | 条件，见模式 | 否   | 与路径同序，1 至 32 项                 | 创建前模式必传，用重复 query 参数。标准协议不可重复。多个 `CUSTOM_PASSTHROUGH` 各配不同路径，本协议不产生计费项。                    |
 | query  | `upstream_paths`            | array&lt;string&gt; | 条件，见模式 | 否   | 同序                                   | 仅创建前模式可传；有model_id时禁止提交。重复 query 参数，逐项对应 supported_invocation_apis，允许不同协议共用相同路径。              |
 | query  | `catalog_model_version_id`  | string              | 条件，见模式 | 否   | format="uuid"                          | 仅创建前模式可传；有model_id时禁止提交。选择目录时回传，校验实例固定批次/模板和可信型号；不匹配拒绝。                                |
 | header | `Accept-Language`           | string              | 否           | 否   | 按现有语言协商                         | 当前用户偏好；省略按会话语言，按固定版本fallback_locale回退。                                                                        |
@@ -1795,10 +1896,24 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 ### CustomAPIInput
 
+> 历史双数组的行字段。当前模型配置见 [InvocationAPIInput](#schema-invocationapiinput)。
+
 | 字段       | 类型   | 必填 | 说明                                                            |
 | ---------- | ------ | ---- | --------------------------------------------------------------- |
 | `protocol` | string | 是   | 启用协议标识，与 `supported_invocation_apis` 同一位置的值一致。 |
 | `path`     | string | 是   | 已配置相对上游路径。必须以 `/` 开头且不含空白。                 |
+
+<a id="schema-invocationapiinput"></a>
+
+### InvocationAPIInput
+
+| 字段       | 类型        | 必填 | 可空 | 说明                                                                       |
+| ---------- | ----------- | ---- | ---- | -------------------------------------------------------------------------- |
+| `id`       | string UUID | 否   | 否   | M05、D03 和 C05 可用模型已有配置行的 ID。新增行或调用 M03、D02 时省略。    |
+| `protocol` | string      | 是   | 否   | 标准协议标识或 `CUSTOM_PASSTHROUGH`。每个标准协议在同一模型内只允许一行。  |
+| `path`     | string      | 是   | 否   | 标准协议的出站路径，或透传的完整入站及出站路径。透传路径在同一模型内唯一。 |
+
+路径长度为 1 至 2048 字节，以 `/` 开头，不能包含主机、查询串、片段、占位符、空白、控制符、反斜杠、路径段 `.` 或 `..`，也不能通过百分号编码引入分隔符或规避校验。透传使用可原样发送的转义路径，包含供应商 API 地址中的部署前缀，例如供应商地址 `https://upstream.example/deploy` 使用 `/deploy/v1/custom/rerank`。配置不能匹配任何标准入站路由。未声明字段会被拒绝。
 
 <a id="schema-invocationapi"></a>
 
@@ -1806,15 +1921,15 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 
 InvocationAPI 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段                   | 类型/组件     | 必填 | 可空 | 默认/省略                       | 字段说明                                   | 约束                                   |
-| ---------------------- | ------------- | ---- | ---- | ------------------------------- | ------------------------------------------ | -------------------------------------- |
-| `id`                   | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                   | format="uuid"                          |
-| `protocol`             | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用协议标识                               | 无额外格式限制；仍遵守所属组件业务规则 |
-| `path`                 | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际配置的有效上游路径                     | 无额外格式限制；仍遵守所属组件业务规则 |
-| `adapter_key`          | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读适配键                                 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `adapter_revision`     | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端适配器规格版本，保证历史可追溯       | 无额外格式限制；仍遵守所属组件业务规则 |
-| `streaming_applicable` | boolean       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此接口是否适用流式检查；须结合模型流式标签 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `applicability_reason` | string / null | 否   | 是   | 无静态默认；省略语义见组件/接口 | 接口不适用原因码；适用时可为空             | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                   | 类型/组件     | 必填 | 可空 | 默认/省略                       | 字段说明                                         | 约束                                                |
+| ---------------------- | ------------- | ---- | ---- | ------------------------------- | ------------------------------------------------ | --------------------------------------------------- |
+| `id`                   | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                         | format="uuid"                                       |
+| `protocol`             | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用协议标识                                     | 无额外格式限制；仍遵守所属组件业务规则              |
+| `path`                 | string        | 是   | 否   | 无静态默认                      | 标准协议的出站路径，或透传的完整入站及出站路径。 | 同 [InvocationAPIInput](#schema-invocationapiinput) |
+| `adapter_key`          | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读适配键                                       | 无额外格式限制；仍遵守所属组件业务规则              |
+| `adapter_revision`     | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端适配器规格版本，保证历史可追溯             | 无额外格式限制；仍遵守所属组件业务规则              |
+| `streaming_applicable` | boolean       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此接口是否适用流式检查；须结合模型流式标签       | 无额外格式限制；仍遵守所属组件业务规则              |
+| `applicability_reason` | string / null | 否   | 是   | 无静态默认；省略语义见组件/接口 | 接口不适用原因码；适用时可为空                   | 无额外格式限制；仍遵守所属组件业务规则              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -2264,7 +2379,7 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 
 ### ModelBase
 
-创建模型的完整基础输入；包含身份/协议及元信息。M05不再整体使用本组件，分别使用ModelIdentityInput和ModelMetadataInput。Token整数，未知null；无type字段。
+> 历史双数组组件。下表及组合约束供旧版追溯。当前创建和编辑字段见 [ModelCreate](#schema-modelcreate) 和 [ModelIdentityInput](#schema-modelidentityinput)。
 
 | 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
 | --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
@@ -2338,60 +2453,25 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 
 全部域一个创建事务，不触发检测。M03不强制先M13或提交pricing；主动配置时按适用默认、官方数字及已批准归零规则准备完整建议并检查价格写权限。expected_provider_version固定准备上下文；默认和官方来源分别准确引用，保存后不可因目录更新覆盖。
 
-| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                                                                  | 字段说明                                                                                                                                                                      | 约束                                   |
-| --------------------------- | ----------------------------------------------------- | ---- | ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `provider_id`               | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
-| `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
-| `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
-| `supported_invocation_apis` | array&lt;string&gt;                                   | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。                                                                    | uniqueItems=true                       |
-| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 否   | 否   | default=[]                                                                 | 全部启用协议的路径项，按协议数组逐项同序对应；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
-| `input_modalities`          | array&lt;string&gt;                                   | 否   | 否   | default=[]                                                                 | 输入模态集合；未知为空数组，不添加笼统 type                                                                                                                                   | uniqueItems=true                       |
-| `output_modalities`         | array&lt;string&gt;                                   | 否   | 否   | default=[]                                                                 | 输出模态集合；未知为空数组                                                                                                                                                    | uniqueItems=true                       |
-| `context_window`            | integer / null                                        | 否   | 是   | default=null                                                               | 模型上下文 Token 整数，未知 null，界面 1K=1000                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `max_output_tokens`         | integer / null                                        | 否   | 是   | default=null                                                               | 最大输出 Token 整数，未知 null                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `tags`                      | array&lt;string&gt;                                   | 否   | 否   | default=[]                                                                 | 能力标签及自定义标签；流式由规范化注册键识别                                                                                                                                  | uniqueItems=true                       |
-| `description`               | string / null                                         | 否   | 是   | default=null                                                               | 对象说明文字，按当前用户语言返回或按输入原文保存                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
-| `initial_grants`            | array&lt;[Subject](#schema-subject)&gt;               | 否   | 否   | default=[]                                                                 | 创建时的初始直接授权；省略为空                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `health`                    | [HealthInput](#schema-healthinput)                    | 否   | 否   | default={"auto_health_check": false, "health_check_interval_minutes": 360} | 自动健康配置或健康配置版本，按组件具体类型解释                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
-| `pricing`                   | [PricingInput](#schema-pricinginput) / null           | 否   | 是   | 无静态默认；省略语义见组件/接口                                            | 40修订：省略/null不配置；非空对象仍须完整内部价格、原价格写权限及首次版本0；不因可选价格放宽接口要求。                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_model_version_id`  | string                                                | 否   | 否   | 无静态默认；省略语义见组件/接口                                            | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                          |
-| `expected_provider_version` | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | M13返回的provider_version；创建时与实例当前版本比较，变化返回409 VERSION_CONFLICT，先刷新准备数据再由管理员确认。                                                             | minimum=1                              |
+| 字段                        | 类型/组件                                                     | 必填 | 可空 | 默认/省略                                                                  | 字段说明                                                                                                                                                                      | 约束                                   |
+| --------------------------- | ------------------------------------------------------------- | ---- | ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `provider_id`               | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
+| `model_id_at_gateway`       | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
+| `model_id_at_provider`      | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
+| `invocation_apis`           | array&lt;[InvocationAPIInput](#schema-invocationapiinput)&gt; | 是   | 否   | 必传                                                                       | 有序模型配置。创建时各行省略 ID。                                                                                                                                             | minItems=1，maxItems=32                |
+| `input_modalities`          | array&lt;string&gt;                                           | 否   | 否   | default=[]                                                                 | 输入模态集合；未知为空数组，不添加笼统 type                                                                                                                                   | uniqueItems=true                       |
+| `output_modalities`         | array&lt;string&gt;                                           | 否   | 否   | default=[]                                                                 | 输出模态集合；未知为空数组                                                                                                                                                    | uniqueItems=true                       |
+| `context_window`            | integer / null                                                | 否   | 是   | default=null                                                               | 模型上下文 Token 整数，未知 null，界面 1K=1000                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `max_output_tokens`         | integer / null                                                | 否   | 是   | default=null                                                               | 最大输出 Token 整数，未知 null                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `tags`                      | array&lt;string&gt;                                           | 否   | 否   | default=[]                                                                 | 能力标签及自定义标签；流式由规范化注册键识别                                                                                                                                  | uniqueItems=true                       |
+| `description`               | string / null                                                 | 否   | 是   | default=null                                                               | 对象说明文字，按当前用户语言返回或按输入原文保存                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
+| `initial_grants`            | array&lt;[Subject](#schema-subject)&gt;                       | 否   | 否   | default=[]                                                                 | 创建时的初始直接授权；省略为空                                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `health`                    | [HealthInput](#schema-healthinput)                            | 否   | 否   | default={"auto_health_check": false, "health_check_interval_minutes": 360} | 自动健康配置或健康配置版本，按组件具体类型解释                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则 |
+| `pricing`                   | [PricingInput](#schema-pricinginput) / null                   | 否   | 是   | 无静态默认；省略语义见组件/接口                                            | 40修订：省略/null不配置；非空对象仍须完整内部价格、原价格写权限及首次版本0；不因可选价格放宽接口要求。                                                                        | 无额外格式限制；仍遵守所属组件业务规则 |
+| `catalog_model_version_id`  | string                                                        | 否   | 否   | 无静态默认；省略语义见组件/接口                                            | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                          |
+| `expected_provider_version` | integer                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口                                            | M13返回的provider_version；创建时与实例当前版本比较，变化返回409 VERSION_CONFLICT，先刷新准备数据再由管理员确认。                                                             | minimum=1                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
-
-条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
-
-```json
-{
-  "allOf": [
-    {
-      "anyOf": [
-        {
-          "properties": {
-            "supported_invocation_apis": {
-              "type": "array",
-              "minItems": 1,
-              "description": "标准调用接口至少一项"
-            }
-          },
-          "required": ["supported_invocation_apis"]
-        },
-        {
-          "properties": {
-            "custom_invocation_apis": {
-              "type": "array",
-              "minItems": 1,
-              "description": "已适配自定义接口至少一项"
-            }
-          },
-          "required": ["custom_invocation_apis"]
-        }
-      ],
-      "description": "标准接口或已适配自定义接口合计至少一项；协议适配合法性仍由服务端验证。"
-    }
-  ]
-}
-```
 
 <a id="schema-modelversions"></a>
 
@@ -2421,8 +2501,6 @@ ModelVersions 字段契约；下列字段含义、必填与空值均是正式设
 | `provider_id`                | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                                      | format="uuid"                                                                 |
 | `model_id_at_gateway`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128                                                    |
 | `model_id_at_provider`       | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512                                                    |
-| `supported_invocation_apis`  | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存的标准接口；DRAFT草稿可与自定义同时为空，响应不强制非空，检测时另校验。                                                                                               | uniqueItems=true                                                              |
-| `custom_invocation_apis`     | array&lt;[CustomAPIView](#schema-customapiview)&gt;  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 全部启用协议的路径项，按协议数组逐项同序对应；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `input_modalities`           | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 输入模态集合；未知为空数组，不添加笼统 type                                                                                                                                   | uniqueItems=true                                                              |
 | `output_modalities`          | array&lt;string&gt;                                  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 输出模态集合；未知为空数组                                                                                                                                                    | uniqueItems=true                                                              |
 | `context_window`             | integer / null                                       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模型上下文 Token 整数，未知 null，界面 1K=1000                                                                                                                                | 无额外格式限制；仍遵守所属组件业务规则                                        |
@@ -2439,7 +2517,7 @@ ModelVersions 字段契约；下列字段含义、必填与空值均是正式设
 | `provider_name`              | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前供应商实例显示名称                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `security_level`             | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商网络安全分类标签；不是出口审批或网络许可                                                                                                                                | enum=["INTERNET", "TRUSTED_CLOUD", "PRIVATE"]                                 |
 | `suspend_reason`             | string / null                                        | 是   | 是   | 无静态默认；省略语义见组件/接口 | 最近暂停/下架原因；无则 null                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `invocation_apis`            | array&lt;[InvocationAPI](#schema-invocationapi)&gt;  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端解析的所有已启用标准及自定义接口                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| `invocation_apis`            | array&lt;[InvocationAPI](#schema-invocationapi)&gt;  | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存的标准协议及透传配置，按保存顺序回显。没有配置时为 []。                                                                                                               | 无额外格式限制；仍遵守所属组件业务规则                                        |
 | `created_at`                 | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                                                                                                               | format="date-time"                                                            |
 | `updated_at`                 | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | RFC3339 UTC时间                                                                                                                                                               | format="date-time"                                                            |
 | `created_by`                 | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                                      | format="uuid"                                                                 |
@@ -2450,8 +2528,6 @@ ModelVersions 字段契约；下列字段含义、必填与空值均是正式设
 | `catalog_model_version_id`   | string / null                                        | 是   | 是   | 无静态默认；省略语义见组件/接口 | 该对象实际采用的内置型号来源；没有可信匹配为null。历史来源不随目录发布或供应商改绑自动更新，不表示当前仍可适配                                                                | 无额外格式限制；仍遵守所属组件业务规则                                        |
 
 未声明字段：拒绝（`additionalProperties=false`）。
-
-组合约束：标准接口或已适配自定义接口至少一项；不能两者皆空。
 
 <a id="schema-modelupdate"></a>
 
@@ -2538,27 +2614,36 @@ ModelVersions 字段契约；下列字段含义、必填与空值均是正式设
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
+<a id="schema-suggestedinvocationapi"></a>
+
+### SuggestedInvocationAPI
+
+| 字段       | 类型   | 必填 | 说明                                                                      |
+| ---------- | ------ | ---- | ------------------------------------------------------------------------- |
+| `protocol` | string | 是   | 内置型号建议的标准协议，与 `suggested_invocation_apis` 同一下标的值一致。 |
+| `path`     | string | 是   | 标准适配器的默认出站路径，可预填到写入行。                                |
+
 <a id="schema-modeltemplate"></a>
 
 ### ModelTemplate
 
 同一数据库发布批次中的内置型号规格。目录是建议/来源，不是实例已经绑定的官方型号或实际调用验证；metadata中的实例型号绑定未核实时为完整UNKNOWN，不能凭目录字符串置VERIFIED。
 
-| 字段                               | 类型/组件                                                       | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                    | 约束                                                                    |
-| ---------------------------------- | --------------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `suggested_custom_invocation_apis` | array&lt;[CustomAPIView](#schema-customapiview)&gt;             | 是   | 否   | []                              | 型号建议协议的同序路径行。                                                                                                                                                                  | 与 suggested_invocation_apis 逐项对应                                   |
-| `template_key`                     | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读供应商模板注册键                                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `model_id_at_provider`             | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `metadata`                         | [ModelMetadata](#schema-modelmetadata)                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 规范化元信息及字段来源，不包含内部手册价格                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `suggested_invocation_apis`        | array&lt;string&gt;                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 建议启用的标准接口，不能据此替代模型实际能力确认                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `metric_specs`                     | array&lt;[MetricSpec](#schema-metricspec)&gt;                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该模型适配器允许的固定计量指标规格                                                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `builtin_pricing`                  | [BuiltinPricingTemplate](#schema-builtinpricingtemplate) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 有pricing:READ时返回当前型号的官方原币参考价；无可用参考或无权限为null，按pricing_state区分。多官方币种按目录preferred_reference_currency选择，不按内部预算币种过滤；不是模型已生效内部价。 | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `pricing_state`                    | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方参考状态：AVAILABLE有可表达官方参考；NEEDS_CONFIGURATION无可用公开价格；UNSUPPORTED_RULE官方复杂/不完整规则无法表达；无pricing:READ为HIDDEN。不能从null/HIDDEN推断企业默认免费资格。    | enum=["AVAILABLE", "NEEDS_CONFIGURATION", "UNSUPPORTED_RULE", "HIDDEN"] |
-| `pricing_details_visible`          | boolean                                                         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 具有model.pricing:READ才为true；false时builtin_pricing=null且pricing_state=HIDDEN，不能把不可见误作没有价格                                                                                 | 无额外格式限制；仍遵守所属组件业务规则                                  |
-| `catalog_model_version_id`         | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该发布批次内置型号条目UUID；选择预填时回传，不能仅凭型号字符串猜来源                                                                                                                        | format="uuid"                                                           |
-| `template_version_id`              | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所属数据库模板版本UUID                                                                                                                                                                      | format="uuid"                                                           |
-| `catalog_release_id`               | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此模型和模板/内置价共同所属的发布批次UUID                                                                                                                                                   | format="uuid"                                                           |
-| `catalog_revision`                 | string                                                          | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该条目所属发布批次唯一可读版本                                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| 字段                               | 类型/组件                                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                                    | 约束                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `suggested_custom_invocation_apis` | array&lt;[SuggestedInvocationAPI](#schema-suggestedinvocationapi)&gt; | 是   | 否   | []                              | 型号建议协议的同序路径行。                                                                                                                                                                  | 与 suggested_invocation_apis 逐项对应                                   |
+| `template_key`                     | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读供应商模板注册键                                                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `model_id_at_provider`             | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `metadata`                         | [ModelMetadata](#schema-modelmetadata)                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 规范化元信息及字段来源，不包含内部手册价格                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `suggested_invocation_apis`        | array&lt;string&gt;                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 建议启用的标准接口，不能据此替代模型实际能力确认                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `metric_specs`                     | array&lt;[MetricSpec](#schema-metricspec)&gt;                         | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该模型适配器允许的固定计量指标规格                                                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `builtin_pricing`                  | [BuiltinPricingTemplate](#schema-builtinpricingtemplate) / null       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 有pricing:READ时返回当前型号的官方原币参考价；无可用参考或无权限为null，按pricing_state区分。多官方币种按目录preferred_reference_currency选择，不按内部预算币种过滤；不是模型已生效内部价。 | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `pricing_state`                    | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 官方参考状态：AVAILABLE有可表达官方参考；NEEDS_CONFIGURATION无可用公开价格；UNSUPPORTED_RULE官方复杂/不完整规则无法表达；无pricing:READ为HIDDEN。不能从null/HIDDEN推断企业默认免费资格。    | enum=["AVAILABLE", "NEEDS_CONFIGURATION", "UNSUPPORTED_RULE", "HIDDEN"] |
+| `pricing_details_visible`          | boolean                                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 具有model.pricing:READ才为true；false时builtin_pricing=null且pricing_state=HIDDEN，不能把不可见误作没有价格                                                                                 | 无额外格式限制；仍遵守所属组件业务规则                                  |
+| `catalog_model_version_id`         | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该发布批次内置型号条目UUID；选择预填时回传，不能仅凭型号字符串猜来源                                                                                                                        | format="uuid"                                                           |
+| `template_version_id`              | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 所属数据库模板版本UUID                                                                                                                                                                      | format="uuid"                                                           |
+| `catalog_release_id`               | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此模型和模板/内置价共同所属的发布批次UUID                                                                                                                                                   | format="uuid"                                                           |
+| `catalog_revision`                 | string                                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该条目所属发布批次唯一可读版本                                                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则                                  |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -2632,17 +2717,16 @@ Discovery 字段契约；下列字段含义、必填与空值均是正式设计�
 
 ### ImportItem
 
-发现行由服务端读取该行的可信快照及目录绑定，手工行省略快照字段。发现校验失败只拒绝对应行。两数组同时省略时解析可信目录建议，或显式双空数组保留空协议草稿。只提供一列时拒绝该行。导入不初始化价格。
+发现行由服务端读取该行的可信快照及目录绑定，手工行省略快照字段。发现校验失败只拒绝对应行。省略 `invocation_apis` 时使用可信建议，显式空数组保留空草稿。导入不初始化价格。
 
-| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                                                 |
-| --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `discovery_id`              | string                                                | 否   | 否   | 省略为手工行                    | 发现行原快照 UUID，校验失败不转为手工导入                                                                                                                                     | format="uuid"；null 或非字符串拒绝整批，空串或无效 UUID 仅拒绝对应行 |
-| `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则                               |
-| `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | 无额外格式限制；仍遵守所属组件业务规则                               |
-| `supported_invocation_apis` | array&lt;string&gt;                                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 启用协议标识，含 CUSTOM_PASSTHROUGH；省略须同时省略路径列，显式[]须和另一列同为空。                                                                                           | 无额外格式限制；仍遵守所属组件业务规则                               |
-| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 全部启用协议的路径项，按协议数组逐项同序对应                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                               |
-| `catalog_model_version_id`  | string                                                | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                                                        |
-| `pricing`                   | null                                                  | 否   | 是   | 省略与null均不配置价格          | 仅接受省略或 null。非 null 返回整批 422。                                                                                                                                     | enum=[null]                                                          |
+| 字段                       | 类型/组件                                                     | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                                                 |
+| -------------------------- | ------------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `discovery_id`             | string                                                        | 否   | 否   | 省略为手工行                    | 发现行原快照 UUID，校验失败不转为手工导入                                                                                                                                     | format="uuid"；null 或非字符串拒绝整批，空串或无效 UUID 仅拒绝对应行 |
+| `model_id_at_provider`     | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | 无额外格式限制；仍遵守所属组件业务规则                               |
+| `model_id_at_gateway`      | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | 无额外格式限制；仍遵守所属组件业务规则                               |
+| `invocation_apis`          | array&lt;[InvocationAPIInput](#schema-invocationapiinput)&gt; | 否   | 否   | 省略采用可信建议                | 显式 [] 保存空草稿。各行省略 ID。                                                                                                                                             | maxItems=32                                                          |
+| `catalog_model_version_id` | string                                                        | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选的M08内置型号版本UUID；后端校验供应商固定批次/模板及可信型号匹配。省略时首次命令按固定批次匹配或记录null，不接受浏览器元信息作为可信来源                                  | format="uuid"                                                        |
+| `pricing`                  | null                                                          | 否   | 是   | 省略与null均不配置价格          | 仅接受省略或 null。非 null 返回整批 422。                                                                                                                                     | enum=[null]                                                          |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -2722,13 +2806,12 @@ HealthCheckInput 字段契约；下列字段含义、必填与空值均是正式
 
 AdmissionModelInput 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                     | 约束                                   |
-| --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| `physical_model_id`         | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                     | format="uuid"                          |
-| `expected_base_version`     | integer                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                                       | minimum=1                              |
-| `supported_invocation_apis` | array&lt;string&gt;                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用的标准调用接口集合；可为空。与服务端已适配的custom_invocation_apis合计至少一项；不新增RERANK标准枚举。   | uniqueItems=true                       |
-| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 全部启用协议的路径项，按协议数组逐项同序对应；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `reuse_job_id`              | string                                                | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                     | format="uuid"                          |
+| 字段                    | 类型/组件                                                     | 必填 | 可空 | 默认/省略                       | 字段说明                                    | 约束                    |
+| ----------------------- | ------------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------- | ----------------------- |
+| `physical_model_id`     | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                    | format="uuid"           |
+| `expected_base_version` | integer                                                       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                      | minimum=1               |
+| `invocation_apis`       | array&lt;[InvocationAPIInput](#schema-invocationapiinput)&gt; | 是   | 否   | 必传                            | 本次拟保存并检测的有序配置。已有行回传 ID。 | minItems=1，maxItems=32 |
+| `reuse_job_id`          | string                                                        | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                    | format="uuid"           |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3011,6 +3094,35 @@ accessible-models只返回当前可用；来源接口可保留不可用授权事
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
+<a id="schema-usergrantdelta"></a>
+
+### UserGrantDelta
+
+A14/A15 的同用户批量增量请求。单项也使用数组；未提交关系不变。普通对象拒绝未知字段。
+
+| 字段                             | 类型                     | 必填 | 可空 | 约束与语义                                                      |
+| -------------------------------- | ------------------------ | ---- | ---- | --------------------------------------------------------------- |
+| `physical_model_ids`             | array&lt;string UUID&gt; | 是   | 否   | 1～100 项；规范化 UUID 后重复拒绝，按集合规范化排序参与命令摘要 |
+| `expected_authorization_version` | integer                  | 是   | 否   | 最小1，来自当前 A04/A11 列表；新命令版本过期整批409             |
+| `reason`                         | string                   | 否   | 是   | 最多512 Unicode字符，禁控制字符；可省略或null                   |
+
+<a id="schema-usergrantdeltaresult"></a>
+
+### UserGrantDeltaResult
+
+A14/A15 的整批成功安全回执；不是最终完整直授集合，也不是逐项成功、失败混合结果。相同幂等命令重放原回执，字段可能已被后续业务改变。
+
+| 字段                        | 类型                | 必返 | 可空 | 约束与语义                                           |
+| --------------------------- | ------------------- | ---- | ---- | ---------------------------------------------------- |
+| `authorization_version`     | integer             | 是   | 否   | 本命令完成后全局版本，最小1                          |
+| `requested_count`           | integer             | 是   | 否   | 1～100，等于items长度和changed_count+unchanged_count |
+| `changed_count`             | integer             | 是   | 否   | 0～100，实际改变的模型数                             |
+| `unchanged_count`           | integer             | 是   | 否   | 0～100，已经满足目标无需改变的模型数                 |
+| `items`                     | array&lt;object&gt; | 是   | 否   | 1～100项，按规范UUID升序覆盖全部请求模型             |
+| `items[].physical_model_id` | string UUID         | 是   | 否   | 本项模型                                             |
+| `items[].direct_granted`    | boolean             | 是   | 否   | A14均true，A15均false，仅表示该USER直授状态          |
+| `items[].changed`           | boolean             | 是   | 否   | 本命令是否实际改变该USER关系                         |
+
 <a id="schema-subjectgrantreplace"></a>
 
 ### SubjectGrantReplace
@@ -3143,16 +3255,17 @@ Deleted 字段契约；下列字段含义、必填与空值均是正式设计要
 
 仅已注册安全键；不包含原始请求/认证/秘密
 
-| 字段                | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                        | 约束                                                                                                    |
-| ------------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `fields`            | object                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 字段路径到稳定字段错误码的映射                  | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
-| `current_version`   | integer                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生冲突时的当前可见版本                        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
-| `version_domain`    | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生版本冲突的配置域                            | enum=["PROVIDER", "BASE", "STATE", "GRANTS", "HEALTH", "PRICE", "BALANCE", "AUTHORIZATION", "METADATA"] |
-| `allowed_actions`   | array&lt;string&gt;                                     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 当前状态允许的管理动作，仅提示，不授予权限      | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
-| `job_id`            | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                        | format="uuid"                                                                                           |
-| `reason_code`       | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定、可本地化的原因码，不含上游秘密原文        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
-| `retryable_by_user` | boolean                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 是否允许用户明确修正/重新发起，绝不表示自动重试 | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
-| `details`           | array&lt;[SafeErrorDetail](#schema-safeerrordetail)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可安全显示的细分错误列表；无细节时可省略        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| 字段                | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                                        | 约束                                                                                                    |
+| ------------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `fields`            | object                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 字段路径到稳定字段错误码的映射                                  | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `standard_route`    | object                                                  | 否   | 否   | 省略                            | 字段规则为 `STANDARD_ROUTE_CONFLICT` 时提供冲突的标准入站路由。 | 包含字符串 `method` 和 `path`，`path` 可以是路径模板。                                                  |
+| `current_version`   | integer                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生冲突时的当前可见版本                                        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `version_domain`    | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 发生版本冲突的配置域                                            | enum=["PROVIDER", "BASE", "STATE", "GRANTS", "HEALTH", "PRICE", "BALANCE", "AUTHORIZATION", "METADATA"] |
+| `allowed_actions`   | array&lt;string&gt;                                     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 当前状态允许的管理动作，仅提示，不授予权限                      | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `job_id`            | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                        | format="uuid"                                                                                           |
+| `reason_code`       | string                                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 稳定、可本地化的原因码，不含上游秘密原文                        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `retryable_by_user` | boolean                                                 | 否   | 否   | 无静态默认；省略语义见组件/接口 | 是否允许用户明确修正/重新发起，绝不表示自动重试                 | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
+| `details`           | array&lt;[SafeErrorDetail](#schema-safeerrordetail)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可安全显示的细分错误列表；无细节时可省略                        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3207,15 +3320,16 @@ ModelPage 字段契约；下列字段含义、必填与空值均是正式设计�
 
 M08固定目录批次的内置规格，支持默认分页和显式全量。paginate=false时page/page_size成对为null，items为全部可见匹配项且total=items.length；分页时两字段为整数。两种模式保持相同权限、筛选、稳定排序及一致性快照。
 
-| 字段                 | 类型/组件                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                  | 约束                                                                   |
-| -------------------- | --------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `protocol_options`   | array&lt;object&gt;                                 | 是   | 否   | 无供应商时 []                   | 可选协议和默认路径对象，每项 `protocol` 和 `default_path`。自定义默认路径为 null。        | 按实例固定适配规格解析，与型号分页独立                                 |
-| `items`              | array&lt;[ModelTemplate](#schema-modeltemplate)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 分页时当前页、全量时全部可见匹配项；空结果返回[]，全量不静默截断。                        | 无额外格式限制；仍遵守所属组件业务规则                                 |
-| `page`               | integer / null                                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时当前页码，从1开始；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。 | minimum=1（仅整数分支）；与另一分页字段成对为空或成对整数              |
-| `page_size`          | integer / null                                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时每页条数1～100；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。    | minimum=1；maximum=100（仅整数分支）；与另一分页字段成对为空或成对整数 |
-| `total`              | integer                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一合法可见范围及筛选条件下的总数；不分页等于items.length，不泄露不可见项数量。          | minimum=0                                                              |
-| `catalog_release_id` | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次读取固定的数据库目录发布批次；同一页及续页保持同批，不随当前指针变化混合              | format="uuid"                                                          |
-| `catalog_revision`   | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该固定发布批次的唯一可读版本                                                              | 无额外格式限制；仍遵守所属组件业务规则                                 |
+| 字段                           | 类型/组件                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                  | 约束                                                                   |
+| ------------------------------ | --------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `protocol_options`             | array&lt;object&gt;                                 | 是   | 否   | 无供应商时 []                   | 每项为标准 `protocol` 和非空 `default_path`。                                             | 按实例固定适配规格解析，与型号分页独立                                 |
+| `custom_passthrough_supported` | boolean / null                                      | 是   | 是   | 无供应商时 null                 | 该实例模板是否允许添加自定义透传。                                                        | 已保存取 M04 的 `invocation_apis`                                      |
+| `items`                        | array&lt;[ModelTemplate](#schema-modeltemplate)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 分页时当前页、全量时全部可见匹配项；空结果返回[]，全量不静默截断。                        | 无额外格式限制；仍遵守所属组件业务规则                                 |
+| `page`                         | integer / null                                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时当前页码，从1开始；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。 | minimum=1（仅整数分支）；与另一分页字段成对为空或成对整数              |
+| `page_size`                    | integer / null                                      | 是   | 是   | 无静态默认；省略语义见组件/接口 | 分页时每页条数1～100；不分页时null。与另一分页字段成对同为空或同为整数，字段始终必返。    | minimum=1；maximum=100（仅整数分支）；与另一分页字段成对为空或成对整数 |
+| `total`                        | integer                                             | 是   | 否   | 无静态默认；省略语义见组件/接口 | 同一合法可见范围及筛选条件下的总数；不分页等于items.length，不泄露不可见项数量。          | minimum=0                                                              |
+| `catalog_release_id`           | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本次读取固定的数据库目录发布批次；同一页及续页保持同批，不随当前指针变化混合              | format="uuid"                                                          |
+| `catalog_revision`             | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 该固定发布批次的唯一可读版本                                                              | 无额外格式限制；仍遵守所属组件业务规则                                 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3290,12 +3404,13 @@ CheckJobPage 字段契约；下列字段含义、必填与空值均是正式设�
 
 AccessibleModelPage 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段        | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                         | 约束                                   |
-| ----------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------ | -------------------------------------- |
-| `items`     | array&lt;[AccessibleModel](#schema-accessiblemodel)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本页或当前对象的明细集合；元素完整字段见链接组件 | 无额外格式限制；仍遵守所属组件业务规则 |
-| `page`      | integer                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从 1 开始的当前页码，默认 1                      | minimum=1                              |
-| `page_size` | integer                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 每页条数，默认 20，上限 100                      | minimum=1；maximum=100                 |
-| `total`     | integer                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前相同范围/筛选下总数，不是当前页条数          | minimum=0                              |
+| 字段                    | 类型/组件                                               | 必填 | 可空 | 默认/省略                       | 字段说明                                                                 | 约束                                   |
+| ----------------------- | ------------------------------------------------------- | ---- | ---- | ------------------------------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| `authorization_version` | integer                                                 | 是   | 否   | 无静态默认                      | 同一响应快照的全局直接授权版本，空列表亦返回；不冻结成员、部门或跨页并集 | minimum=1                              |
+| `items`                 | array&lt;[AccessibleModel](#schema-accessiblemodel)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本页或当前对象的明细集合；元素完整字段见链接组件                         | 无额外格式限制；仍遵守所属组件业务规则 |
+| `page`                  | integer                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 从 1 开始的当前页码，默认 1                                              | minimum=1                              |
+| `page_size`             | integer                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 每页条数，默认 20，上限 100                                              | minimum=1；maximum=100                 |
+| `total`                 | integer                                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前相同范围/筛选下总数，不是当前页条数                                  | minimum=0                              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -4308,23 +4423,19 @@ ma_price_versions.display_snapshot的完整不可变结构；费用复制至Pric
 
 导入完成后的最小配置回显，支持引导下一步直接显示已保存名称与接口并使用真实版本。
 
-| 字段                        | 类型/组件                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                                                          |
-| --------------------------- | --------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `physical_model_id`         | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 已创建或当前可见已存在的新版物理模型UUID                                                                                                                                      | format="uuid"                                                                 |
-| `model_id_at_gateway`       | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `model_id_at_provider`      | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存后的上游ID                                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `provider_id`               | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商UUID                                                                                                                                                                    | format="uuid"                                                                 |
-| `provider_name`             | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商实例名                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `status`                    | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本组件业务状态，不能仅凭 HTTP 200 判断成功                                                                                                                                    | enum=["DRAFT", "TESTING", "PENDING_REVIEW", "ACTIVE", "SUSPENDED", "RETIRED"] |
-| `versions`                  | [ModelVersions](#schema-modelversions)              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存后的全部版本；后续检测/发布必须回传，禁止猜初值1                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `supported_invocation_apis` | array&lt;string&gt;                                 | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存的标准接口；DRAFT草稿可与自定义同时为空，响应不强制非空，检测时另校验。                                                                                               | uniqueItems=true                                                              |
-| `custom_invocation_apis`    | array&lt;[CustomAPIView](#schema-customapiview)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 全部启用协议的路径项，按协议数组逐项同序对应；完整配置域省略时按空集合处理，编辑须回传希望保留的已选自定义项                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `invocation_apis`           | array&lt;[InvocationAPI](#schema-invocationapi)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端解析的所有已启用标准及自定义接口                                                                                                                                        | 无额外格式限制；仍遵守所属组件业务规则                                        |
-| `catalog_model_version_id`  | string / null                                       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 该对象实际采用的内置型号来源；没有可信匹配为null。历史来源不随目录发布或供应商改绑自动更新，不表示当前仍可适配                                                                | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| 字段                       | 类型/组件                                           | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                                                          |
+| -------------------------- | --------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `physical_model_id`        | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 已创建或当前可见已存在的新版物理模型UUID                                                                                                                                      | format="uuid"                                                                 |
+| `model_id_at_gateway`      | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| `model_id_at_provider`     | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存后的上游ID                                                                                                                                                            | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| `provider_id`              | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商UUID                                                                                                                                                                    | format="uuid"                                                                 |
+| `provider_name`            | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商实例名                                                                                                                                                                  | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| `status`                   | string                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 本组件业务状态，不能仅凭 HTTP 200 判断成功                                                                                                                                    | enum=["DRAFT", "TESTING", "PENDING_REVIEW", "ACTIVE", "SUSPENDED", "RETIRED"] |
+| `versions`                 | [ModelVersions](#schema-modelversions)              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存后的全部版本；后续检测/发布必须回传，禁止猜初值1                                                                                                                      | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| `invocation_apis`          | array&lt;[InvocationAPI](#schema-invocationapi)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实际保存的标准协议及透传配置，按保存顺序回显。没有配置时为 []。                                                                                                               | 无额外格式限制；仍遵守所属组件业务规则                                        |
+| `catalog_model_version_id` | string / null                                       | 是   | 是   | 无静态默认；省略语义见组件/接口 | 该对象实际采用的内置型号来源；没有可信匹配为null。历史来源不随目录发布或供应商改绑自动更新，不表示当前仍可适配                                                                | 无额外格式限制；仍遵守所属组件业务规则                                        |
 
 未声明字段：拒绝（`additionalProperties=false`）。
-
-组合约束：标准接口或已适配自定义接口至少一项；不能两者皆空。
 
 <a id="schema-importbatchitem"></a>
 
@@ -4454,6 +4565,8 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 <a id="schema-customapiview"></a>
 
 ### CustomAPIView
+
+> 历史双数组的回显字段。当前模型已保存配置见 [InvocationAPI](#schema-invocationapi)。
 
 | 字段       | 类型   | 必填 | 说明                                                            |
 | ---------- | ------ | ---- | --------------------------------------------------------------- |
@@ -4790,20 +4903,19 @@ D02专用结果。导入不会请求模型；返回实际接口/版本可直接�
 
 M05 的完整身份及协议域。上游身份仅 DRAFT 可改。RETIRED 可修改网关名称及协议路径，提交时锁定字段回传原值。目录来源须匹配当前目标。
 
-| 字段                        | 类型/组件                                             | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
-| --------------------------- | ----------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `provider_id`               | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
-| `model_id_at_gateway`       | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
-| `model_id_at_provider`      | string                                                | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
-| `supported_invocation_apis` | array&lt;string&gt;                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | DRAFT基础修改可与自定义接口同时为空；非空接口仍须合法适配，检测时至少一项。                                                                                                   | uniqueItems=true                       |
-| `custom_invocation_apis`    | array&lt;[CustomAPIInput](#schema-customapiinput)&gt; | 是   | 否   | 无静态默认；省略语义见组件/接口 | 全部启用协议及路径对象，按协议数组逐项同序对应。                                                                                                                              | 无额外格式限制；仍遵守所属组件业务规则 |
-| `catalog_model_version_id`  | string / null                                         | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可选当前基础来源；显式null清除，省略且供应商/上游ID未变则保留；目标改变时后端重新核实或清除不成立来源。新选择须匹配供应商固定批次，不以型号字符串猜Azure部署身份              | 无额外格式限制；仍遵守所属组件业务规则 |
+| 字段                       | 类型/组件                                                     | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                                                                                      | 约束                                   |
+| -------------------------- | ------------------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `provider_id`              | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                                                                                                                      | format="uuid"                          |
+| `model_id_at_gateway`      | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 系统全局唯一对外调用ID；服务端按固定Unicode White_Space集合去首尾空白后校验1～128个Unicode码点，区分大小写，不做lower/casefold或Unicode规范化。检查与保存使用同一规范化函数。 | minLength=1；maxLength=128             |
+| `model_id_at_provider`     | string                                                        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商内上游模型 ID 或部署名，去首尾空白，区分大小写                                                                                                                          | minLength=1；maxLength=512             |
+| `invocation_apis`          | array&lt;[InvocationAPIInput](#schema-invocationapiinput)&gt; | 是   | 否   | 必传                            | 完整有序配置。已有行回传 ID。                                                                                                                                                 | maxItems=32                            |
+| `catalog_model_version_id` | string / null                                                 | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可选当前基础来源；显式null清除，省略且供应商/上游ID未变则保留；目标改变时后端重新核实或清除不成立来源。新选择须匹配供应商固定批次，不以型号字符串猜Azure部署身份              | 无额外格式限制；仍遵守所属组件业务规则 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
 条件组合约束（与机器契约一致，业务引用匹配仍由服务端事务校验）：
 
-DRAFT 显式传双空数组可清空。RETIRED 编辑时至少保留一对，可同次替换。
+DRAFT 显式传 `invocation_apis: []` 可清空。RETIRED 编辑时至少保留一行，可同次替换。
 
 <a id="schema-modelmetadatainput"></a>
 
@@ -5131,7 +5243,7 @@ M13条件权限：先校验models:WRITE和供应商模型用途范围、解析�
 
 不新增数据库字段、索引、迁移、管理后台或API路径；56操作/42路径/136组件不变。已批准规格纳入待办V14-18及关联组合/交付验收；业务和前端联调仍为not_run，不修改P1/P2完成状态。
 
-## 12. 40修订字段和发布边界
+## 12. 40修订字段和发布边界（历史设计）
 
 本次同步设计字典、04-openapi-review.json及04-operation-index.json作为未实施目标；contracts/releases/model-access-v14下正式OpenAPI、client、operation-index、示例均保留原发布事实。旧生成契约尚不能发送本节新输入，实施后由源定义生成并同版发布，不手工改JSON制造已实现。
 

@@ -7,6 +7,61 @@ export interface ModelAccessSchemaField {
   enum: readonly (string | number)[] | null
 }
 export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
+  AdmissionPricingCheckResult: [
+    {
+      key: 'pricing_check_passed',
+      type: 'boolean',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
+    {
+      key: 'reason',
+      type: 'string',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
+  ],
+  AdmissionPricingCheckInput: [
+    {
+      key: 'expected_base_version',
+      type: 'integer',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
+    {
+      key: 'invocation_apis',
+      type: 'array<InvocationAPIInput>',
+      required: false,
+      nullable: false,
+      enum: null,
+    },
+  ],
+  InvocationAPIInput: [
+    {
+      key: 'id',
+      type: 'string',
+      required: false,
+      nullable: false,
+      enum: null,
+    },
+    {
+      key: 'protocol',
+      type: 'string',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
+    {
+      key: 'path',
+      type: 'string',
+      required: true,
+      nullable: false,
+      enum: null,
+    },
+  ],
   Decimal: [],
   Subject: [
     {
@@ -120,7 +175,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     },
   ],
   InvocationAPI: [
-    { key: 'protocol', type: 'string', required: true, nullable: false, enum: null },
     {
       key: 'id',
       type: 'string',
@@ -129,24 +183,17 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'api_key',
+      key: 'protocol',
       type: 'string',
       required: true,
       nullable: false,
       enum: null,
     },
     {
-      key: 'kind',
+      key: 'path',
       type: 'string',
       required: true,
       nullable: false,
-      enum: ['STANDARD', 'CUSTOM'],
-    },
-    {
-      key: 'path',
-      type: 'string / null',
-      required: true,
-      nullable: true,
       enum: null,
     },
     {
@@ -1333,16 +1380,9 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
+      key: 'invocation_apis',
+      type: 'array<InvocationAPIInput>',
       required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIInput>',
-      required: false,
       nullable: false,
       enum: null,
     },
@@ -1405,7 +1445,7 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     {
       key: 'pricing',
       type: 'PricingInput / null',
-      required: true,
+      required: false,
       nullable: true,
       enum: null,
     },
@@ -1486,20 +1526,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     {
       key: 'model_id_at_provider',
       type: 'string',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIView>',
       required: true,
       nullable: false,
       enum: null,
@@ -2092,7 +2118,13 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     },
   ],
   ImportItem: [
-    { key: 'discovery_id', type: 'string', required: false, nullable: false, enum: null },
+    {
+      key: 'discovery_id',
+      type: 'string',
+      required: false,
+      nullable: false,
+      enum: null,
+    },
     {
       key: 'model_id_at_provider',
       type: 'string',
@@ -2108,15 +2140,8 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
-      required: false,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIInput>',
+      key: 'invocation_apis',
+      type: 'array<InvocationAPIInput>',
       required: false,
       nullable: false,
       enum: null,
@@ -2267,16 +2292,9 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
+      key: 'invocation_apis',
+      type: 'array<InvocationAPIInput>',
       required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIInput>',
-      required: false,
       nullable: false,
       enum: null,
     },
@@ -2456,7 +2474,7 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       type: 'string',
       required: true,
       nullable: false,
-      enum: ['MODEL_REQUEST', 'PROTOCOL', 'STREAMING'],
+      enum: ['MODEL_REQUEST', 'PROTOCOL', 'STREAMING', 'CONNECTIVITY'],
     },
     {
       key: 'model_provider_snapshot',
@@ -2656,7 +2674,7 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       type: 'string',
       required: true,
       nullable: false,
-      enum: ['MODEL_REQUEST', 'PROTOCOL', 'STREAMING'],
+      enum: ['MODEL_REQUEST', 'PROTOCOL', 'STREAMING', 'CONNECTIVITY'],
     },
     {
       key: 'status',
@@ -3699,9 +3717,16 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
   ModelTemplatePage: [
     {
       key: 'protocol_options',
-      type: 'array<ProtocolOption>',
+      type: 'array<object>',
       required: true,
       nullable: false,
+      enum: null,
+    },
+    {
+      key: 'custom_passthrough_supported',
+      type: 'boolean / null',
+      required: true,
+      nullable: true,
       enum: null,
     },
     {
@@ -6405,20 +6430,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIView>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
       key: 'invocation_apis',
       type: 'array<InvocationAPI>',
       required: true,
@@ -6508,34 +6519,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
     },
   ],
   BatchModelContext: [
-    {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIView>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'invocation_apis',
-      type: 'array<InvocationAPI>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'catalog_model_version_id',
-      type: 'string / null',
-      required: true,
-      nullable: true,
-      enum: null,
-    },
     {
       key: 'physical_model_id',
       type: 'string',
@@ -7051,15 +7034,8 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'supported_invocation_apis',
-      type: 'array<string>',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'custom_invocation_apis',
-      type: 'array<CustomAPIInput>',
+      key: 'invocation_apis',
+      type: 'array<InvocationAPIInput>',
       required: true,
       nullable: false,
       enum: null,

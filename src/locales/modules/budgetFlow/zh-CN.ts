@@ -27,7 +27,7 @@ const messages = {
   updated: '最近更新',
   actions: '操作',
   detail: '详情',
-  search: '搜索工单编号、申请内容',
+  search: '搜索工单编号、申请内容、姓名或用户名',
   allStatus: '全部状态',
   reset: '重置筛选',
   cancel: '取消',

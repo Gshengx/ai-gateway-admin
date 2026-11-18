@@ -29,18 +29,16 @@
           :status="fieldErrors.includes('name') ? 'error' : undefined"
           :tips="fieldErrors.includes('name') ? errorMessage : ''"
           ><t-input
-            v-model="form.name"
+            v-model="displayName"
             :disabled="readOnly || (domain === 'AUDIT' && form.built_in)"
             :maxlength="200"
             :placeholder="label('enterName')"
-            @change="form.seed_key = undefined"
         /></t-form-item>
         <t-form-item :label="label('description')"
           ><t-textarea
-            v-model="form.description"
+            v-model="displayDescription"
             :disabled="readOnly || (domain === 'AUDIT' && form.built_in)"
             :maxlength="200"
-            @change="form.seed_key = undefined"
         /></t-form-item>
         <template v-if="domain !== 'SECURITY_DETECTION'">
           <h3 class="security-heading">{{ label(domain === 'AUDIT' ? 'userScope' : 'user') }}</h3>
@@ -198,10 +196,18 @@ const {
 const form = ref<SecurityPolicy>(
   props.value ? JSON.parse(JSON.stringify(props.value)) : emptyPolicy(props.domain),
 )
-if (props.value) {
-  form.value.name = name(props.value)
-  form.value.description = description(props.value)
-}
+const displayName = computed({
+  get: () => name(form.value),
+  set: (value: string) => {
+    form.value.name = value
+  },
+})
+const displayDescription = computed({
+  get: () => description(form.value),
+  set: (value: string) => {
+    form.value.description = value
+  },
+})
 const saving = ref(false),
   showCapability = ref(false),
   rules = ref<DetectionRule[]>([])
@@ -213,7 +219,7 @@ const ready = ref(false)
 const configured = computed(() => ready.value && policyConfigured(form.value, rules.value))
 const summary = computed(() =>
   [
-    form.value.name,
+    displayName.value,
     ...(props.domain === 'SECURITY_DETECTION'
       ? []
       : [scopeSummary(form.value.user_condition, true)]),
@@ -228,10 +234,6 @@ async function save() {
   saving.value = true
   try {
     const value = JSON.parse(JSON.stringify(form.value)) as SecurityPolicy
-    if (props.value?.seed_key && value.seed_key) {
-      value.name = props.value.name
-      value.description = props.value.description
-    }
     await savePolicy(props.domain, value)
     void MessagePlugin.success(label('saved'))
     emit('saved')

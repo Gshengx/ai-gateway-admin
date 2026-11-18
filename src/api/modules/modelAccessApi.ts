@@ -133,6 +133,12 @@ export const modelAccessApi = {
       `/model-access/models/${encodeURIComponent(model_id)}/admission-tests/latest`,
       { skipLocale: true, ...config },
     ),
+  C05: (model_id: string, body: DTO.AdmissionPricingCheckInput, config?: RequestConfig) =>
+    request.post<DTO.AdmissionPricingCheckResult>(
+      `/model-access/models/${encodeURIComponent(model_id)}/admission-tests/pricing-check`,
+      body,
+      { ...config, skipIdempotency: true },
+    ),
   H01: (model_id: string, body: DTO.HealthCheckInput, config?: RequestConfig) =>
     request.post<DTO.CheckJob>(
       `/model-access/models/${encodeURIComponent(model_id)}/health-checks`,
@@ -227,6 +233,18 @@ export const modelAccessApi = {
       skipLocale: true,
       ...config,
     }),
+  A14: (user_id: string, body: DTO.UserGrantDelta, config?: RequestConfig) =>
+    request.post<DTO.UserGrantDeltaResult>(
+      `/model-access/users/${encodeURIComponent(user_id)}/model-grants/add`,
+      body,
+      config,
+    ),
+  A15: (user_id: string, body: DTO.UserGrantDelta, config?: RequestConfig) =>
+    request.post<DTO.UserGrantDeltaResult>(
+      `/model-access/users/${encodeURIComponent(user_id)}/model-grants/remove`,
+      body,
+      config,
+    ),
   R01: (model_id: string, config?: RequestConfig) =>
     request.get<DTO.PricingVersionPage>(
       `/model-access/models/${encodeURIComponent(model_id)}/pricing`,

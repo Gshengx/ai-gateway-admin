@@ -53,7 +53,7 @@
       <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
       <template #created_by="{ row }">
         <span :class="{ 'cell-empty': !row.created_by }">
-          {{ row.created_by?.display_name ?? '—' }}
+          {{ userLabel(row.created_by?.display_name, row.created_by?.username) }}
         </span>
       </template>
       <template #action="{ row }">
@@ -124,6 +124,7 @@
 </template>
 
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
 import { h, computed, onMounted, reactive, ref, watch } from 'vue'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { useI18n } from 'vue-i18n'

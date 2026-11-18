@@ -59,6 +59,8 @@ export default {
       'Outside your authorized scope. Only super administrators may assign the super administrator role.',
     VALIDATION_FAILED: 'Validation failed. Check required fields and role assignment constraints.',
     LAST_SUPER_ADMIN: 'The last super administrator cannot be removed or disabled',
+    INITIAL_ADMIN_PROTECTED:
+      'The initial administrator is protected. Only this user can edit their name, phone and email or reset their password. Status changes and deletion are not allowed.',
     SELF_PROTECTED: 'This operation is not allowed on your own account',
     USERNAME_CONFLICT: 'Username already exists. Choose another username.',
     IMPORT_FILE_TOO_LARGE: 'File must not exceed 5 MiB',

@@ -57,6 +57,8 @@ export default {
     OUT_OF_SCOPE: '操作超出授权范围，只有超级管理员可分配超级管理员角色',
     VALIDATION_FAILED: '提交数据校验失败，请检查必填字段及角色分配是否符合要求',
     LAST_SUPER_ADMIN: '不能移除或禁用最后一位超级管理员',
+    INITIAL_ADMIN_PROTECTED:
+      '初始管理员受到保护，仅本人可修改姓名、手机号、邮箱或重置密码，不能更改状态或删除',
     SELF_PROTECTED: '不能对当前登录账号执行此操作',
     USERNAME_CONFLICT: '用户名已存在，请使用其他用户名',
     IMPORT_FILE_TOO_LARGE: '文件不能超过 5 MiB',

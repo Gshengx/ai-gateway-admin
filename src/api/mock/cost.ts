@@ -1,15 +1,13 @@
-/** Development uses shared server state; the standalone preview keeps its browser fallback. */
+/** Cost requests use one shared server state in development and preview. */
 import type { AxiosAdapter } from 'axios'
 import { allocateBudget, budgetDates } from '@/utils/projectBudget'
 import type {
   Bill,
-  BillItem,
   BillTask,
   Budget,
   BudgetConfig,
   CostDepartment,
   CostUser,
-  Dimension,
   Level,
 } from '@/api/modules/cost'
 
@@ -263,19 +261,6 @@ export function seedCostState(): State {
   })
   return { departmentBudgets, userBudgets, bills, tasks: [], sequence: 20 }
 }
-function state(): State {
-  const key = `ais_cost_mock_v1_${actor}`
-  try {
-    const raw = localStorage.getItem(key)
-    if (raw) return JSON.parse(raw) as State
-  } catch {
-    /* Empty or unavailable storage uses deterministic seeds. */
-  }
-  return seedCostState()
-}
-function persist(data: State) {
-  localStorage.setItem(`ais_cost_mock_v1_${actor}`, JSON.stringify(data))
-}
 function subtree(id: string): string[] {
   return [id, ...departments.filter((d) => d.parent_id === id).flatMap((d) => subtree(d.id))]
 }
@@ -428,141 +413,14 @@ const rows = (items: unknown[], q: Record<string, string>) => {
     total_pages: Math.ceil(items.length / page_size),
   }
 }
-const providers = ['OpenAI', '阿里云百炼', '火山引擎', '内网推理集群']
 const models = ['gpt-4o', 'qwen-plus', 'doubao-pro', 'gpt-4o-mini']
-/** Leaf records make all four dimensions, subtree filters and CSV share a single accounting source. */
-function billItems(
-  bill: Bill,
-  dimension: Dimension,
-  q: Record<string, string>,
-  english: boolean,
-): BillItem[] {
-  const allowed = subtree(bill.department_id)
-  const filterIds = q.department_id
-    ? subtree(q.department_id).filter((id) => allowed.includes(id))
-    : allowed
-  const leaves = users
-    .filter((u) => allowed.includes(u.department_id))
-    .map((u, i) => ({ user: u, weight: i + 1, provider: i % 4, model: i % 4 }))
-  const denominator = leaves.reduce((sum, row) => sum + row.weight, 0)
-  const filtered = leaves.filter((r) => filterIds.includes(r.user.department_id))
-  const sumWeight = filtered.reduce((sum, r) => sum + r.weight, 0)
-  const names =
-    dimension === 'PROVIDER'
-      ? providers.map((name, i) => ({ id: String(i), name }))
-      : dimension === 'MODEL'
-        ? models.map((name, i) => ({ id: String(i), name }))
-        : dimension === 'USER'
-          ? filtered.map((r) => ({ id: r.user.id, name: r.user.username }))
-          : departments
-              .filter((d) => filterIds.includes(d.id))
-              .map((d) => ({ id: d.id, name: english ? d.name_en : d.name }))
-  const result: BillItem[] = []
-  for (const entry of names) {
-    const dept = departments.find((d) => d.id === entry.id)
-    const matched = filtered.filter((r) =>
-      dimension === 'PROVIDER'
-        ? String(r.provider) === entry.id
-        : dimension === 'MODEL'
-          ? String(r.model) === entry.id
-          : dimension === 'USER'
-            ? r.user.id === entry.id
-            : subtree(entry.id).includes(r.user.department_id),
-    )
-    if (!matched.length) continue
-    const weight = matched.reduce((sum, r) => sum + r.weight, 0)
-    const share = weight / denominator
-    const user = users.find((u) => u.id === entry.id)
-    const userDept = departments.find((d) => d.id === user?.department_id)
-    result.push({
-      id: entry.id,
-      dimension,
-      dimension_id: entry.id,
-      dimension_name: entry.name,
-      department_id: dept?.id ?? user?.department_id ?? '',
-      parent_id: dept?.parent_id ?? null,
-      has_children: dept?.has_children ?? false,
-      own: false,
-      name: user?.name ?? '',
-      department_path: english
-        ? (userDept?.path_en ?? dept?.path_en ?? '')
-        : (userDept?.path ?? dept?.path ?? ''),
-      service_type: entry.id === '3' ? 'PRIVATE' : 'COMMERCIAL',
-      cost: Math.round(bill.total_cost * share * 1e6) / 1e6,
-      input_tokens: Math.round(bill.total_input_tokens * share),
-      output_tokens: Math.round(bill.total_output_tokens * share),
-      request_count: Math.round(bill.total_requests * share),
-      cost_ratio: sumWeight ? (weight / sumWeight) * 100 : 0,
-      details: models
-        .map((name, index) => {
-          const w = matched.filter((r) => r.model === index).reduce((sum, r) => sum + r.weight, 0)
-          return {
-            name,
-            cost: Math.round(((bill.total_cost * w) / denominator) * 1e6) / 1e6,
-            tokens: Math.round(
-              ((bill.total_input_tokens + bill.total_output_tokens) * w) / denominator,
-            ),
-            request_count: Math.round((bill.total_requests * w) / denominator),
-          }
-        })
-        .filter((r) => r.cost > 0),
-    })
-  }
-  if (dimension === 'DEPARTMENT' && q.parent_id !== undefined) {
-    const parent = q.parent_id || q.department_id || bill.department_id
-    const own = result.find((r) => r.id === parent)
-    const direct = filtered.filter((r) => r.user.department_id === parent)
-    const siblings = result.filter((r) => r.parent_id === parent)
-    if (own && direct.length && siblings.length) {
-      const w = direct.reduce((n, r) => n + r.weight, 0),
-        ratio = w / denominator
-      siblings.unshift({
-        ...own,
-        id: `${parent}-own`,
-        dimension_name: english ? 'This department' : '本部门',
-        own: true,
-        has_children: false,
-        cost: bill.total_cost * ratio,
-        input_tokens: Math.round(bill.total_input_tokens * ratio),
-        output_tokens: Math.round(bill.total_output_tokens * ratio),
-        request_count: Math.round(bill.total_requests * ratio),
-        cost_ratio: sumWeight ? (w / sumWeight) * 100 : 0,
-        details: models
-          .map((name, i) => {
-            const weight = direct.filter((r) => r.model === i).reduce((n, r) => n + r.weight, 0)
-            return {
-              name,
-              cost: (bill.total_cost * weight) / denominator,
-              tokens: Math.round(
-                ((bill.total_input_tokens + bill.total_output_tokens) * weight) / denominator,
-              ),
-              request_count: Math.round((bill.total_requests * weight) / denominator),
-            }
-          })
-          .filter((r) => r.cost > 0),
-      })
-    }
-    if (!siblings.length && own) return [own]
-    return sortItems(siblings, q)
-  }
-  return sortItems(result, q)
-}
-function sortItems(items: BillItem[], q: Record<string, string>) {
-  const metric = (r: BillItem) =>
-    q.sort_by === 'tokens'
-      ? r.input_tokens + r.output_tokens
-      : q.sort_by === 'requests'
-        ? r.request_count
-        : r.cost
-  return items.sort((a, b) => (metric(a) - metric(b)) * (q.direction === 'asc' ? 1 : -1))
-}
+/** Shared budget and bill commands; accounting projections live in mock/_costBills.ts. */
 export function handleCost(
   s: State,
   path: string,
   method: string,
   q: Record<string, string>,
   body: Record<string, unknown>,
-  english: boolean,
 ): unknown {
   const fail = (code = 'VALIDATION_FAILED'): never => {
     throw new Error(code)
@@ -654,11 +512,10 @@ export function handleCost(
     const type = body.period_type as Bill['period_type'],
       value = String(body.period_value),
       department_id = String(body.department_id)
-    const scopeIds =
-      Array.isArray(body.department_ids) && body.department_ids.length
-        ? [...new Set(body.department_ids.map(String))].sort()
-        : [department_id]
-    if (scopeIds.some((id) => !departments.some((d) => d.id === id))) fail()
+    const scopeIds = Array.isArray(body.department_ids)
+      ? [...new Set(body.department_ids.map(String))].sort()
+      : [department_id]
+    if (!scopeIds.length || scopeIds.some((id) => !departments.some((d) => d.id === id))) fail()
     if (
       !departments.some((d) => d.id === department_id) ||
       !['MONTHLY', 'WEEKLY'].includes(type) ||
@@ -690,7 +547,13 @@ export function handleCost(
         period_start,
         period_end,
         task_id: null,
-        total_cost: type === 'MONTHLY' ? 128450 : 32100,
+        total_cost: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cached_tokens: 0,
+        total_requests: 0,
+        direct_cost: 0,
+        project_cost: 0,
       }
       s.bills.unshift(bill)
     }
@@ -701,80 +564,11 @@ export function handleCost(
     bill.task_id = null
     return bill
   }
-  const billMatch = path.match(/^\/bills\/([^/]+)(?:\/(items|export))?$/)
+  const billMatch = path.match(/^\/bills\/([^/]+)$/)
   if (billMatch) {
     const bill = s.bills.find((b) => b.id === billMatch[1])
     if (!bill) return fail('NOT_FOUND')
-    if (bill.status === 'GENERATING' && Date.now() - Date.parse(bill.generated_at) > 600)
-      bill.status = 'COMPLETED'
-    if (!billMatch[2]) return bill
-    if (q.department_id && !subtree(bill.department_id).includes(q.department_id))
-      return fail('OUT_OF_SCOPE')
-    const items = billItems(bill, q.dimension as Dimension, q, english)
-    if (billMatch[2] === 'items') return items
-    if (q.dimension === 'DEPARTMENT') {
-      const ownRows = items
-        .filter((r) => r.has_children)
-        .flatMap((r) =>
-          billItems(bill, 'DEPARTMENT', { ...q, parent_id: r.dimension_id }, english).filter(
-            (child) => child.own,
-          ),
-        )
-      items.push(...ownRows)
-    }
-    const escape = (value: unknown) =>
-      `"${String(value ?? '')
-        .replace(/"/g, '""')
-        .replace(/^[=+@-]/, "'$&")}"`
-    const header = english
-      ? [
-          'Name / Department path',
-          'Scope',
-          'Cost',
-          'Input Token',
-          'Output Token',
-          'Requests',
-          'Cost ratio (%)',
-        ]
-      : [
-          '名称 / 部门路径',
-          '统计口径',
-          '消费金额',
-          'Input Token',
-          'Output Token',
-          '请求次数',
-          '费用占比（%）',
-        ]
-    return new Blob(
-      [
-        '\uFEFF' +
-          [
-            header,
-            ...items.map((r) => [
-              q.dimension === 'DEPARTMENT'
-                ? r.department_path
-                : q.dimension === 'USER'
-                  ? `${r.dimension_name} / ${r.name} / ${r.department_path}`
-                  : r.dimension_name,
-              q.dimension === 'DEPARTMENT' && r.has_children
-                ? english
-                  ? 'Includes descendants'
-                  : '含下级'
-                : english
-                  ? 'Direct'
-                  : '本部门',
-              r.cost.toFixed(6),
-              r.input_tokens,
-              r.output_tokens,
-              r.request_count,
-              r.cost_ratio.toFixed(2),
-            ]),
-          ]
-            .map((row) => row.map(escape).join(','))
-            .join('\r\n'),
-      ],
-      { type: 'text/csv;charset=utf-8' },
-    )
+    return bill
   }
   if (path === '/bill-tasks' && method === 'get')
     return rows(
@@ -801,6 +595,8 @@ export function handleCost(
     }
     const data = body as unknown as BillTask
     if (
+      (Array.isArray(data.department_ids) && !data.department_ids.length) ||
+      data.department_ids?.some((id) => !departments.some((department) => department.id === id)) ||
       !departments.some((d) => d.id === data.department_id) ||
       !['MONTHLY', 'WEEKLY'].includes(data.period_type) ||
       (data.email_enabled &&
@@ -1063,78 +859,43 @@ export function handleCost(
   return fail('NOT_FOUND')
 }
 export const costMockAdapter: AxiosAdapter = async (config) => {
-  if (import.meta.env.DEV) {
-    const response = await fetch(`${config.baseURL}/cost/shared`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        ...(config.headers.toJSON() as Record<string, string>),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        path: config.url,
-        method: config.method,
-        query: config.params ?? {},
-        body: typeof config.data === 'string' ? JSON.parse(config.data) : (config.data ?? {}),
-      }),
-    })
-    let data = await response.json()
-    if (data.code === 'OK' && data.data?.download !== undefined)
-      data = new Blob([data.data.download], { type: 'text/csv' })
-    return {
-      data,
-      status: response.status,
-      statusText: response.statusText,
-      headers: { 'content-type': data instanceof Blob ? 'text/csv' : 'application/json' },
-      config,
-    }
-  }
-  await new Promise((resolve) => setTimeout(resolve, 120))
-  const s = state(),
-    path = config.url ?? '',
-    method = config.method ?? 'get'
-  const body =
-    typeof config.data === 'string'
-      ? (JSON.parse(config.data) as Record<string, unknown>)
-      : (config.data ?? {})
-  const q = Object.fromEntries(
-    Object.entries(config.params ?? {})
-      .filter(([, v]) => v !== undefined && v !== null)
-      .map(([k, v]) => [k, String(v)]),
-  )
-  let data: unknown
-  try {
-    // Polling list responses completes asynchronous generation without page-local timers mutating data.
-    s.bills.forEach((b) => {
-      if (b.status === 'GENERATING' && Date.now() - Date.parse(b.generated_at) > 600)
-        b.status = 'COMPLETED'
-    })
-    data = handleCost(
-      s,
-      path,
-      method,
-      q,
-      body,
-      String(config.headers['Accept-Language']).startsWith('en'),
-    )
-    persist(s)
-    if (!(data instanceof Blob))
-      data = { code: 'OK', data, params: {}, request_id: `cost-mock-${s.sequence}` }
-  } catch (error) {
-    data = {
-      code: (error as Error).message,
-      data: null,
-      params: {},
-      request_id: `cost-mock-${s.sequence}`,
-    }
-  }
+  const response = await fetch(`${config.baseURL}/cost/shared`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal: config.signal as AbortSignal | undefined,
+    headers: {
+      ...(config.headers.toJSON() as Record<string, string>),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      path: config.url,
+      method: config.method,
+      query: config.params ?? {},
+      body: typeof config.data === 'string' ? JSON.parse(config.data) : (config.data ?? {}),
+    }),
+  })
+  let data = await response.json()
+  if (data.code === 'OK' && data.data?.download !== undefined)
+    data = new Blob([data.data.download], { type: 'text/csv' })
   return {
     data,
-    status: 200,
-    statusText: 'OK',
+    status: response.status,
+    statusText: response.statusText,
     headers: { 'content-type': data instanceof Blob ? 'text/csv' : 'application/json' },
     config,
   }
+}
+
+export function costDepartmentId(id: string) {
+  const aliases: Record<string, string> = {
+    'd-root': 'hq',
+    'd-algo': 'algorithm',
+    'd-tech': 'tech',
+    'd-platform': 'platform',
+    'd-ops': 'operations',
+    'd-hr': 'hr',
+  }
+  return aliases[id] ?? id.replace(/^d-/, '')
 }
 
 export function costUserFor(user: {
@@ -1145,15 +906,7 @@ export function costUserFor(user: {
   department_id: string | null
   status: string
 }): CostUser {
-  const map: Record<string, string> = {
-    'd-root': 'hq',
-    'd-algo': 'algorithm',
-    'd-tech': 'tech',
-    'd-platform': 'platform',
-    'd-ops': 'operations',
-    'd-hr': 'hr',
-  }
-  const departmentId = map[user.department_id ?? ''] ?? user.department_id?.replace(/^d-/, '') ?? ''
+  const departmentId = costDepartmentId(user.department_id ?? '')
   let item = users.find((u) => u.username === user.username)
   if (!item) {
     item = {

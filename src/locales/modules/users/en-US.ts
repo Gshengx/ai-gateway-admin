@@ -117,11 +117,11 @@ export default {
       listSeparator: ', ',
       tabs: {
         basic: 'Basic Info',
-        models: 'Accessible Models ({n})',
+        models: 'Authorized Models ({n})',
         keys: 'API Keys ({n})',
       },
       models: {
-        empty: 'No accessible models',
+        empty: 'No authorized models',
         sourceDepartment: 'Dept · {name}',
         sourceGroup: 'Group · {name}',
         sourceOutOfScope: 'Out-of-scope source',
@@ -139,11 +139,14 @@ export default {
         selectPlaceholder: 'Select Models',
         searchPlaceholder: 'Search Models',
         grantSuccess: 'Model grants updated',
+        versionConflict: 'Grants changed. Review the refreshed list and confirm again.',
+        retrySameCommand: 'The result is uncertain. Confirm again to retry the original request.',
         grantUnchanged: 'No changes to grants',
         columns: {
           model: 'Model',
           provider: 'Provider',
           sources: 'Grant Sources',
+          status: 'Status',
           grantType: 'Grant Type',
           actions: 'Actions',
         },
@@ -199,7 +202,7 @@ export default {
       passwordPlaceholder: '8-32 chars with at least 3 character types',
       passwordRequired: 'Initial password is required',
       passwordRule:
-        'Password must be 8-32 characters and contain at least three of: uppercase, lowercase, digits, special characters',
+        'Password must be {min_length}-{max_length} characters and contain at least {complexity_categories} of: uppercase, lowercase, digits, special characters',
     },
     confirm: {
       enableTitle: 'Enable User',

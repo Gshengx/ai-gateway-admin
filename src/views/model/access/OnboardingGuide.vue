@@ -157,6 +157,11 @@
             <span class="ma-muted onboarding-model-card__status">{{
               t(results[model.id] ? 'ma.' + results[model.id]!.status : 'ma.awaitingTest')
             }}</span>
+            <t-alert
+              v-if="pricingFailures[model.id]"
+              theme="warning"
+              :message="pricingFailures[model.id]"
+            />
             <div class="onboarding-model-card__configuration">
               <t-form
                 class="ma-form onboarding-model-card__form"
@@ -164,12 +169,15 @@
                 required-mark-position="right"
               >
                 <InvocationEditor
+                  :field-errors="pricingFieldErrors[model.id]"
+                  :standard-route="pricingStandardRoutes[model.id]"
                   :initialize-if-empty="model.status === 'DRAFT'"
                   :provider-id="model.provider_id"
                   :upstream-id="model.model_id_at_provider"
                   :validate-required="testAttempted"
                   hide-help
                   :configuration="model"
+                  @update:configuration="(value) => updateInvocationConfiguration(model, value)"
                   :disabled="busy || model.status !== 'DRAFT'"
                 />
               </t-form>
@@ -281,7 +289,7 @@ import {
   type TestRun,
 } from '@/api/modules/modelAccess'
 import { normalizeModelId } from '@/utils/modelContract'
-import { createIdempotencyKey } from '@/api/request'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import InvocationEditor from './InvocationEditor.vue'
 import { invocationTargets, invocationConfigurationError } from '@/utils/modelInvocation'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
@@ -439,6 +447,15 @@ function testKey(model: Model) {
   testKeys.set(model.id, { key, signature })
   return key
 }
+const pricingFieldErrors = ref<Record<string, Record<string, string>>>({})
+const pricingStandardRoutes = ref<Record<string, string>>({})
+const pricingFailures = ref<Record<string, string>>({})
+function updateInvocationConfiguration(model: Model, configuration: Model) {
+  Object.assign(model, configuration)
+  delete pricingFieldErrors.value[model.id]
+  delete pricingStandardRoutes.value[model.id]
+  delete pricingFailures.value[model.id]
+}
 const testAttempted = ref(false)
 async function testAll() {
   if (busy.value) return
@@ -459,6 +476,31 @@ async function testAll() {
       if (['PENDING_REVIEW', 'ACTIVE'].includes(m.status)) continue
       let run = results.value[m.id]
       if (!run || run.status !== 'RUNNING') {
+        delete pricingFailures.value[m.id]
+        delete pricingFieldErrors.value[m.id]
+        let check
+        try {
+          check = await accessApi.pricingCheck(m, true)
+        } catch (error) {
+          const failure = error as NotifiedError
+          pricingFailures.value[m.id] = failure.message || t('common.loadFailed')
+          pricingFieldErrors.value[m.id] = (failure.params?.fields as Record<string, string>) ?? {}
+          const route = failure.params?.standard_route as
+            { method?: string; path?: string } | undefined
+          pricingStandardRoutes.value[m.id] = route
+            ? `${route.method ?? ''} ${route.path ?? ''}`.trim()
+            : ''
+          failures.push({ name: m.model_id_at_gateway, code: failure.code ?? '' })
+          notice.value = failureNotice('test', failures)
+          continue
+        }
+        if (closed) break
+        if (!check.pricing_check_passed) {
+          pricingFailures.value[m.id] = t('ma.error_' + check.reason)
+          failures.push({ name: m.model_id_at_gateway, code: check.reason })
+          notice.value = failureNotice('test', failures)
+          continue
+        }
         const batch = await accessApi.onboardingTests(props.provider.id, [m], testKey(m))
         testKeys.delete(m.id)
         const item = batch.items[0]
@@ -504,7 +546,7 @@ async function testAll() {
       if (!closed) Object.assign(m, await accessApi.model(m.id, false))
     }
     if (!closed) {
-      step.value = 3
+      if (!Object.keys(pricingFailures.value).length) step.value = 3
     }
   } catch {
     if (!closed) notice.value = t('common.loadFailed')

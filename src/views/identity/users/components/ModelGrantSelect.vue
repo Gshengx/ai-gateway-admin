@@ -27,7 +27,9 @@
               v-for="item in items"
               :key="item.id"
               :checked="locked.has(item.id) || selection.includes(item.id)"
-              :disabled="locked.has(item.id)"
+              :disabled="
+                locked.has(item.id) || (!selection.includes(item.id) && selection.length >= 100)
+              "
               @change="(checked: boolean) => toggle(item.id, checked)"
               >{{ names[item.id] }}</t-checkbox
             >
@@ -119,6 +121,7 @@ function changePage(value: number) {
   void load()
 }
 function toggle(id: string, checked: boolean) {
+  if (checked && selection.value.length >= 100) return
   if (locked.value.has(id)) return
   selection.value = checked
     ? [...new Set([...selection.value, id])]
@@ -143,6 +146,16 @@ watch(popupVisible, (visible) => {
 watch(locale, () => {
   if (popupVisible.value) query()
 })
+watch(
+  () => [props.subjectId, props.subjectType],
+  () => {
+    generation++
+    clearTimeout(timer)
+    items.value = []
+    names.value = {}
+    if (popupVisible.value) query()
+  },
+)
 watch(locked, () => {
   const pending = selection.value.filter((id) => !locked.value.has(id))
   if (pending.length !== selection.value.length) selection.value = pending

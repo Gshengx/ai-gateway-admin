@@ -1,4 +1,4 @@
-import type { Engine, Method } from '@/api/modules/security'
+import type { Engine, Method, SecurityPolicy } from '@/api/modules/security'
 
 export const dataPolicyNames: [string, string][] = [
   [
@@ -336,4 +336,14 @@ export const seedMessages: Record<string, [string, string]> = {
     '未命中其他审计策略时，按所选字段留存交互。',
     'When no other audit policy matches, retain the selected interaction fields.',
   ],
+}
+
+/** The seed identifies a template; each saved field independently retains or overrides it. */
+export function policyFieldSeed(
+  policy: Pick<SecurityPolicy, 'name' | 'description' | 'seed_key'>,
+  field: 'name' | 'description',
+): string | undefined {
+  const key =
+    policy.seed_key && (field === 'name' ? policy.seed_key : `${policy.seed_key}Description`)
+  return key && seedMessages[key]?.[0] === policy[field] ? key : undefined
 }

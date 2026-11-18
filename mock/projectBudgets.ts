@@ -4,6 +4,7 @@ import { directory, runtimeState, nextSequence, existingState } from './_runtime
 import { projects, projectRole, departmentPath } from './_projects'
 import {
   budgetLedger,
+  budgetExpenses,
   budgetState,
   budgetToday,
   configureBudget,
@@ -16,7 +17,6 @@ import { allocateBudget, budgetDates } from '../src/utils/projectBudget'
 import { costDepartmentId, costSubtree, refreshCostConsumption } from './_costBills'
 import type { BudgetWorkOrder, ProjectBudgetConfig } from '../src/api/modules/projectBudgets'
 import { costAnalytics } from './_costAnalytics'
-import { expenseRecords } from './_costRecords'
 
 const orders = runtimeState<BudgetWorkOrder[]>('projectBudgetOrders', () => [])
 function ensureOrderFixtures() {
@@ -380,7 +380,8 @@ export default auditedMock([
       )
     )
       return fail('VALIDATION_FAILED', '')
-    for (const p of selected) configureBudget(p!, config, actor(req)!.display_name)
+    for (const p of selected)
+      configureBudget(p!, config, `${actor(req)!.display_name} (${actor(req)!.username})`)
     return success({ applied: true, project_ids: ids })
   }),
   budgetRoute('/project-budgets/:id', 'get', (req) => {
@@ -390,18 +391,7 @@ export default auditedMock([
   budgetRoute('/project-budgets/:id/analytics', 'get', (req) => {
     const project = findProject(req)
     if (!project || !inScope(project, req)) return fail('OUT_OF_SCOPE', '')
-    const config = budgetLedger(project).config
-    return success(
-      costAnalytics(
-        expenseRecords.filter(
-          (r) =>
-            r.project_id === project.id &&
-            (!config ||
-              (r.created_at.slice(0, 10) >= config.start &&
-                r.created_at.slice(0, 10) <= config.end)),
-        ),
-      ),
-    )
+    return success(costAnalytics(budgetExpenses(project)))
   }),
   budgetRoute('/project-budgets/:id/remove', 'post', (req) => {
     const p = findProject(req)
@@ -414,7 +404,7 @@ export default auditedMock([
       id: `budget-history-${nextSequence('projectBudgetHistory')}`,
       action: 'REMOVED',
       at: new Date().toISOString(),
-      actor: actor(req)!.display_name,
+      actor: `${actor(req)!.display_name} (${actor(req)!.username})`,
       amount: 0,
       work_order_id: null,
       configuration: ledger.config ? structuredClone(ledger.config) : null,
@@ -468,7 +458,7 @@ export default auditedMock([
       .filter(
         (o) =>
           (!value(req, 'search') ||
-            `${o.number} ${o.project_name} ${o.reason}`
+            `${o.number} ${o.project_name} ${o.reason} ${o.applicant_name} ${o.applicant_username}`
               .toLowerCase()
               .includes(value(req, 'search').toLowerCase())) &&
           (!value(req, 'status') || o.status === value(req, 'status')) &&
@@ -711,7 +701,7 @@ export default auditedMock([
             action: o.mode,
             amount,
             at: new Date().toISOString(),
-            actor: me.display_name,
+            actor: `${me.display_name} (${me.username})`,
             reason: o.number,
           })
           o.status = 'APPROVED'
@@ -732,7 +722,7 @@ export default auditedMock([
                   ),
             start: budgetToday(),
             end: o.mode === 'TEMPORARY' ? until : null,
-            actor: me.display_name,
+            actor: `${me.display_name} (${me.username})`,
             created_at: now,
           }
           if (o.mode === 'PERMANENT') {
@@ -756,7 +746,7 @@ export default auditedMock([
             id: `budget-history-${nextSequence('projectBudgetHistory')}`,
             action: o.mode,
             at: now,
-            actor: me.display_name,
+            actor: `${me.display_name} (${me.username})`,
             amount,
             work_order_id: o.number,
             configuration: structuredClone(ledger.config),

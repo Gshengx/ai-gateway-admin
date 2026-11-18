@@ -3,7 +3,6 @@
     <div ref="controls" class="department-tree-select__controls">
       <t-tree-select
         class="department-tree-select__input"
-        :key="treeVersion"
         :value="modelValue"
         :data="departmentTree"
         :tree-props="departmentTreeProps"
@@ -34,11 +33,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button, MessagePlugin, type TreeProps, type TreeSelectProps } from 'tdesign-vue-next'
 import { RefreshIcon } from 'tdesign-icons-vue-next'
 import { getDepartmentListApi, type DepartmentItem } from '@/api/modules/identity'
+import { useDepartmentPopup } from '@/utils/useDepartmentPopup'
+import { useTreeBranches } from '@/utils/useTreeBranches'
 
 const props = withDefaults(
   defineProps<{
@@ -57,129 +58,8 @@ const emit = defineEmits<{
 }>()
 const { t, locale } = useI18n()
 const controls = ref<HTMLElement>()
-const popupVisible = ref(false)
-interface PopupGeometry {
-  width: number
-  placement: 'bottom-left' | 'bottom-right'
-  boundary?: HTMLElement
-  margin: number
-  signature: string
-}
-const popupGeometry = ref<PopupGeometry>()
-let geometryFrame = 0
-const popupClass = `department-tree-popup-${useId().replace(/:/g, '-')}`
-
-function resetPopupGeometry() {
-  if (popupGeometry.value) {
-    // matchWidthFunc reads offsetWidth, so remove our previous explicit width first.
-    document.querySelector<HTMLElement>(`.${popupClass}`)?.style.removeProperty('width')
-    popupGeometry.value = undefined
-  }
-}
-// An absent width lets SelectInput's useOverlayInnerStyle use matchWidthFunc.
-// In particular, '0px' is truthy and would bypass that default entirely.
-const departmentPopupProps = computed<NonNullable<TreeSelectProps['popupProps']>>(() => {
-  const geometry = popupGeometry.value
-  return {
-    overlayInnerClassName: ['department-tree-popup', popupClass],
-    ...(geometry && {
-      overlayInnerStyle: { width: `${geometry.width}px` },
-      placement: geometry.placement,
-      popperOptions: {
-        modifiers: [
-          {
-            name: 'preventOverflow',
-            options: {
-              boundary: geometry.boundary ?? 'clippingParents',
-              rootBoundary: 'viewport',
-              padding: geometry.margin,
-              tether: false,
-            },
-          },
-          // Keep the requested horizontal alignment if vertical flipping is needed.
-          {
-            name: 'flip',
-            options: {
-              boundary: geometry.boundary ?? 'clippingParents',
-              padding: geometry.margin,
-              fallbackPlacements: [geometry.placement === 'bottom-right' ? 'top-end' : 'top-start'],
-            },
-          },
-        ],
-      },
-    }),
-  }
-})
-
-function updatePopupGeometry() {
-  if (!popupVisible.value) return
-  const trigger = controls.value?.querySelector<HTMLElement>('.t-select-input')
-  const reset = resetPopupGeometry
-  if (!trigger?.isConnected || !trigger.getClientRects().length) return reset()
-  const rect = trigger.getBoundingClientRect()
-  const style = getComputedStyle(trigger)
-  if (style.visibility !== 'visible') return reset()
-  const maximum = Number.parseFloat(style.getPropertyValue('--department-tree-popup-max-width'))
-  const measure = document.createElement('span')
-  measure.style.width = 'var(--td-comp-margin-l)'
-  measure.style.position = 'absolute'
-  measure.style.visibility = 'hidden'
-  trigger.appendChild(measure)
-  const margin = Number.parseFloat(getComputedStyle(measure).width)
-  measure.remove()
-  const container = trigger.closest<HTMLElement>('.t-dialog__body, .t-drawer__body')
-  let left = margin
-  let right = document.documentElement.clientWidth - margin
-  if (container) {
-    const bounds = container.getBoundingClientRect()
-    if (
-      !container.getClientRects().length ||
-      bounds.width <= 0 ||
-      bounds.height <= 0 ||
-      getComputedStyle(container).visibility !== 'visible'
-    ) {
-      return reset()
-    }
-    // Use body boundaries, rather than subtracting its padding and another margin.
-    left = Math.max(left, bounds.left)
-    right = Math.min(right, bounds.right)
-  }
-  if (
-    ![rect.left, rect.right, rect.width, rect.height, maximum, margin, left, right].every(
-      Number.isFinite,
-    ) ||
-    rect.width <= 0 ||
-    rect.height <= 0 ||
-    // Dialog scale animation reports visual widths smaller than the laid out input.
-    Math.abs(rect.width - trigger.offsetWidth) > 1 ||
-    maximum <= 0 ||
-    margin < 0 ||
-    right - left < rect.width ||
-    rect.left < left ||
-    rect.right > right
-  ) {
-    return reset()
-  }
-  const target = Math.max(rect.width, Math.min(maximum, right - left))
-  const alignRight = Boolean(container) && rect.left + target > right
-  const placement = alignRight ? 'bottom-right' : 'bottom-left'
-  const available = alignRight ? rect.right - left : right - rect.left
-  const width = Math.max(rect.width, Math.min(target, available))
-  const signature = [rect.left, rect.right, rect.top, rect.bottom, left, right, width, margin].join(
-    ',',
-  )
-  if (popupGeometry.value?.signature !== signature) {
-    // Popup watches overlayInnerStyle and updates Popper; placement changes recreate it.
-    popupGeometry.value = { width, placement, boundary: container ?? undefined, margin, signature }
-  }
-}
-
-function trackPopupGeometry() {
-  updatePopupGeometry()
-  // ResizeObserver cannot detect drawer translation or dialog scale animation.
-  // Recheck while open, but only publish geometry when coordinates actually change.
-  if (popupVisible.value) geometryFrame = requestAnimationFrame(trackPopupGeometry)
-}
+const { popupProps: departmentPopupProps, setVisible: setPopupVisible } =
+  useDepartmentPopup(controls)
 
 interface DepartmentNode {
   value: string
@@ -200,7 +80,6 @@ const departmentLoading = computed(
   () => searchLoading.value || rootLoading.value || resolving.value,
 )
 const departmentItems = new Map<string, DepartmentItem>()
-const treeVersion = ref(0)
 const nodeVersions = new Map<string, number>()
 const refreshingNodes = reactive(new Set<string>())
 const inFlight = new Map<string, Promise<DepartmentItem[]>>()
@@ -223,6 +102,11 @@ function departmentNodes(items: DepartmentItem[]): DepartmentNode[] {
     return { value: item.id, label, children: item.has_children ? true : undefined }
   })
 }
+
+const branches = useTreeBranches(lazyDepartments, async (id, signal) => {
+  const items = await requestChildren(id)
+  return signal.aborted ? [] : departmentNodes(items)
+})
 
 const departmentTreeProps = computed<TreeProps>(() => ({
   lazy: true,
@@ -281,40 +165,8 @@ const departmentTreeProps = computed<TreeProps>(() => ({
       text.slice(end),
     ])
   },
-  load: async (node) => {
-    if (departmentKeyword.value) return []
-    const parent = findNode(lazyDepartments.value, String(node.value))
-    if (!parent) return []
-    if (Array.isArray(parent.children)) return parent.children
-    const session = departmentSession
-    const id = String(node.value)
-    const version = nodeVersions.get(id) ?? 0
-    try {
-      const items = await requestChildren(id)
-      if (session !== departmentSession) return []
-      if (version !== (nodeVersions.get(id) ?? 0)) {
-        await inFlight.get(id)?.catch(() => undefined)
-        const current = findNode(lazyDepartments.value, id)
-        return Array.isArray(current?.children) ? current.children : []
-      }
-      if (session !== departmentSession || findNode(lazyDepartments.value, id) !== parent) return []
-      const children = departmentNodes(items)
-      parent.children = children
-      return children
-    } catch {
-      if (session !== departmentSession) return []
-      if (version !== (nodeVersions.get(id) ?? 0)) {
-        await inFlight.get(id)?.catch(() => undefined)
-        const current = findNode(lazyDepartments.value, id)
-        return Array.isArray(current?.children) ? current.children : []
-      }
-      // Keep children=true and rebuild after TDesign finishes loading, allowing retries.
-      setTimeout(() => {
-        if (session === departmentSession) treeVersion.value++
-      }, 0)
-      return []
-    }
-  },
+  onExpand: branches.onExpand,
+  icon: branches.icon,
   expandAll: Boolean(departmentKeyword.value),
 }))
 
@@ -432,7 +284,6 @@ async function resolveSelection(id: string, updateModel = false) {
     retrySelection = id
     // Keep the last committed filter range and selection when traversal fails.
     if (!updateModel && resolvedId !== undefined) emit('update:modelValue', resolvedId)
-    treeVersion.value++
   } finally {
     if (session === departmentSession && version === selectionVersion) resolving.value = false
   }
@@ -472,14 +323,10 @@ async function loadRoots() {
 }
 
 function onPopupVisibleChange(visible: boolean) {
-  popupVisible.value = visible
+  setPopupVisible(visible)
   if (visible) {
-    cancelAnimationFrame(geometryFrame)
-    trackPopupGeometry()
     void loadRoots()
   } else {
-    cancelAnimationFrame(geometryFrame)
-    resetPopupGeometry()
     onDepartmentSearch('')
   }
 }
@@ -491,6 +338,7 @@ function clearState() {
   searchVersion++
   selectionVersion++
   clearTimeout(searchTimer)
+  branches.invalidate()
   inFlight.clear()
   nodeVersions.clear()
   refreshingNodes.clear()
@@ -507,7 +355,6 @@ function clearState() {
 
 function reset() {
   clearState()
-  treeVersion.value++
   void loadRoots()
 }
 /** Refresh only direct children; retain loaded subtrees and the committed filter range. */
@@ -519,6 +366,7 @@ async function refreshNode(id: string) {
   const version = (nodeVersions.get(id) ?? 0) + 1
   nodeVersions.set(id, version)
   refreshingNodes.add(id)
+  branches.invalidate(id)
   inFlight.delete(id)
   const isCurrent = () => session === departmentSession && nodeVersions.get(id) === version
   try {
@@ -582,7 +430,6 @@ watch(locale, async () => {
     parentId = departmentItems.get(parentId)?.parent_id
   }
   clearState()
-  treeVersion.value++
   const session = departmentSession
   await loadRoots()
   if (session !== departmentSession) return
@@ -611,11 +458,8 @@ watch(locale, async () => {
 
 onMounted(() => {
   void loadRoots()
-  window.addEventListener('resize', updatePopupGeometry)
 })
 onBeforeUnmount(() => {
-  cancelAnimationFrame(geometryFrame)
-  window.removeEventListener('resize', updatePopupGeometry)
   clearState()
 })
 </script>

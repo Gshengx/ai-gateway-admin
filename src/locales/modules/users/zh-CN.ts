@@ -112,11 +112,11 @@ export default {
       listSeparator: '、',
       tabs: {
         basic: '基本信息',
-        models: '可访问模型 ({n})',
+        models: '已授权模型 ({n})',
         keys: 'API Key ({n})',
       },
       models: {
-        empty: '暂无可用模型',
+        empty: '暂无已授权模型',
         sourceDepartment: '部门·{name}',
         sourceGroup: '用户组·{name}',
         sourceOutOfScope: '范围外来源',
@@ -133,11 +133,14 @@ export default {
         selectPlaceholder: '选择模型',
         searchPlaceholder: '搜索模型名称',
         grantSuccess: '模型授权已更新',
+        versionConflict: '授权已发生变化，请核对刷新后的列表，再确认提交。',
+        retrySameCommand: '操作结果暂未确定，请再次确认以重试原请求。',
         grantUnchanged: '授权未发生变化',
         columns: {
           model: '模型名称',
           provider: '提供商',
           sources: '授权来源',
+          status: '状态',
           grantType: '授权方式',
           actions: '操作',
         },
@@ -191,7 +194,8 @@ export default {
       password: '初始密码',
       passwordPlaceholder: '8-32 位，至少包含三类字符',
       passwordRequired: '请输入初始密码',
-      passwordRule: '密码需为 8-32 位，且包含大写字母、小写字母、数字、特殊字符中的至少三种',
+      passwordRule:
+        '密码需为 {min_length}-{max_length} 位，且包含大写字母、小写字母、数字、特殊字符中的至少 {complexity_categories} 种',
     },
     confirm: {
       enableTitle: '启用用户',

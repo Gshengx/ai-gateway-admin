@@ -72,7 +72,10 @@
         </p></template
       ><template #current="{ row }"
         ><template v-if="row.current && row.status !== 'DISABLED'"
-          ><div>{{ money(row.current.consumed) }} / {{ money(row.current.amount) }}</div>
+          ><div>
+            {{ money(row.current.consumed, row.config?.currency) }} /
+            {{ money(row.current.amount, row.config?.currency) }}
+          </div>
           <t-tag size="small" :theme="statusTheme(currentStatus(row))" variant="light">{{
             t(`cost.${currentStatus(row)}`)
           }}</t-tag></template
@@ -123,7 +126,11 @@
             department: removing?.project.department.split('/').pop(),
           })
         }}
-        {{ t('budgetPlan.removeProjectSpent', { amount: money(removing?.consumed ?? 0) }) }}
+        {{
+          t('budgetPlan.removeProjectSpent', {
+            amount: money(removing?.consumed ?? 0, removing?.config?.currency),
+          })
+        }}
       </p></t-dialog
     >
     <t-drawer
@@ -152,7 +159,7 @@
             ><strong>{{
               key === 'usage'
                 ? `${detail.usage.toFixed(1)}%`
-                : money(detail[key as 'total' | 'consumed' | 'remaining'])
+                : money(detail[key as 'total' | 'consumed' | 'remaining'], detail.config?.currency)
             }}</strong>
           </div>
         </div>
@@ -168,13 +175,15 @@
             :currency="detail.config?.currency"
           /><t-descriptions :column="2" layout="vertical"
             ><t-descriptions-item :label="t('budgetPlan.currentBudget')">{{
-              detail.current ? money(detail.current.amount) : '—'
+              detail.current ? money(detail.current.amount, detail.config?.currency) : '—'
             }}</t-descriptions-item
             ><t-descriptions-item :label="t('budgetPlan.currentRemaining')">{{
-              detail.current ? money(detail.current.remaining) : '—'
+              detail.current ? money(detail.current.remaining, detail.config?.currency) : '—'
             }}</t-descriptions-item
             ><t-descriptions-item :label="t('budgetPlan.memberLimit')">{{
-              detail.current?.limit == null ? t('budgetPlan.NONE') : money(detail.current.limit)
+              detail.current?.limit == null
+                ? t('budgetPlan.NONE')
+                : money(detail.current.limit, detail.config?.currency)
             }}</t-descriptions-item
             ><t-descriptions-item :label="t('cost.action')">{{
               detail.config
@@ -193,7 +202,12 @@
               :label="t(`cost.notify${level}`)"
               >{{
                 detail.config?.recipients[level]
-                  .map((id) => users.find((u) => u.id === id)?.name ?? id)
+                  .map((id) =>
+                    userLabel(
+                      users.find((u) => u.id === id)?.name,
+                      users.find((u) => u.id === id)?.username,
+                    ),
+                  )
                   .join(', ') || t('cost.noNotify')
               }}
               ·
@@ -215,14 +229,14 @@
             v-for="key in ['base', 'temporary', 'amount', 'consumed', 'remaining']"
             :key="key"
             #[key]="{ row }"
-            >{{ money(row[key]) }}</template
+            >{{ money(row[key], detail.config?.currency) }}</template
           ></t-table
         ><template v-else-if="detailTab === 'history'"
           ><t-timeline
             ><t-timeline-item v-for="h in detail.history" :key="h.id"
               ><strong
                 >{{ t(`cost.history${h.action === 'CONFIGURED' ? 'UPDATED' : h.action}`) }} ·
-                {{ money(h.amount) }}</strong
+                {{ money(h.amount, detail.config?.currency) }}</strong
               >
               <p>{{ formatDateTime(h.at) }} · {{ h.actor }}</p>
               <p v-if="h.work_order_id">{{ h.work_order_id }}</p></t-timeline-item
@@ -237,11 +251,15 @@
           />
           <h3>{{ t('cost.userRanking') }}</h3>
           <t-table row-key="id" :data="analytics?.users ?? []" :columns="memberColumns"
-            ><template #cost="{ row }">{{ money(row.cost) }}</template></t-table
+            ><template #cost="{ row }">{{
+              money(row.cost, detail.config?.currency)
+            }}</template></t-table
           >
           <h3>{{ t('cost.modelRanking') }}</h3>
           <t-table row-key="name" :data="analytics?.models ?? []" :columns="modelColumns"
-            ><template #cost="{ row }">{{ money(row.cost) }}</template></t-table
+            ><template #cost="{ row }">{{
+              money(row.cost, detail.config?.currency)
+            }}</template></t-table
           ></template
         >
       </div></t-drawer
@@ -249,6 +267,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { PageInfo, PrimaryTableCol, TableRowData } from 'tdesign-vue-next'

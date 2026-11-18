@@ -22,7 +22,9 @@ import { computed, ref, watch } from 'vue'
 import type { TreeProps, TreeSelectProps } from 'tdesign-vue-next'
 import { getCostContext, type CostDepartment } from '@/api/modules/cost'
 import { useCost } from './useCost'
-import { useDepartmentPopup } from './useDepartmentPopup'
+import { useDepartmentPopup } from '@/utils/useDepartmentPopup'
+import { useTreeBranches } from '@/utils/useTreeBranches'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 const root = ref<HTMLElement>()
 const { popupProps, setVisible } = useDepartmentPopup(root)
 const props = withDefaults(
@@ -44,7 +46,9 @@ interface Node {
 }
 const nodes = ref<Node[]>([]),
   loading = ref(false)
-let version = 0
+const requests = useLatestRequest()
+const visible = ref(false)
+const keyword = ref('')
 const toNodes = (items: CostDepartment[]): Node[] =>
   items.map((d) => {
     departments.set(d.id, d)
@@ -54,52 +58,49 @@ const toNodes = (items: CostDepartment[]): Node[] =>
       children: d.has_children ? true : undefined,
     }
   })
+const branches = useTreeBranches(nodes, async (id, signal) => {
+  const result = await getCostContext(id)
+  return signal.aborted ? [] : toNodes(result.departments)
+})
 const treeProps = computed<TreeProps>(() => ({
   lazy: true,
-  load: async (node) => {
-    try {
-      return toNodes((await getCostContext(String(node.value))).departments)
-    } catch (err) {
-      error(err)
-      return []
-    }
-  },
+  onExpand: branches.onExpand,
+  icon: branches.icon,
 }))
-async function open(visible: boolean) {
-  setVisible(visible)
-  if (!visible) return
+async function loadOptions() {
+  const current = requests.begin()
+  branches.invalidate()
   loading.value = true
   try {
-    nodes.value = props.rootId
-      ? toNodes([
-          await (async () => {
-            await ensureDepartments([props.rootId!])
-            return departments.get(props.rootId!)!
-          })(),
-        ])
-      : toNodes((await getCostContext()).departments)
+    let items: CostDepartment[]
+    if (keyword.value) {
+      items = (await getCostContext(undefined, keyword.value, props.rootId)).departments
+    } else if (props.rootId) {
+      await ensureDepartments([props.rootId])
+      items = [departments.get(props.rootId)!]
+    } else items = (await getCostContext()).departments
+    if (current.isCurrent())
+      nodes.value = toNodes(items).map((node) =>
+        keyword.value ? { ...node, children: undefined } : node,
+      )
   } catch (err) {
-    error(err)
+    if (current.isCurrent()) error(err)
   } finally {
-    loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
 }
-async function search(keyword: string) {
-  const current = ++version
-  if (!keyword) {
-    await open(true)
-    return
-  }
-  loading.value = true
-  try {
-    const result = await getCostContext(undefined, keyword, props.rootId)
-    if (current === version)
-      nodes.value = toNodes(result.departments).map((n) => ({ ...n, children: undefined }))
-  } catch (err) {
-    error(err)
-  } finally {
-    if (current === version) loading.value = false
-  }
+function open(value: boolean) {
+  visible.value = value
+  setVisible(value)
+  keyword.value = ''
+  requests.invalidate()
+  branches.invalidate()
+  if (value) void loadOptions()
+  else loading.value = false
+}
+function search(value: string) {
+  keyword.value = value
+  void loadOptions()
 }
 const change: NonNullable<TreeSelectProps['onChange']> = (value) => {
   emit('update:modelValue', value ? String(value) : '')
@@ -113,7 +114,8 @@ watch(
   { immediate: true },
 )
 watch(english, () => {
-  nodes.value = []
+  if (visible.value) void loadOptions()
+  else nodes.value = []
 })
 </script>
 <style scoped>

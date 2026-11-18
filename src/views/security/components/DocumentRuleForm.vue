@@ -15,7 +15,7 @@
       <t-form class="security-form" label-align="top" :disabled="readOnly" @submit="save">
         <t-alert v-if="errorMessage" theme="error" :message="errorMessage" />
         <t-form-item :label="label('ruleName')" required
-          ><t-input v-model="form.name" :maxlength="200" @change="form.seed_key = undefined"
+          ><t-input v-model="displayName" :maxlength="200"
         /></t-form-item>
         <div class="security-grid">
           <t-form-item :label="label('ruleType')"
@@ -202,7 +202,13 @@ const { label, name, choices, error, errorMessage, locale } = useSecurity()
 const form = ref<DetectionRule>(
   props.value ? JSON.parse(JSON.stringify(props.value)) : documentRule(2, locale.value === 'en-US'),
 )
-if (props.value) form.value.name = name(props.value)
+const displayName = computed({
+  get: () => name(form.value),
+  set: (value: string) => {
+    form.value.name = value
+    form.value.seed_key = undefined
+  },
+})
 const guide = computed(() => form.value.config.identification_guide!)
 const positive = ref(''),
   negative = ref(label('negativeCandidate')),
@@ -248,7 +254,6 @@ function addField() {
 }
 function payload() {
   const value = JSON.parse(JSON.stringify(form.value)) as DetectionRule
-  if (props.value?.seed_key && value.seed_key) value.name = props.value.name
   value.config.basic_test_passed = passed.value
   return value
 }

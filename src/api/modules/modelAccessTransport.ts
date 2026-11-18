@@ -1,3 +1,4 @@
+import { userLabel } from '@/utils/userLabel'
 import { markRaw } from 'vue'
 import { createIdempotencyKey, type RequestConfig } from '@/api/request'
 import { matchesConditions } from '@/utils/modelTemplate'
@@ -21,7 +22,10 @@ import { normalizeModelId } from '@/utils/modelContract'
 
 // View models describe the existing controls; only explicit new-contract DTOs cross HTTP.
 const balanceAttempts = new Map<string, string>()
-const importAttempts = new Map<string, { signature: string; key: string }>()
+const importAttempts = new Map<
+  string,
+  { signature: string; key: string; state: 'NOT_STARTED' | 'UNCONFIRMED' }
+>()
 const modelVersions = new Map<string, D.ModelVersions>()
 const modelFacts = new Map<string, D.Model>()
 const providerFacts = new Map<string, D.Provider>()
@@ -69,9 +73,12 @@ export function modelView(m: D.Model): Model {
     ...blankModel(),
     ...m,
     description: 'description' in m ? (m.description ?? '') : '',
-    custom_invocation_apis: ('custom_invocation_apis' in m ? m.custom_invocation_apis : []).map(
-      (a) => ({ invocation_api: a.protocol, path: a.path }),
-    ),
+    supported_invocation_apis: m.invocation_apis.map((a) => a.protocol),
+    custom_invocation_apis: m.invocation_apis.map((a) => ({
+      id: a.id,
+      invocation_api: a.protocol,
+      path: a.path,
+    })),
     ...('health' in m ? m.health : {}),
     admission_valid: m.status === 'PENDING_REVIEW',
     provider_name: m.provider_name,
@@ -162,7 +169,10 @@ export function pricingView(
   }))
   if ('created_at' in price) {
     view.created_at = price.created_at
-    view.created_by = price.created_by_display.display_name ?? ''
+    view.created_by = userLabel(
+      price.created_by_display.display_name,
+      price.created_by_display.username,
+    )
     view.id = price.id
   }
   view.catalog_price_version_id = price.catalog_price_version_id
@@ -209,8 +219,8 @@ function baseInput(m: Model): D.ModelIdentityInput & D.ModelMetadataInput {
     provider_id: m.provider_id,
     model_id_at_gateway: normalizeModelId(m.model_id_at_gateway),
     model_id_at_provider: m.model_id_at_provider,
-    supported_invocation_apis: m.supported_invocation_apis,
-    custom_invocation_apis: m.custom_invocation_apis.map((a) => ({
+    invocation_apis: m.custom_invocation_apis.map((a) => ({
+      ...(a.id ? { id: a.id } : {}),
       protocol: a.invocation_api,
       path: a.path,
     })),
@@ -252,9 +262,10 @@ export function testView(j: D.CheckJob | D.CheckJobSummary): TestRun {
     checks:
       'items' in j
         ? j.items.map((i) => ({
+            invocation_api_id: i.invocation_api.id,
             invocation_api: i.invocation_api.protocol ?? i.invocation_api.api_key,
             upstream_path: i.invocation_api.path ?? undefined,
-            key: i.check_type === 'MODEL_REQUEST' ? 'CONNECTIVITY' : i.check_type,
+            key: i.check_type,
             status: (
               {
                 WAITING: 'PENDING',
@@ -275,7 +286,7 @@ export function testView(j: D.CheckJob | D.CheckJobSummary): TestRun {
     billing_department: '',
     started_at: j.started_at ?? j.created_at,
     completed_at: j.completed_at,
-    triggered_by: j.triggered_by_display.display_name ?? '',
+    triggered_by: userLabel(j.triggered_by_display.display_name, j.triggered_by_display.username),
     dto: 'items' in j ? markRaw(j) : undefined,
   }
 }
@@ -318,7 +329,7 @@ export const transport = {
     provider_id: string,
     model_id_at_provider: string,
     config?: RequestConfig,
-  ) => (await modelTemplates(provider_id, model_id_at_provider, config)).protocol_options,
+  ) => modelTemplates(provider_id, model_id_at_provider, config),
   metadata: async (
     provider_id: string,
     model_id_at_provider: string,
@@ -329,7 +340,11 @@ export const transport = {
   },
   metadataWithOptions: async (providerId: string, upstreamId: string, config?: RequestConfig) => {
     const result = await modelTemplates(providerId, upstreamId, config)
-    return { metadata: templateMetadata(result, upstreamId), options: result.protocol_options }
+    return {
+      metadata: templateMetadata(result, upstreamId),
+      options: result.protocol_options,
+      customPassthroughSupported: result.custom_passthrough_supported,
+    }
   },
   prepare: async (m: Model, config?: RequestConfig) => {
     const key = preparedKey(m.provider_id, m.model_id_at_provider)
@@ -595,31 +610,29 @@ export const transport = {
         ...(c.discovery_id ? { discovery_id: c.discovery_id } : {}),
         model_id_at_provider: c.model_id_at_provider,
         model_id_at_gateway: normalizeModelId(c.model_id_at_gateway),
-        ...(c.discovery_id ? {} : { supported_invocation_apis: [], custom_invocation_apis: [] }),
+        ...(c.discovery_id ? {} : { invocation_apis: [] }),
       })),
     }
     const signature = JSON.stringify(body)
-    const attempt = importAttempts.get(id)
-    if (attempt && attempt.signature !== signature) throw new Error('OPERATION_RESULT_UNKNOWN')
-    const key = attempt?.key ?? createIdempotencyKey()
-    importAttempts.set(id, { signature, key })
+    const previous = importAttempts.get(id)
+    if (previous && previous.signature !== signature) throw new Error('OPERATION_RESULT_UNKNOWN')
+    const attempt = previous ?? {
+      signature,
+      key: createIdempotencyKey(),
+      state: 'NOT_STARTED' as const,
+    }
+    importAttempts.set(id, attempt)
     let result: D.ImportBatchResult
     try {
-      result = await api.D02(id, body, { idempotencyKey: key })
+      result = await api.D02(id, body, { idempotencyKey: attempt.key })
       importAttempts.delete(id)
     } catch (error) {
       const failure = error as {
-        code?: string
-        status?: number
         params?: { result_state?: string }
       }
-      if (
-        failure.status &&
-        failure.code !== 'OPERATION_RESULT_UNKNOWN' &&
-        failure.params?.result_state !== 'UNCONFIRMED'
-      ) {
+      if (attempt.state === 'NOT_STARTED' && failure.params?.result_state === 'NOT_STARTED') {
         importAttempts.delete(id)
-      }
+      } else attempt.state = 'UNCONFIRMED'
       throw error
     }
     result.items.forEach((item) => {
@@ -635,7 +648,9 @@ export const transport = {
         ...summary,
         id: summary.physical_model_id,
         admission_valid: summary.status === 'PENDING_REVIEW',
-        custom_invocation_apis: summary.custom_invocation_apis.map((a) => ({
+        supported_invocation_apis: summary.invocation_apis.map((a) => a.protocol),
+        custom_invocation_apis: summary.invocation_apis.map((a) => ({
+          id: a.id,
           invocation_api: a.protocol,
           path: a.path,
         })),
@@ -656,8 +671,8 @@ export const transport = {
             physical_model_id: m.id,
             expected_base_version:
               modelVersions.get(m.id)?.base ?? (await facts(m.id)).versions.base,
-            supported_invocation_apis: m.supported_invocation_apis,
-            custom_invocation_apis: m.custom_invocation_apis.map((a) => ({
+            invocation_apis: m.custom_invocation_apis.map((a) => ({
+              ...(a.id ? { id: a.id } : {}),
               protocol: a.invocation_api,
               path: a.path,
             })),
@@ -694,7 +709,7 @@ export const transport = {
       fromStatus: e.from_status,
       status: e.to_status,
       created_at: e.occurred_at,
-      actor: e.actor.display_name ?? e.actor.username ?? '',
+      actor: userLabel(e.actor.display_name, e.actor.username),
       reason: e.reason ?? '',
     }))
     return view
@@ -760,7 +775,7 @@ export const transport = {
           JSON.stringify(value) !== JSON.stringify(originalBase[key as keyof D.ModelBase]),
       )
     ) {
-      input.base = { ...base, custom_invocation_apis: base.custom_invocation_apis ?? [] }
+      input.base = base
       input.expected_base_version = original.versions.base
     }
     if (
@@ -821,6 +836,11 @@ export const transport = {
       }),
     )
   },
+  pricingCheck: async (m: Model, proposed = false) =>
+    api.C05(m.id, {
+      expected_base_version: modelVersions.get(m.id)?.base ?? (await facts(m.id)).versions.base,
+      ...(proposed ? { invocation_apis: baseInput(m).invocation_apis } : {}),
+    }),
   startTest: async (
     id: string,
     purpose: 'ADMISSION' | 'HEALTH',
@@ -877,40 +897,59 @@ export const transport = {
     grantVersions.set(id, result.grant_version)
     return { ...result, items: result.items.filter((grant) => grant.subject_type === subject_type) }
   },
-  grant: async (id: string, items: Pick<Permission, 'subject_type' | 'subject_id'>[]) => {
-    const result = await api.A02(id, {
-      expected_grant_version: grantVersions.get(id) ?? (await facts(id)).versions.grants,
-      add: items.map(({ subject_type, subject_id }) => ({ subject_type, subject_id })),
-      remove_grant_ids: [],
-    })
+  grant: async (
+    id: string,
+    items: Pick<Permission, 'subject_type' | 'subject_id'>[],
+    config?: RequestConfig,
+  ) => {
+    const result = await api.A02(
+      id,
+      {
+        expected_grant_version: grantVersions.get(id) ?? (await facts(id)).versions.grants,
+        add: items.map(({ subject_type, subject_id }) => ({ subject_type, subject_id })),
+        remove_grant_ids: [],
+      },
+      config,
+    )
     grantVersions.set(id, result.grant_version)
     return result
   },
-  batchGrant: async (ids: string[], items: Pick<Permission, 'subject_type' | 'subject_id'>[]) => {
-    const result = await api.A03({
-      models: await Promise.all(
-        ids.map(async (id) => ({
-          physical_model_id: id,
-          expected_grant_version:
-            grantVersions.get(id) ??
-            modelVersions.get(id)?.grants ??
-            (await facts(id)).versions.grants,
-        })),
-      ),
-      add: items.map(({ subject_type, subject_id }) => ({ subject_type, subject_id })),
-    })
+  batchGrant: async (
+    ids: string[],
+    items: Pick<Permission, 'subject_type' | 'subject_id'>[],
+    config?: RequestConfig,
+  ) => {
+    const result = await api.A03(
+      {
+        models: await Promise.all(
+          ids.map(async (id) => ({
+            physical_model_id: id,
+            expected_grant_version:
+              grantVersions.get(id) ??
+              modelVersions.get(id)?.grants ??
+              (await facts(id)).versions.grants,
+          })),
+        ),
+        add: items.map(({ subject_type, subject_id }) => ({ subject_type, subject_id })),
+      },
+      config,
+    )
     result.models.forEach(({ physical_model_id, result }) =>
       grantVersions.set(physical_model_id, result.grant_version),
     )
     return result
   },
-  revoke: async (id: string, ids: string[], reason: string) => {
-    const result = await api.A02(id, {
-      expected_grant_version: grantVersions.get(id) ?? (await facts(id)).versions.grants,
-      add: [],
-      remove_grant_ids: ids,
-      reason,
-    })
+  revoke: async (id: string, ids: string[], reason: string, config?: RequestConfig) => {
+    const result = await api.A02(
+      id,
+      {
+        expected_grant_version: grantVersions.get(id) ?? (await facts(id)).versions.grants,
+        add: [],
+        remove_grant_ids: ids,
+        reason,
+      },
+      config,
+    )
     grantVersions.set(id, result.grant_version)
     return result
   },

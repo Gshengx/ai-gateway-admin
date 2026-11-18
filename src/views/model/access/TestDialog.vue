@@ -24,56 +24,61 @@
     @close="close"
   >
     <div class="ma-stack">
-      <p v-if="!run" class="ma-muted">
-        {{
-          t(purpose === 'HEALTH' ? 'ma.healthHint' : 'ma.detectionHint', {
-            api: invocationTargets(model)
-              .map((api) => api.path || invocationLabel(api.invocation_api))
-              .join('、'),
-          })
-        }}
-      </p>
-      <p v-if="!run" class="test-cost-note">{{ t('ma.testCostNotice') }}</p>
-      <t-checkbox-group
-        v-if="!run"
-        v-model="selected"
-        class="ma-checks"
-        :options="
-          available.map((key) => ({
-            value: key,
-            label: t('ma.' + key),
-            disabled: true,
-          }))
-        "
-      />
+      <t-alert v-if="pricingReason" theme="warning" :message="t('ma.error_' + pricingReason)" />
       <template v-else>
-        <t-alert v-if="pollFailed" theme="error" :message="t('ma.testResultsLoadFailed')" />
-        <t-progress
-          v-if="run.status === 'RUNNING'"
-          :percentage="
-            Math.round(
-              (run.checks.filter((c) => ['PASSED', 'FAILED', 'ERROR'].includes(c.status)).length /
-                run.checks.length) *
-                100,
-            )
+        <p v-if="!run" class="ma-muted">
+          {{
+            t(purpose === 'HEALTH' ? 'ma.healthHint' : 'ma.detectionHint', {
+              api: invocationTargets(model)
+                .map((api) => api.path || invocationLabel(api.invocation_api))
+                .join('、'),
+            })
+          }}
+        </p>
+        <p v-if="!run" class="test-cost-note">{{ t('ma.testCostNotice') }}</p>
+        <t-checkbox-group
+          v-if="!run"
+          v-model="selected"
+          class="ma-checks"
+          :options="
+            available.map((key) => ({
+              value: key,
+              label: t('ma.' + key),
+              disabled: true,
+            }))
           "
         />
-        <t-alert
-          :theme="run.status === 'FAILED' ? 'error' : run.status === 'PASSED' ? 'success' : 'info'"
-          :message="resultMessage"
-        />
-        <p class="test-cost-note">{{ t('ma.testCostNotice') }}</p>
-        <TestResultGroups :checks="run.checks" />
-        <t-alert v-if="run.status === 'FAILED'" theme="error" :message="t('ma.testFailed')" />
+        <template v-else>
+          <t-alert v-if="pollFailed" theme="error" :message="t('ma.testResultsLoadFailed')" />
+          <t-progress
+            v-if="run.status === 'RUNNING'"
+            :percentage="
+              Math.round(
+                (run.checks.filter((c) => ['PASSED', 'FAILED', 'ERROR'].includes(c.status)).length /
+                  run.checks.length) *
+                  100,
+              )
+            "
+          />
+          <t-alert
+            :theme="
+              run.status === 'FAILED' ? 'error' : run.status === 'PASSED' ? 'success' : 'info'
+            "
+            :message="resultMessage"
+          />
+          <p class="test-cost-note">{{ t('ma.testCostNotice') }}</p>
+          <TestResultGroups :checks="run.checks" />
+          <t-alert v-if="run.status === 'FAILED'" theme="error" :message="t('ma.testFailed')" />
+        </template>
       </template>
     </div>
     <template #footer
       ><div class="ma-footer">
         <t-button theme="default" :disabled="locked" @click="close">{{
-          t(run ? 'ma.close' : 'ma.cancel')
+          t(run || pricingReason ? 'ma.close' : 'ma.cancel')
         }}</t-button>
         <t-button
-          v-if="!run"
+          v-if="!run && !pricingReason"
           theme="primary"
           :disabled="locked || !selected.length"
           :loading="busy"
@@ -152,10 +157,16 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: []; changed: [run: TestRun | undefined] }>()
 const { t } = useI18n()
+const hasStandardProtocol = computed(() =>
+  props.model.custom_invocation_apis.some((row) => row.invocation_api !== 'CUSTOM_PASSTHROUGH'),
+)
 const available = computed(() => [
-  'CONNECTIVITY',
-  'PROTOCOL',
-  ...(props.model.tags.includes('STREAMING') ? ['STREAMING'] : []),
+  ...(props.model.custom_invocation_apis.some((row) => row.invocation_api === 'CUSTOM_PASSTHROUGH')
+    ? ['CONNECTIVITY']
+    : []),
+  ...(hasStandardProtocol.value ? ['MODEL_REQUEST'] : []),
+  ...(hasStandardProtocol.value ? ['PROTOCOL'] : []),
+  ...(hasStandardProtocol.value && props.model.tags.includes('STREAMING') ? ['STREAMING'] : []),
 ])
 const selected = ref([...available.value]),
   run = ref<TestRun>(),
@@ -163,6 +174,7 @@ const selected = ref([...available.value]),
   rejecting = ref(false),
   rejectionReason = ref(''),
   rejectionError = ref(false)
+const pricingReason = ref('')
 const polling = ref(false)
 const pollFailed = ref(false)
 const resultMessage = computed(() => {
@@ -233,7 +245,7 @@ async function retryPoll() {
   await poll()
 }
 async function start() {
-  if (locked.value || !selected.value.length) return
+  if (locked.value || pricingReason.value || !selected.value.length) return
   const version = ++pollVersion
   pollController?.abort()
   clearTimeout(timer)
@@ -243,6 +255,15 @@ async function start() {
   if (startAttempt?.signature !== signature)
     startAttempt = { signature, key: createIdempotencyKey() }
   try {
+    if (props.purpose === 'ADMISSION') {
+      pricingReason.value = ''
+      const check = await accessApi.pricingCheck(props.model)
+      if (closed || version !== pollVersion) return
+      if (!check.pricing_check_passed) {
+        pricingReason.value = check.reason
+        return
+      }
+    }
     const result = await accessApi.startTest(
       props.model.id,
       props.purpose,

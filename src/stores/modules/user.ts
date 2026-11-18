@@ -181,18 +181,6 @@ export const useUserStore = defineStore('user', {
           roles: [],
           permissions: derivePermissions(permissions.capabilities),
         }
-        const previous = this.permissionSnapshot
-        if (
-          previous &&
-          (previous.department_scope_root_id !== permissions.department_scope_root_id ||
-            previous.permissions_version !== permissions.permissions_version ||
-            previous.configuration_version !== permissions.configuration_version ||
-            JSON.stringify(previous.capabilities) !== JSON.stringify(permissions.capabilities) ||
-            JSON.stringify(previous.navigation.items.map((item) => item.route_id).sort()) !==
-              JSON.stringify(permissions.navigation.items.map((item) => item.route_id).sort()))
-        ) {
-          usePermissionStore().generation++
-        }
         this.permissionSnapshot = permissions
         this.permissionsReady = true
         usePermissionStore().generateRoutes(permissions, this.permissions)
@@ -217,7 +205,7 @@ export const useUserStore = defineStore('user', {
       }
     },
     async recoverPermissions() {
-      // Keep route instances until the new snapshot proves a structural change.
+      // Keep drafts while refreshing; the layout clears pages whose access was revoked.
       this.permissionsReady = false
       await this.fetchUserInfo()
     },

@@ -32,7 +32,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   updated: 'Updated at',
   actions: 'Actions',
   detail: 'Details',
-  search: 'Search order number or request',
+  search: 'Search order number, request, name or username',
   allStatus: 'All statuses',
   reset: 'Reset filters',
   cancel: 'Cancel',

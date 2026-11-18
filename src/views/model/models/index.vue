@@ -30,36 +30,41 @@
               ...statuses.map((v) => ({ value: v, label: t('ma.' + v) })),
             ]"
           />
-          <t-button theme="default" @click="reset">{{ t('ma.reset') }}</t-button>
+          <t-button theme="default" variant="outline" @click="reset">{{ t('ma.reset') }}</t-button>
         </div></template
       ></FilterBar
     >
-    <div class="ma-row">
-      <t-button
-        theme="primary"
-        v-permission.write="'model.models'"
-        :disabled="tabsLoading || tabsFailed"
-        @click="
-          () => {
-            editingId = ''
-            formVisible = true
-          }
-        "
-        ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
-      ><t-button
-        v-permission.write="'model.permissions'"
-        theme="default"
-        :disabled="!canBatchAuthorize"
-        @click="
-          authorization = {
-            models: items.filter((model) => selected.includes(model.id)),
-            batch: true,
-          }
-        "
-        >{{ t('ma.batchGrant') }}</t-button
-      ><span v-if="selectedHasPendingReview" class="ma-muted">{{
-        t('ma.batchGrantPendingReview')
-      }}</span>
+    <div class="model-list-toolbar">
+      <div class="ma-row model-list-toolbar__actions">
+        <t-button
+          theme="primary"
+          variant="outline"
+          v-permission.write="'model.models'"
+          :disabled="tabsLoading || tabsFailed"
+          @click="
+            () => {
+              editingId = ''
+              formVisible = true
+            }
+          "
+          ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
+        ><t-button
+          v-permission.write="'model.permissions'"
+          theme="default"
+          variant="outline"
+          :disabled="!canBatchAuthorize"
+          @click="
+            authorization = {
+              models: items.filter((model) => selected.includes(model.id)),
+              batch: true,
+            }
+          "
+          >{{ t('ma.batchGrant') }}</t-button
+        ><span v-if="selectedHasPendingReview" class="ma-muted">{{
+          t('ma.batchGrantPendingReview')
+        }}</span>
+      </div>
+      <StatusFlowGuide />
     </div>
     <t-table
       height="var(--stable-table-height)"
@@ -93,11 +98,14 @@
         >{{ row.input_modalities?.join('+') || '—' }} →
         {{ row.output_modalities?.join('+') || '—' }}</template
       >
-      <template #status="{ row }"
-        ><t-tag variant="light" :theme="statusTheme(row.status)">{{
-          t('ma.' + row.status)
-        }}</t-tag></template
-      >
+      <template #status="{ row }">
+        <div class="model-status-cell">
+          <t-tag variant="light" :theme="statusTheme(row.status)">
+            {{ t('ma.' + row.status) }}
+          </t-tag>
+          <StatusHint :text="statusHint(row)" />
+        </div>
+      </template>
       <template #health_status="{ row }"
         ><t-tooltip
           v-if="row.health_status"
@@ -108,7 +116,7 @@
         ><span v-else>—</span></template
       >
       <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
-      <template #action="{ row }"><RowActions :actions="rowActions(row)" /></template>
+      <template #action="{ row }"><RowActions :actions="rowActions(row)" grouped /></template>
     </t-table>
     <ModelForm
       v-if="formVisible"
@@ -186,7 +194,10 @@ import {
 import type { ModelListItem, Summary } from '@/api/modules/modelAccessContract'
 import { formatDateTime } from '@/utils/datetime'
 import { statusTheme } from '../access/helpers'
+import { useUserStore, canWriteResource } from '@/stores/modules/user'
 import RowActions, { type RowAction } from '../access/RowActions.vue'
+import StatusHint from '../access/StatusHint.vue'
+import StatusFlowGuide from '../access/StatusFlowGuide.vue'
 import ProviderTabs from '../access/ProviderTabs.vue'
 import ModelForm from '../access/ModelForm.vue'
 import ModelDetail from '../access/ModelDetail.vue'
@@ -195,6 +206,7 @@ import AuthorizationDrawer from '../access/AuthorizationDrawer.vue'
 import BatchAuthorizationDialog from '../access/BatchAuthorizationDialog.vue'
 import { useActionColumnWidth } from '../access/useActionColumnWidth'
 const { t } = useI18n()
+const user = useUserStore()
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth()
 const detailRef = ref<InstanceType<typeof ModelDetail>>()
 const providers = ref<Summary['providers']>([]),
@@ -246,48 +258,95 @@ const confirmationMessage = computed(() => {
 const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'row-select', type: 'multiple', width: 40 },
   { colKey: 'model_id_at_gateway', width: 'auto', title: t('ma.name') },
+  { colKey: 'status', title: t('ma.status'), width: 200 },
   { colKey: 'model_id_at_provider', width: 'auto', title: t('ma.upstream') },
   { colKey: 'provider_id', width: 'auto', title: t('ma.provider') },
   { colKey: 'modalities', width: 'auto', title: t('ma.modalities') },
-  { colKey: 'status', title: t('ma.status'), width: 100 },
   { colKey: 'health_status', title: t('ma.health'), width: 100 },
   { colKey: 'created_at', title: t('ma.created'), width: 175 },
   {
     colKey: 'action',
+    fixed: 'right',
     title: t('ma.actions'),
     width: actionColumnWidth.value,
     className: 'ma-action-cell',
   },
 ])
 function rowActions(model: ModelListItem): RowAction[] {
-  const actions: RowAction[] = []
-  const add = (label: string, permission: string | undefined, run: () => unknown, danger = false) =>
-    actions.push({ label: t('ma.' + label), permission, run, danger })
-  if (model.status !== 'PENDING_REVIEW') add('edit', 'model.models', () => edit(model.id))
+  const step = statusStep(model)
+  const actions: RowAction[] = [...(step.primary ? [step.primary] : []), ...step.secondary]
+  const add = (
+    label: string,
+    permission: string | undefined,
+    run: () => unknown,
+    danger = false,
+    overflow = false,
+  ) => actions.push({ label: t('ma.' + label), permission, run, danger, overflow })
   if (model.status !== 'PENDING_REVIEW')
-    add('grants', 'model.permissions', () => {
-      authorization.value = { models: [model], batch: false }
-    })
+    add(
+      'authorize',
+      'model.permissions',
+      () => {
+        authorization.value = { models: [model], batch: false }
+      },
+      false,
+      false,
+    )
+  if (!['TESTING', 'PENDING_REVIEW'].includes(model.status))
+    add('edit', 'model.models', () => edit(model.id))
   if (['ACTIVE', 'SUSPENDED'].includes(model.status))
-    add('healthTitle', 'model.models', () => test(model, 'HEALTH'))
+    add('healthTitle', 'model.models', () => test(model, 'HEALTH'), false, true)
+  add('detail', undefined, () => (detailId.value = model.id), false, true)
+  if (['DRAFT', 'RETIRED'].includes(model.status))
+    add('remove', 'model.models', () => action(model, 'DELETE', 'remove'), true, true)
+  return actions
+}
+interface StatusStep {
+  primary?: RowAction
+  secondary: RowAction[]
+}
+// 生命周期动作优先展示，危险动作保持直接可见并使用文字链接。
+function statusStep(model: ModelListItem): StatusStep {
+  const step: StatusStep = { secondary: [] }
+  const add = (label: string, permission: string, run: () => unknown, primary = false) => {
+    if (!canWriteResource(user.permissions, permission)) return
+    const item: RowAction = {
+      label: t('ma.' + label),
+      permission,
+      run,
+      danger: ['reject', 'retire'].includes(label),
+    }
+    if (primary) step.primary = item
+    else step.secondary.push(item)
+  }
   if (model.status === 'DRAFT')
-    add('startAdmission', 'model.admission', () => test(model, 'ADMISSION'))
+    add('startAdmission', 'model.admission', () => test(model, 'ADMISSION'), true)
   if (model.status === 'PENDING_REVIEW') {
-    add('approve', 'model.review', () => action(model, 'ACTIVE', 'publish'))
+    add('approve', 'model.review', () => action(model, 'ACTIVE', 'publish'), true)
     add('reject', 'model.review', () => action(model, 'DRAFT', 'reject'))
   }
-  if (model.status === 'ACTIVE')
+  if (model.status === 'ACTIVE') {
     add('pause', 'model.models', () => action(model, 'SUSPENDED', 'pause'))
-  if (model.status === 'SUSPENDED')
-    add('resume', 'model.models', () => action(model, 'ACTIVE', 'resume'))
-  if (['ACTIVE', 'SUSPENDED'].includes(model.status))
     add('retire', 'model.models', () => action(model, 'RETIRED', 'retire'))
+  }
+  if (model.status === 'SUSPENDED') {
+    add('resume', 'model.models', () => action(model, 'ACTIVE', 'resume'), true)
+    add('retire', 'model.models', () => action(model, 'RETIRED', 'retire'))
+  }
   if (model.status === 'RETIRED')
-    add('reactivate', 'model.models', () => action(model, 'DRAFT', 'reactivate'))
-  add('detail', undefined, () => (detailId.value = model.id))
-  if (['DRAFT', 'RETIRED'].includes(model.status))
-    add('remove', 'model.models', () => action(model, 'DELETE', 'remove'), true)
-  return actions
+    add('reactivate', 'model.models', () => action(model, 'DRAFT', 'reactivate'), true)
+  return step
+}
+const statusHintKeys: Record<string, string> = {
+  DRAFT: 'draftHint',
+  TESTING: 'testingHint',
+  PENDING_REVIEW: 'pendingReviewHint',
+  ACTIVE: 'activeHint',
+  SUSPENDED: 'suspendedHint',
+  RETIRED: 'retiredHint',
+}
+function statusHint(model: ModelListItem) {
+  return t('ma.' + statusHintKeys[model.status])
 }
 let generation = 0,
   timer: ReturnType<typeof setTimeout> | undefined

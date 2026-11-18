@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingState from '@/components/LoadingState.vue'
 import type { FormInstanceFunctions, FormRules } from 'tdesign-vue-next'
@@ -162,7 +162,6 @@ watch(
     translations.value = {}
     sortOrder.value = 0
     initialDescription.value = ''
-    loading.value = false
 
     if (isEdit.value && props.department) {
       loading.value = true
@@ -181,7 +180,6 @@ watch(
         if (active) loading.value = false
       }
     }
-    nextTick(() => formRef.value?.clearValidate())
   },
   { immediate: true },
 )

@@ -1,55 +1,49 @@
 <template>
   <div class="invocation-editor ma-stack">
-    <div class="invocation-editor__header">
-      <span class="invocation-editor__required">{{ t('ma.protocol') }}</span>
-      <span class="invocation-editor__required">{{ t('ma.protocolPath') }}</span>
-      <span></span>
-    </div>
-    <div v-for="(row, index) in rows" :key="index" class="invocation-editor__row">
-      <t-select
-        :value="row.invocation_api"
-        :disabled="disabled"
-        :status="protocolError(row) ? 'error' : undefined"
-        :tips="protocolError(row)"
-        :aria-label="t('ma.protocol')"
-        :placeholder="t('ma.chooseProtocol')"
-        @change="(value: unknown) => selectProtocol(index, String(value))"
-      >
-        <t-option
-          v-for="option in options"
-          :key="option.value"
-          :value="option.value"
-          :label="option.label"
+    <div v-for="row in rows" :key="row.key" class="invocation-editor__row">
+      <t-form-item :label="t('ma.protocol')">
+        <t-select
+          :value="row.protocol"
+          :disabled="disabled"
+          :placeholder="t('ma.chooseProtocol')"
+          :status="protocolError(row) ? 'error' : undefined"
+          :tips="protocolError(row)"
+          @change="(value: unknown) => selectProtocol(row, String(value))"
+        >
+          <t-option
+            v-for="option in options"
+            :key="option.value"
+            :value="option.value"
+            :label="option.label"
+            :disabled="optionDisabled(option.value, row)"
+          />
+        </t-select>
+      </t-form-item>
+      <t-form-item :label="t('ma.protocolPath')">
+        <t-input
+          v-model="row.path"
+          :disabled="disabled"
+          :placeholder="t('ma.choosePath')"
+          :status="pathError(row) ? 'error' : undefined"
+          :tips="pathError(row)"
+          @change="syncEditedConfiguration"
         />
-      </t-select>
-      <t-input
-        :value="row.path"
-        @change="(value: string) => updatePath(index, value)"
-        :disabled="disabled"
-        :status="pathError(row) ? 'error' : undefined"
-        :tips="pathError(row)"
-        :aria-label="t('ma.protocolPath')"
-        :placeholder="t('ma.choosePath')"
-      />
+      </t-form-item>
       <t-button
         variant="text"
         theme="danger"
         :disabled="disabled || rows.length <= 1"
         :aria-label="t('ma.removeProtocol')"
-        @click="removeRow(index)"
+        @click="removeRow(row.key)"
         ><template #icon><minus-circle-icon /></template
       ></t-button>
     </div>
-    <p
-      v-if="props.validateRequired && !props.allowEmpty && !hasProtocol"
-      class="ma-error"
-      role="alert"
-    >
+    <p v-if="validateRequired && validationError === 'required'" class="ma-error" role="alert">
       {{ t('ma.invocationRequired') }}
     </p>
-    <p class="invocation-editor__help">{{ t('ma.protocolHelp') }}</p>
     <div class="invocation-editor__actions">
-      <t-button variant="text" :disabled="disabled" @click="addRow">
+      <span v-if="rows.length >= maximumRows" class="ma-muted">{{ t('ma.protocolLimit') }}</span>
+      <t-button variant="text" :disabled="disabled || rows.length >= maximumRows" @click="addRow()">
         <template #icon><add-icon /></template>{{ t('ma.addProtocol') }}
       </t-button>
     </div>
@@ -59,152 +53,247 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AddIcon, MinusCircleIcon } from 'tdesign-icons-vue-next'
-import { accessApi, type Model, type CustomInvocationApi } from '@/api/modules/modelAccess'
-import { invocationApis } from '@/utils/modelInvocation'
+import { accessApi, invocationApis, type Model } from '@/api/modules/modelAccess'
+import { validInvocationPath } from '@/utils/modelInvocation'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { invocationLabel } from './helpers'
 
 const props = defineProps<{
+  configuration: Model
+  fieldErrors?: Record<string, string>
+  standardRoute?: string
   disabled?: boolean
   hideHelp?: boolean
   validateRequired?: boolean
-  allowEmpty?: boolean
   providerId?: string
   upstreamId?: string
   initializeFromOptions?: boolean
   initializeIfEmpty?: boolean
+  providedCustomPassthroughSupported?: boolean | null
   providedOptions?: Array<{ protocol: string; default_path: string | null }>
 }>()
-const configuration = defineModel<
-  Pick<Model, 'supported_invocation_apis' | 'custom_invocation_apis'>
->('configuration', { required: true })
+const emit = defineEmits<{ 'update:configuration': [value: Model] }>()
 const { t, locale } = useI18n()
+const maximumRows = 32
 const protocolOptions = ref<Array<{ protocol: string; default_path: string | null }>>([])
+const customSupported = ref<boolean | null>(null)
 const optionsRequest = useLatestRequest()
+const edited = ref(false)
 let initializedProvider = ''
+let loadedProvider = ''
+// Display defaults from the confirmed reference, independent of provider capabilities.
+const defaultPaths: Record<string, string> = {
+  CHAT_COMPLETIONS: '/chat/completions',
+  RESPONSES: '/responses',
+  MESSAGES: '/messages',
+  GENERATE_CONTENT: '/models/{model}:generateContent',
+  CONVERSE: '/model/{modelId}/converse',
+  EMBEDDINGS: '/embeddings',
+  IMAGE_GENERATIONS: '/images/generations',
+  AUDIO: '/audio/speech',
+  VIDEO: '/videos',
+}
+const options = computed(() => {
+  const protocols = new Set([
+    ...(props.providerId ? protocolOptions.value.map((item) => item.protocol) : invocationApis),
+    ...rows.value.map((row) => row.protocol).filter((value) => value && value !== 'CUSTOM'),
+  ])
+  return [
+    ...[...protocols].map((value) => ({ value, label: invocationLabel(value) })),
+    { value: 'CUSTOM', label: t('ma.customProtocol') },
+  ]
+})
+interface InvocationRow {
+  id?: string
+  key: number
+  protocol: string
+  path: string
+}
+let nextKey = 0
+const rows = ref<InvocationRow[]>([])
+function makeRow(protocol = '', path = '', id?: string): InvocationRow {
+  return { ...(id ? { id } : {}), key: nextKey++, protocol, path }
+}
+let synchronizedConfiguration = ''
+function configurationSignature(configuration: Model) {
+  return JSON.stringify([
+    props.providerId,
+    configuration.supported_invocation_apis,
+    configuration.custom_invocation_apis,
+  ])
+}
+function syncConfiguration() {
+  const custom = rows.value.map((row) => ({
+    ...(row.id ? { id: row.id } : {}),
+    invocation_api: row.protocol === 'CUSTOM' ? 'CUSTOM_PASSTHROUGH' : row.protocol,
+    path: row.path,
+  }))
+  const configuration = {
+    ...props.configuration,
+    supported_invocation_apis: custom.map((row) => row.invocation_api).filter(Boolean),
+    custom_invocation_apis: custom,
+  }
+  synchronizedConfiguration = configurationSignature(configuration)
+  emit('update:configuration', configuration)
+}
+function syncEditedConfiguration() {
+  edited.value = true
+  syncConfiguration()
+}
+// Server configurations hydrate the editor; its own updates keep row keys and focus stable.
 watch(
-  () => [props.providerId, props.upstreamId, props.providedOptions, locale.value] as const,
-  async ([provider, upstream, providedOptions]) => {
+  () => configurationSignature(props.configuration),
+  (signature) => {
+    if (signature === synchronizedConfiguration) return
+    edited.value = false
+    initializedProvider = ''
+    const configuration = props.configuration
+    const configuredProtocols = new Set(
+      configuration.custom_invocation_apis.map((api) => api.invocation_api),
+    )
+    rows.value = [
+      ...configuration.supported_invocation_apis
+        .filter((protocol) => !configuredProtocols.has(protocol))
+        .map((protocol) => makeRow(protocol, defaultPaths[protocol] ?? '')),
+      ...configuration.custom_invocation_apis.map((api) =>
+        makeRow(
+          api.invocation_api === 'CUSTOM_PASSTHROUGH' || !api.invocation_api
+            ? 'CUSTOM'
+            : api.invocation_api,
+          api.path,
+          api.id,
+        ),
+      ),
+    ]
+    if (!rows.value.length) rows.value.push(makeRow())
+    initializeRows()
+  },
+  { immediate: true },
+)
+function initializeRows() {
+  const provider = props.providerId ?? ''
+  if (
+    !provider ||
+    loadedProvider !== provider ||
+    initializedProvider === provider ||
+    edited.value ||
+    !protocolOptions.value.length ||
+    (!props.initializeFromOptions && !props.initializeIfEmpty)
+  )
+    return
+  initializedProvider = provider
+  if (rows.value.some((row) => row.protocol || row.path)) return
+  rows.value = protocolOptions.value
+    .slice(0, maximumRows)
+    .map((item) => makeRow(item.protocol, item.default_path ?? defaultPaths[item.protocol] ?? ''))
+  syncConfiguration()
+}
+watch(
+  () =>
+    [
+      props.providerId,
+      props.upstreamId,
+      props.providedOptions,
+      props.providedCustomPassthroughSupported,
+      locale.value,
+    ] as const,
+  async ([provider, upstream, providedOptions, providedCustomSupported]) => {
     const request = optionsRequest.begin()
     protocolOptions.value = []
+    loadedProvider = ''
+    customSupported.value = null
     if (!provider) return
     try {
-      const result =
-        providedOptions ??
-        (await accessApi.protocolOptions(provider, upstream?.trim() ?? '', {
-          signal: request.signal,
-        }))
-      if (request.isCurrent()) {
-        protocolOptions.value = result
-        if (
-          result.length > 0 &&
-          (props.initializeFromOptions || props.initializeIfEmpty) &&
-          initializedProvider !== provider
-        ) {
-          initializedProvider = provider
-          if (
-            !props.initializeIfEmpty ||
-            (configuration.value.supported_invocation_apis.length === 0 &&
-              configuration.value.custom_invocation_apis.length === 0)
-          ) {
-            configuration.value.custom_invocation_apis = result.map((item) => ({
-              invocation_api: item.protocol,
-              path: item.default_path ?? '',
-            }))
-            syncProtocols()
-          }
-        }
-      }
+      const response = providedOptions?.length
+        ? undefined
+        : await accessApi.protocolOptions(provider, upstream?.trim() ?? '', {
+            signal: request.signal,
+          })
+      if (!request.isCurrent()) return
+      loadedProvider = provider
+      protocolOptions.value = providedOptions?.length
+        ? providedOptions
+        : (response?.protocol_options ?? [])
+      customSupported.value = providedOptions?.length
+        ? (providedCustomSupported ?? null)
+        : (response?.custom_passthrough_supported ?? null)
+      initializeRows()
     } catch {
       if (request.isCurrent()) protocolOptions.value = []
     }
   },
   { immediate: true },
 )
-const options = computed(() => {
-  const values = [
-    ...new Set([
-      ...invocationApis,
-      'CUSTOM_PASSTHROUGH',
-      ...protocolOptions.value.map((item) => item.protocol),
-      ...configuration.value.supported_invocation_apis,
-    ]),
-  ]
-  return values.map((value) => ({
-    value,
-    label: value === 'CUSTOM_PASSTHROUGH' ? t('ma.customProtocol') : invocationLabel(value),
-  }))
-})
-const emptyRow: CustomInvocationApi = { invocation_api: '', path: '' }
-const rows = computed(() =>
-  configuration.value.custom_invocation_apis.length
-    ? configuration.value.custom_invocation_apis
-    : [emptyRow],
-)
-function syncProtocols() {
-  configuration.value.supported_invocation_apis = configuration.value.custom_invocation_apis
-    .map((row) => row.invocation_api)
-    .filter(Boolean)
-}
-function ensureRow() {
-  if (!configuration.value.custom_invocation_apis.length)
-    configuration.value.custom_invocation_apis.push({ invocation_api: '', path: '' })
-}
 function addRow() {
-  ensureRow()
-  configuration.value.custom_invocation_apis.push({ invocation_api: '', path: '' })
+  if (rows.value.length >= maximumRows) return
+  edited.value = true
+  rows.value.push(makeRow())
+  syncConfiguration()
 }
-function removeRow(index: number) {
+function removeRow(key: number) {
   if (rows.value.length <= 1) return
-  configuration.value.custom_invocation_apis.splice(index, 1)
-  syncProtocols()
+  edited.value = true
+  rows.value = rows.value.filter((row) => row.key !== key)
+  syncConfiguration()
 }
-function selectProtocol(index: number, protocol: string) {
-  ensureRow()
-  const row = configuration.value.custom_invocation_apis[index]!
-  row.invocation_api = protocol
-  row.path = protocolOptions.value.find((item) => item.protocol === protocol)?.default_path ?? ''
-  syncProtocols()
+function selectProtocol(row: InvocationRow, protocol: string) {
+  if (optionDisabled(protocol, row)) return
+  edited.value = true
+  row.protocol = protocol
+  row.path =
+    protocol === 'CUSTOM'
+      ? ''
+      : (protocolOptions.value.find((item) => item.protocol === protocol)?.default_path ??
+        defaultPaths[protocol] ??
+        '')
+  syncConfiguration()
 }
-function updatePath(index: number, path: string) {
-  ensureRow()
-  configuration.value.custom_invocation_apis[index]!.path = path
+function optionDisabled(protocol: string, row: InvocationRow) {
+  if (protocol === 'CUSTOM') return customSupported.value === false && row.protocol !== 'CUSTOM'
+  return rows.value.some((other) => other.key !== row.key && other.protocol === protocol)
 }
-const hasProtocol = computed(() => rows.value.some((row) => !!row.invocation_api))
-const duplicateProtocols = computed(() => {
-  const seen = new Set<string>()
-  const duplicated = new Set<string>()
-  for (const row of rows.value) {
-    if (!row.invocation_api) continue
-    if (seen.has(row.invocation_api)) duplicated.add(row.invocation_api)
-    seen.add(row.invocation_api)
-  }
-  return duplicated
-})
-const validationError = computed(() => {
-  if (!hasProtocol.value && !props.allowEmpty) return 'required' as const
-  if (duplicateProtocols.value.size) return 'duplicate' as const
+function protocolError(row: InvocationRow) {
   if (
+    row.protocol &&
+    row.protocol !== 'CUSTOM' &&
+    rows.value.some((other) => other.key !== row.key && other.protocol === row.protocol)
+  )
+    return t('ma.protocolDuplicate')
+  if (props.validateRequired && !row.protocol) return t('ma.chooseProtocol')
+  return ''
+}
+function pathError(row: InvocationRow) {
+  const index = rows.value.findIndex((item) => item.key === row.key)
+  const serverError =
+    props.fieldErrors?.[`invocation_apis[${index}].path`] ??
+    props.fieldErrors?.[`base.invocation_apis[${index}].path`]
+  if (serverError)
+    return serverError === 'STANDARD_ROUTE_CONFLICT'
+      ? t('ma.standardRouteConflict', { route: props.standardRoute ?? '' })
+      : t('ma.protocolIncomplete')
+  if (
+    row.protocol === 'CUSTOM' &&
+    row.path &&
     rows.value.some(
-      (row) =>
-        (row.invocation_api && !/^\/(?!\/)[^\s?#\\]*$/.test(row.path)) ||
-        (!row.invocation_api && (!!row.path.trim() || rows.value.length > 1)),
+      (other) => other.key !== row.key && other.protocol === 'CUSTOM' && other.path === row.path,
     )
   )
-    return 'incomplete' as const
+    return t('ma.passthroughPathDuplicate')
+  if (props.validateRequired && !validInvocationPath(row.path))
+    return row.path ? t('ma.protocolIncomplete') : t('ma.choosePath')
+  return ''
+}
+// Both parent flows validate the same ordered configuration they submit.
+const validationError = computed<'required' | 'duplicate' | 'incomplete' | null>(() => {
+  if (!rows.value.some((row) => row.protocol)) return 'required'
+  if (rows.value.some((row) => protocolError(row) === t('ma.protocolDuplicate'))) return 'duplicate'
+  if (
+    rows.value.length > maximumRows ||
+    rows.value.some((row) => !row.protocol || !validInvocationPath(row.path) || pathError(row))
+  )
+    return 'incomplete'
   return null
 })
-function protocolError(row: CustomInvocationApi) {
-  if (row.invocation_api && duplicateProtocols.value.has(row.invocation_api))
-    return t('ma.protocolDuplicate')
-  if (props.validateRequired && !row.invocation_api && !!row.path.trim())
-    return t('ma.chooseProtocol')
-  return ''
-}
-function pathError(row: CustomInvocationApi) {
-  if (props.validateRequired && row.invocation_api && !row.path.trim()) return t('ma.choosePath')
-  return ''
-}
 function validate() {
   return validationError.value
 }

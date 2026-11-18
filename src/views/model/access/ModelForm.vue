@@ -74,12 +74,14 @@
                 /></div
             ></t-form-item>
             <InvocationEditor
+              :field-errors="invocationFieldErrors"
+              :standard-route="invocationStandardRoute"
               :initialize-from-options="!isEditing"
               :provided-options="editProtocolOptions"
+              :provided-custom-passthrough-supported="editCustomPassthroughSupported"
               :provider-id="model.provider_id"
               :upstream-id="model.model_id_at_provider"
               ref="invocationEditor"
-              :allow-empty="isEditing && model.status === 'DRAFT'"
               :validate-required="basicValidationAttempted && !basicLocked"
               v-model:configuration="model"
               :disabled="basicLocked || saving"
@@ -307,6 +309,15 @@ const model = ref({ ...blankModel(), provider_id: props.providerId ?? '' }),
   price = ref(blankPricing()),
   defaultPrice = ref<Pricing>()
 const providerOptions = ref<Provider[]>([])
+const invocationFieldErrors = ref<Record<string, string>>({})
+const invocationStandardRoute = ref('')
+watch(
+  () => JSON.stringify(model.value.custom_invocation_apis),
+  () => {
+    invocationFieldErrors.value = {}
+  },
+)
+const editCustomPassthroughSupported = ref<boolean | null>(null)
 const editProtocolOptions = ref<Array<{ protocol: string; default_path: string | null }>>([])
 const templateRequest = useLatestRequest()
 let templateKey = ''
@@ -319,6 +330,7 @@ function loadTemplate(provider: string, upstream: string) {
   templateKey = key
   templateResult = undefined
   editProtocolOptions.value = []
+  editCustomPassthroughSupported.value = null
   const current = templateRequest.begin()
   const pending = accessApi.metadataWithOptions(provider, upstream, { signal: current.signal })
   pendingTemplate = pending
@@ -327,6 +339,7 @@ function loadTemplate(provider: string, upstream: string) {
       if (!current.isCurrent()) return
       templateResult = result
       editProtocolOptions.value = result.options
+      editCustomPassthroughSupported.value = result.customPassthroughSupported
     })
     .catch(() => {})
     .finally(() => {
@@ -343,6 +356,7 @@ watch(
       templateKey = ''
       templateResult = undefined
       editProtocolOptions.value = []
+      editCustomPassthroughSupported.value = null
     }
   },
   { immediate: true },
@@ -487,15 +501,21 @@ function searchTags(q: string) {
   tagRequest.schedule(() => void loadTags(q))
 }
 watch(locale, () => void loadTags('', true))
-const preparationFailed = ref(false)
-const preparing = ref(false)
-const preparedSignature = ref('')
-const configurationSignature = computed(() =>
+interface PreparationState {
+  key: string
+  phase: 'idle' | 'loading' | 'ready' | 'failed'
+  promise?: Promise<void>
+}
+const preparation = ref<PreparationState>({ key: '', phase: 'idle' })
+const preparing = computed(() => preparation.value.phase === 'loading')
+const preparationFailed = computed(() => preparation.value.phase === 'failed')
+const configurationKey = computed(() =>
   JSON.stringify([
     model.value.provider_id,
     model.value.model_id_at_provider,
     model.value.supported_invocation_apis,
-    model.value.custom_invocation_apis.map((a) => a.path),
+    model.value.custom_invocation_apis.map((a) => [a.invocation_api, a.path]),
+    configurePricing.value,
   ]),
 )
 const editLocked = computed(
@@ -542,33 +562,23 @@ function prefill(value: string) {
 }
 const metadataRequest = useLatestRequest()
 let loadedMetadataKey = ''
-let applyingMetadata = false
-let pendingMetadata: { signature: string; promise: Promise<void> } | undefined
 async function loadMetadata() {
-  const signature = configurationSignature.value
-  if (pendingMetadata?.signature === signature) return pendingMetadata.promise
-  const promise = fetchMetadata()
-  pendingMetadata = { signature, promise }
-  try {
-    await promise
-  } finally {
-    if (pendingMetadata?.promise === promise) pendingMetadata = undefined
-  }
-}
-async function fetchMetadata() {
-  if (
-    model.value.id ||
-    (preparedSignature.value === configurationSignature.value && !preparationFailed.value)
-  )
-    return
+  const key = configurationKey.value
+  const state = preparation.value
+  if (model.value.id || (state.key === key && state.phase === 'ready')) return
+  if (state.key === key && state.phase === 'loading' && state.promise) return state.promise
   const current = metadataRequest.begin()
+  preparation.value = { key, phase: 'loading' }
+  const promise = fetchMetadata(current)
+  preparation.value.promise = promise
+  return promise
+}
+async function fetchMetadata(current: ReturnType<typeof metadataRequest.begin>) {
   const name = model.value.model_id_at_provider.trim()
   if (!model.value.provider_id || !name) {
-    preparing.value = false
+    preparation.value.phase = 'idle'
     return
   }
-  preparing.value = true
-  preparationFailed.value = false
   preparationError.value = ''
   try {
     const config = {
@@ -587,27 +597,22 @@ async function fetchMetadata() {
     if (loadedMetadataKey !== key) {
       const { metadata } = await loadTemplate(model.value.provider_id, name)
       if (!current.isCurrent()) return
-      applyingMetadata = true
-      try {
-        const { supported_invocation_apis, custom_invocation_apis, ...otherMetadata } = metadata
-        Object.assign(model.value, otherMetadata)
-        if (
-          !model.value.supported_invocation_apis.length &&
-          !model.value.custom_invocation_apis.length
-        ) {
-          if (supported_invocation_apis)
-            model.value.supported_invocation_apis = supported_invocation_apis
-          if (custom_invocation_apis) model.value.custom_invocation_apis = custom_invocation_apis
-        }
-        loadedMetadataKey = key
-      } finally {
-        applyingMetadata = false
+      const { supported_invocation_apis, custom_invocation_apis, ...otherMetadata } = metadata
+      Object.assign(model.value, otherMetadata)
+      if (
+        !model.value.supported_invocation_apis.length &&
+        !model.value.custom_invocation_apis.length
+      ) {
+        if (supported_invocation_apis)
+          model.value.supported_invocation_apis = supported_invocation_apis
+        if (custom_invocation_apis) model.value.custom_invocation_apis = custom_invocation_apis
       }
+      loadedMetadataKey = key
     }
-    const signature = configurationSignature.value
+    preparation.value.key = configurationKey.value
     if (invocationConfigurationError(model.value)) return
     if (!configurePricing.value) {
-      preparedSignature.value = signature
+      preparation.value.phase = 'ready'
       return
     }
     await accessApi.prepare(model.value, config)
@@ -621,42 +626,28 @@ async function fetchMetadata() {
       ? structuredClone(prefill)
       : undefined
     originalPrice = JSON.stringify(prefill)
-    preparedSignature.value = signature
+    preparation.value.phase = 'ready'
   } catch (e) {
     if (current.isCurrent()) {
-      preparationFailed.value = true
+      preparation.value.phase = 'failed'
       preparationError.value = (e as Error).message || t('common.loadFailed')
     }
   } finally {
-    if (current.isCurrent()) preparing.value = false
+    if (current.isCurrent() && preparation.value.phase === 'loading')
+      preparation.value.phase = 'idle'
   }
 }
-watch(
-  configurationSignature,
-  () => {
-    if (model.value.id || applyingMetadata) return
-    metadataRequest.invalidate()
-    pendingMetadata = undefined
-    preparedSignature.value = ''
-    preparationFailed.value = false
-    preparationError.value = ''
-    if (error.value === t('ma.required')) error.value = ''
-    preparing.value = true
-    price.value = blankPricing()
-    defaultPrice.value = undefined
-    officialPrice.value = undefined
-    metadataRequest.schedule(() => void loadMetadata(), 800)
-  },
-  { flush: 'sync' },
-)
-watch(configurePricing, (enabled) => {
+watch(configurationKey, (key) => {
+  // Metadata application records its resulting key before this queued watcher runs.
+  if (model.value.id || key === preparation.value.key) return
   metadataRequest.invalidate()
-  pendingMetadata = undefined
-  preparing.value = false
-  preparationFailed.value = false
+  preparation.value = { key, phase: 'loading' }
   preparationError.value = ''
-  preparedSignature.value = ''
-  if (enabled) void loadMetadata()
+  if (error.value === t('ma.required')) error.value = ''
+  price.value = blankPricing()
+  defaultPrice.value = undefined
+  officialPrice.value = undefined
+  metadataRequest.schedule(() => void loadMetadata(), 800)
 })
 
 async function loadDefaultPricing() {
@@ -750,8 +741,8 @@ async function save() {
   basicValidationFailed.value = false
   const m = model.value
   basicValidationAttempted.value = true
-  if (!basicLocked.value && invocationEditor.value) {
-    const invocationError = invocationEditor.value.validate()
+  if (!basicLocked.value) {
+    const invocationError = invocationEditor.value?.validate() ?? invocationConfigurationError(m)
     if (invocationError) {
       tab.value = 'basic'
       error.value = t(
@@ -781,7 +772,10 @@ async function save() {
     error.value = t('ma.invalidTokenLimit')
     return
   }
-  if ((m.id || configurePricing.value) && priceEditor.value && !priceEditor.value.validate()) {
+  const changedPrice = JSON.stringify(price.value) !== originalPrice
+  const shouldSavePrice =
+    price.value.metric_rates.length > 0 && (!m.id ? configurePricing.value : changedPrice)
+  if (shouldSavePrice && priceEditor.value && !priceEditor.value.validate()) {
     tab.value = 'price'
     return
   }
@@ -792,14 +786,11 @@ async function save() {
     if (
       !m.id &&
       configurePricing.value &&
-      (preparationFailed.value || preparedSignature.value !== configurationSignature.value)
+      (preparation.value.phase !== 'ready' || preparation.value.key !== configurationKey.value)
     ) {
       error.value = t('common.loadFailed')
       return
     }
-    const changedPrice = JSON.stringify(price.value) !== originalPrice
-    const shouldSavePrice =
-      price.value.metric_rates.length > 0 && (!m.id ? configurePricing.value : changedPrice)
     const result = await accessApi.saveModel(m, {
       ...(shouldSavePrice ? { price: price.value } : {}),
     })
@@ -834,6 +825,14 @@ async function save() {
       return
     }
     const detail = (e as NotifiedError).params?.fields as Record<string, string> | undefined
+    invocationFieldErrors.value = detail ?? {}
+    const standardRoute = (e as NotifiedError).params?.standard_route as
+      { method?: string; path?: string } | undefined
+    invocationStandardRoute.value = standardRoute
+      ? `${standardRoute.method ?? ''} ${standardRoute.path ?? ''}`.trim()
+      : ''
+    if (detail && Object.keys(detail).some((key) => key.startsWith('base.invocation_apis')))
+      tab.value = 'basic'
     if (detail?.model_access === 'NAME_CONFLICT' || (e as NotifiedError).code === 'NAME_CONFLICT') {
       nameError.value = t('ma.nameConflict')
       tab.value = 'basic'
@@ -868,16 +867,13 @@ async function loadModel() {
       if (!current.isCurrent()) return
       model.value = loadedModel
       originalModel = JSON.parse(JSON.stringify(loadedModel)) as Model
-      const { metadata, options } = await loadTemplate(
+      const { options, customPassthroughSupported } = await loadTemplate(
         loadedModel.provider_id,
         loadedModel.model_id_at_provider,
       )
       if (!current.isCurrent()) return
       editProtocolOptions.value = options
-      if (metadata.supported_invocation_apis && metadata.custom_invocation_apis) {
-        model.value.supported_invocation_apis = metadata.supported_invocation_apis
-        model.value.custom_invocation_apis = metadata.custom_invocation_apis
-      }
+      editCustomPassthroughSupported.value = customPassthroughSupported
       price.value = loadedPrice
       originalPrice = JSON.stringify(price.value)
     }

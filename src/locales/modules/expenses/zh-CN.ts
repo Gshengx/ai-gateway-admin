@@ -18,7 +18,7 @@ const messages = {
   export: '导出明细 CSV',
   more: '更多筛选',
   reset: '重置筛选',
-  search: '搜索请求 ID、使用人、模型、项目',
+  search: '搜索请求 ID、姓名、用户名、模型、项目',
   all: '全部',
   created_at: '请求时间',
   cost_owner_type: '费用主体类型',

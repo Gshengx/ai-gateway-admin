@@ -7,12 +7,12 @@
     :close-btn="!saving"
     :close-on-esc-keydown="!saving"
     :close-on-overlay-click="false"
-    :confirm-btn="{ content: t('ma.addGrant'), loading: saving }"
+    :confirm-btn="{ content: t('ma.addGrant'), loading: saving, disabled: !canWrite }"
     :cancel-btn="{ content: t('ma.cancel'), disabled: saving }"
     @close="!saving && emit('close')"
     @confirm="save"
   >
-    <div class="ma-stack" :inert="saving">
+    <div class="ma-stack" :inert="saving || !canWrite">
       <div class="ma-stack">
         <strong>{{ t('ma.selectedModels') }}</strong>
         <div>{{ models.map((model) => model.model_id_at_gateway).join('、') }}</div>
@@ -33,16 +33,18 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { accessApi, type Subject } from '@/api/modules/modelAccess'
 import type { ModelListItem } from '@/api/modules/modelAccessContract'
 import SubjectSelect from './SubjectSelect.vue'
+import { usePermissionScope } from '@/utils/usePermissionScope'
 
 const props = defineProps<{ models: Pick<ModelListItem, 'id' | 'model_id_at_gateway'>[] }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
+const { canWrite, signal } = usePermissionScope('model.permissions', () => emit('close'))
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
 const subjects = reactive<Record<Subject, string[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })
 const saving = ref(false)
 const error = ref('')
 async function save() {
-  if (saving.value) return
+  if (!canWrite.value || saving.value) return
   error.value = ''
   const grants = kinds.flatMap((subject_type) =>
     subjects[subject_type].map((subject_id) => ({ subject_type, subject_id })),
@@ -60,6 +62,7 @@ async function save() {
     await accessApi.batchGrant(
       props.models.map((model) => model.id),
       grants,
+      { signal },
     )
     MessagePlugin.success(t('ma.success'))
     emit('saved')

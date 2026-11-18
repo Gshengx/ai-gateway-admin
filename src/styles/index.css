@@ -3,7 +3,11 @@
   --model-tab-indicator-width: 2px; /* 模型供应商选项卡选中指示线 */
   /* 图 7 计费单元的最小可读宽度，窄抽屉自动排为一列，TDesign 无对应业务尺寸。 */
   --model-price-cell-min-width: 300px;
-  --model-access-table-width: 1400px;
+  --model-access-table-width: 1420px;
+  /* 模型列表说明弹层：完整原因换行展示，避免长文本超出窄窗口。 */
+  --model-status-explanation-width: 320px;
+  /* 状态流程说明按视口限制高度，完整中英文说明在浮层内滚动。 */
+  --model-status-flow-max-height: 55dvh;
   /* 长弹窗正文最多占视口六成，保留标题、操作区及上下留白；无对应 TDesign 业务高度 token。 */
   --dialog-body-max-height: 60dvh;
   --model-access-dialog-body-height: var(--dialog-body-max-height);
@@ -114,7 +118,7 @@ body {
   --department-filter-field-basis: 280px;
   --department-tree-popup-max-width: 640px;
   /* Key 表格最小宽度为各固定列与名称列可读宽度之和，避免固定脱敏列被按比例拉伸。 */
-  --managed-key-table-width: 1728px;
+  --managed-key-table-width: 1878px;
   --personal-key-table-width: 1250px;
 }
 .managed-key-panel .managed-key-department {
@@ -192,6 +196,8 @@ body {
 /* 用户管理部门侧栏沿用页面原有 260px 宽度，无对应 TDesign 业务宽度 token。 */
 :root {
   --users-sidebar-width: 260px;
+  /* 2026-11-18 用户确认：加宽用户详情，为已授权模型六列表格预留空间。 */
+  --user-detail-drawer-width: min(1000px, 100vw);
   /* 沿用窄屏部门树原有 260px 高度上限，首屏和刷新均预留同一内容区。 */
   --users-department-tree-height: 260px;
 }

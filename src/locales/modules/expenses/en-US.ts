@@ -21,7 +21,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   export: 'Export details CSV',
   more: 'More filters',
   reset: 'Reset filters',
-  search: 'Search request ID, user, model or project',
+  search: 'Search request ID, name, username, model or project',
   all: 'All',
   created_at: 'Request time',
   cost_owner_type: 'Cost owner type',

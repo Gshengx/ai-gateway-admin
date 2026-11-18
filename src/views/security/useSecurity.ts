@@ -13,6 +13,7 @@ import {
   type SecurityPolicy,
 } from '@/api/modules/security'
 import type { NotifiedError } from '@/api/request'
+import { policyFieldSeed } from '@/api/mock/securitySeeds'
 
 export const domains = ['ACCESS_CONTROL', 'DATA_CONTROL', 'SECURITY_DETECTION', 'AUDIT'] as const
 export const sensitivities = ['PUBLIC', 'GENERAL', 'IMPORTANT', 'CORE']
@@ -37,12 +38,13 @@ export function useSecurity() {
   const optionLabel = (o: SecurityOption) => (english.value ? o.name_en : o.name)
   const optionChoices = (items: SecurityOption[] = []) =>
     items.map((o) => ({ value: o.id, label: optionLabel(o) }))
+  const policyText = (item: SecurityPolicy, field: 'name' | 'description') => {
+    const key = policyFieldSeed(item, field)
+    return key ? label(key) : item[field]
+  }
   const name = (item: SecurityPolicy | DetectionRule) =>
-    item.seed_key ? label(item.seed_key) : item.name
-  const description = (item: SecurityPolicy) =>
-    item.seed_key && te(`security.${item.seed_key}Description`)
-      ? label(`${item.seed_key}Description`)
-      : item.description
+    'domain' in item ? policyText(item, 'name') : item.seed_key ? label(item.seed_key) : item.name
+  const description = (item: SecurityPolicy) => policyText(item, 'description')
   const idLabel = (id: string) => {
     const o = options.value
     const item =

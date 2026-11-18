@@ -12,7 +12,11 @@
   >
     <div class="ma-stack">
       <div>{{ model.model_id_at_gateway }}</div>
-      <PermissionsEditor :model-id="model.id" @busy-change="busy = $event" />
+      <PermissionsEditor
+        :model-id="model.id"
+        @busy-change="busy = $event"
+        @revoked="emit('close')"
+      />
     </div>
     <template #footer>
       <div class="ma-footer">

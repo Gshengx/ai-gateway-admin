@@ -229,7 +229,7 @@ const columns = computed<PrimaryTableCol<RoleItem>[]>(() => [
   { colKey: 'description', title: t('roles.description'), ellipsis: true },
   { colKey: 'user_count', title: t('roles.users') },
   { colKey: 'created_at', title: t('roles.created') },
-  { colKey: 'action', title: t('roles.action') },
+  { colKey: 'action', title: t('roles.action'), fixed: 'right' },
 ])
 function resetPage() {
   page.value = 1

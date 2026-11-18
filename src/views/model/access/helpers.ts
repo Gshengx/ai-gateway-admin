@@ -13,6 +13,7 @@ export const invocationLabel = (s: string) =>
     IMAGE_GENERATIONS: 'Image Generations',
     AUDIO: 'Audio',
     VIDEO: 'Video',
+    CUSTOM_PASSTHROUGH: i18n.global.t('ma.customProtocol'),
     TEMPLATE_NATIVE: i18n.global.locale.value.startsWith('zh')
       ? '模板专用接口'
       : 'Template native API',

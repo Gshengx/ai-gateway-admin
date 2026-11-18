@@ -191,7 +191,7 @@ const columns = computed<PrimaryTableCol<UserGroupMember>[]>(() => [
   { colKey: 'username', title: t('groups.membersDrawer.columns.username'), width: 180 },
   { colKey: 'display_name', title: t('groups.membersDrawer.columns.displayName'), width: 140 },
   { colKey: 'department', title: t('groups.membersDrawer.columns.department'), width: 220 },
-  { colKey: 'action', title: t('groups.membersDrawer.columns.action'), width: 90 },
+  { colKey: 'action', title: t('groups.membersDrawer.columns.action'), width: 90, fixed: 'right' },
 ])
 
 /** 是否可写：无管理权限或存在写入阻断码时只读 */

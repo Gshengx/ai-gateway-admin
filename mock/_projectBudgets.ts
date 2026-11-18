@@ -1,5 +1,5 @@
-import { runtimeState, nextSequence, existingState, directory } from './_runtime'
-import type { ExpenseRecord } from '../src/api/modules/expenses'
+import { runtimeState, nextSequence, directory } from './_runtime'
+import { expenseRecords } from './_costRecords'
 import type { StoredProject } from './_projects'
 import type {
   ProjectBudgetConfig,
@@ -12,7 +12,6 @@ import { allocateBudget, budgetDates, defaultProjectBudgetConfig } from '../src/
 interface Ledger {
   version: number
   config: ProjectBudgetConfig | null
-  consumed: Record<string, number>
   adjustments: ProjectBudgetAdjustment[]
   history: ProjectBudgetHistory[]
 }
@@ -97,7 +96,6 @@ export function budgetLedger(p: StoredProject): Ledger {
     ledgers.set(p.id, {
       config,
       version: 1,
-      consumed: old ? { [old.start]: old.consumed } : {},
       adjustments,
       history: config
         ? [
@@ -105,7 +103,10 @@ export function budgetLedger(p: StoredProject): Ledger {
               id: `budget-seed-${p.id}`,
               action: 'CONFIGURED',
               at: `${config.start}T01:00:00Z`,
-              actor: '陈知远',
+              actor: (() => {
+                const admin = [...directory.values()].find((user) => user.username === 'admin')
+                return admin ? `${admin.display_name} (${admin.username})` : '—'
+              })(),
               amount: config.total,
               work_order_id: null,
               configuration: structuredClone(config),
@@ -129,6 +130,18 @@ export function budgetLedger(p: StoredProject): Ledger {
   }
   return ledgers.get(p.id)!
 }
+export function budgetExpenses(p: StoredProject) {
+  const config = budgetLedger(p).config
+  const today = budgetToday()
+  return expenseRecords.filter((record) => {
+    const date = record.created_at.slice(0, 10)
+    return (
+      record.project_id === p.id &&
+      date <= today &&
+      (!config || (date >= config.start && date <= config.end))
+    )
+  })
+}
 export function budgetPeriods(p: StoredProject): ProjectBudgetPeriod[] {
   const ledger = budgetLedger(p),
     config = ledger.config
@@ -137,6 +150,7 @@ export function budgetPeriods(p: StoredProject): ProjectBudgetPeriod[] {
   const bases =
     config.allocation === 'CUSTOM' ? config.amounts : allocateBudget(config.total, dates.length)
   const today = budgetToday()
+  const records = budgetExpenses(p)
   return dates.map((period, index) => {
     const temporary = roundMoney(
       ledger.adjustments
@@ -151,19 +165,13 @@ export function budgetPeriods(p: StoredProject): ProjectBudgetPeriod[] {
         .reduce((sum, a) => sum + a.amount, 0),
     )
     const base = bases[index] ?? 0
-    const records = existingState<ExpenseRecord[]>('expenseRecordsV14Linked2')
     const consumed = records
-      ? records
-          .filter(
-            (r) =>
-              r.project_id === p.id &&
-              r.created_at.slice(0, 10) >= period.start &&
-              r.created_at.slice(0, 10) <= period.end,
-          )
-          .reduce((sum, r) => sum + r.total_cost, 0)
-      : Object.entries(ledger.consumed)
-          .filter(([date]) => date >= period.start && date <= period.end)
-          .reduce((sum, [, amount]) => sum + amount, 0)
+      .filter(
+        (record) =>
+          record.created_at.slice(0, 10) >= period.start &&
+          record.created_at.slice(0, 10) <= period.end,
+      )
+      .reduce((sum, record) => sum + record.total_cost, 0)
     const amount = roundMoney(base + temporary)
     return {
       ...period,
@@ -188,7 +196,7 @@ export function budgetState(p: StoredProject) {
   const periods = budgetPeriods(p)
   const current = periods.find((period) => period.state === 'CURRENT') ?? null
   const total = roundMoney(periods.reduce((sum, period) => sum + period.amount, 0))
-  const consumed = roundMoney(Object.values(ledger.consumed).reduce((sum, value) => sum + value, 0))
+  const consumed = roundMoney(periods.reduce((sum, period) => sum + period.consumed, 0))
   const usage = total ? (consumed / total) * 100 : 0
   const status =
     !ledger.config || !p.budget

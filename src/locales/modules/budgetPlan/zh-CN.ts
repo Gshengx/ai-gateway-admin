@@ -34,7 +34,7 @@ const messages = {
   FIXED: '按期均分',
   evenHint: '将预算总额平均分配到各期，尾差计入最后一期。',
   limit: '单用户每期上限（元）',
-  memberLimit: '项目成员每期上限（元）',
+  memberLimit: '项目成员每期上限',
   limitHint: '不限制单个用户的每期消费额度；消费仍从来源预算扣除。',
   count: '共 {count} 期',
   sum: '各期合计',

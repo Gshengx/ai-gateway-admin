@@ -286,7 +286,7 @@ const columns = computed<PrimaryTableCol<TableRowData>[]>(() => [
   { colKey: 'tokens', title: t('cost.tokenAmount'), minWidth: 100 },
   { colKey: 'request_count', title: t('cost.requests'), minWidth: 100 },
   { colKey: 'cost_ratio', title: t('cost.ratio'), minWidth: 100 },
-  { colKey: 'actions', title: t('cost.actions'), minWidth: 110 },
+  { colKey: 'actions', title: t('cost.actions'), minWidth: 110, fixed: 'right' as const },
 ])
 const detailColumns = computed(() => [
   {

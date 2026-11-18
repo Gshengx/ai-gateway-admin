@@ -130,6 +130,12 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.test-invocation-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-comp-margin-xs);
+  min-width: 0;
+}
 .test-matrix-cell,
 .test-matrix-value {
   display: flex;
@@ -157,6 +163,10 @@
 .test-history-list :deep(.t-collapse-panel__header-content) {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.test-history-list :deep(.t-collapse-panel__content) {
+  /* The table header supplies the top spacing; avoid adding it a second time. */
+  padding-top: 0;
 }
 .ma-box {
   border: 1px solid var(--td-component-stroke);
@@ -423,6 +433,22 @@
   padding-left: var(--td-comp-paddingLR-s);
   padding-right: var(--td-comp-paddingLR-s);
 }
+.model-status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--td-comp-margin-xs);
+}
+.model-status-cell {
+  min-width: 0;
+}
+/* 数字步进按钮保留组件自身的边框及交互状态，避免被页面描边按钮规则覆盖。 */
+.model-list-panel
+  :deep(
+    .t-button--variant-outline:where(:not(.t-input-number__decrease, .t-input-number__increase))
+  ) {
+  border-color: currentColor;
+}
 .model-health-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -605,7 +631,7 @@
 .invocation-editor__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--td-comp-size-m);
-  align-items: start;
+  align-items: end;
   gap: var(--td-comp-margin-l);
 }
 .invocation-editor__row > .t-button {
@@ -624,4 +650,16 @@
 .invocation-editor__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--td-comp-margin-s);
+}
+
+.model-list-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--td-comp-margin-s);
+}
+.model-list-toolbar__actions {
+  flex-wrap: wrap;
 }

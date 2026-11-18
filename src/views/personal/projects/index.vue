@@ -104,7 +104,7 @@ const columns = computed<PrimaryTableCol<ProjectItem>[]>(() => [
   { colKey: 'status', title: t('projects.projectStatus'), width: 120 },
   { colKey: 'budget', title: t('projects.budgetStatus'), width: 140 },
   { colKey: 'usage', title: t('projects.myCost'), width: 160 },
-  { colKey: 'actions', title: t('projects.actions'), width: 180 },
+  { colKey: 'actions', title: t('projects.actions'), width: 180, fixed: 'right' },
 ])
 function money(amount: number, currency = 'CNY') {
   return new Intl.NumberFormat(locale.value, { style: 'currency', currency }).format(amount)

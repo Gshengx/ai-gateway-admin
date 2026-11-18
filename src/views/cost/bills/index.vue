@@ -299,6 +299,7 @@ const taskColumns = computed<PrimaryTableCol<TableRowData>[]>(() =>
     colKey: String(colKey),
     title: t(`cost.${label}`),
     minWidth: Number(minWidth),
+    ...(colKey === 'actions' ? { fixed: 'right' as const } : {}),
   })),
 )
 let version = 0,
@@ -397,7 +398,7 @@ async function submit() {
     .map((e) => e.trim())
     .filter(Boolean)
   if (
-    !form.department_id ||
+    !form.department_ids.length ||
     (tab.value === 'bills' && !form.period_value) ||
     (tab.value === 'tasks' &&
       form.email_enabled &&
@@ -412,14 +413,14 @@ async function submit() {
       await generateBill({
         period_type: form.period_type,
         period_value: form.period_value,
-        department_id: form.department_ids[0] ?? form.department_id,
+        department_id: form.department_ids[0]!,
         department_ids: form.department_ids,
       })
     else
       await saveBillTask(
         {
           period_type: form.period_type,
-          department_id: form.department_ids[0] ?? form.department_id,
+          department_id: form.department_ids[0]!,
           department_ids: form.department_ids,
           email_enabled: form.email_enabled,
           email_recipients: [...new Set(emails)],

@@ -35,17 +35,15 @@
         <t-loading :loading="loading" :inert="loading">
           <t-tree
             v-if="type === 'DEPARTMENT'"
-            ref="departmentTree"
-            :key="treeVersion"
             :value="checkedIds"
             :data="departmentOptions"
-            :load="loadChildren"
+            :icon="branches.icon"
             :default-expanded="searchExpanded"
             checkable
-            :check-strictly="false"
+            check-strictly
             value-mode="all"
             @change="treeChanged"
-            @load="commitTreeSelection"
+            @expand="branches.onExpand"
           />
           <div v-else class="subject-picker__options">
             <t-checkbox
@@ -78,12 +76,14 @@
   </t-select-input>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { TreeInstanceFunctions, TreeProps, SelectInputProps } from 'tdesign-vue-next'
+import type { TreeProps, SelectInputProps } from 'tdesign-vue-next'
 import DepartmentTreeSelect from '@/components/DepartmentTreeSelect.vue'
 import { modelAccessApi } from '@/api/modules/modelAccessApi'
 import type { Subject } from '@/api/modules/modelAccess'
+import { useTreeBranches } from '@/utils/useTreeBranches'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 const props = defineProps<{
   purpose?: 'balance'
   providerId?: string
@@ -106,8 +106,7 @@ const names = ref<Record<string, string>>({}),
   page = ref(1),
   total = ref(0),
   loading = ref(false),
-  popupVisible = ref(false),
-  treeVersion = ref(0)
+  popupVisible = ref(false)
 interface Node {
   value: string
   label: string
@@ -115,27 +114,11 @@ interface Node {
 }
 const departments = ref<Node[]>([])
 const locked = computed(() => new Set(props.lockedIds ?? []))
-const checkedIds = ref<string[]>([])
-const departmentTree = ref<TreeInstanceFunctions>()
-function commitTreeSelection() {
-  const items = departmentTree.value?.getItems() ?? []
-  const visible = new Set(items.map((item) => String(item.value)))
-  selection.value = [
-    ...new Set([
-      ...selection.value.filter((id) => !visible.has(id) && !locked.value.has(id)),
-      ...items
-        .filter(
-          (item) => item.checked && !item.indeterminate && !locked.value.has(String(item.value)),
-        )
-        .map((item) => String(item.value)),
-    ]),
-  ]
-  syncTreeSelection()
-}
-function syncTreeSelection() {
-  checkedIds.value = [...new Set([...selection.value, ...locked.value])]
-}
-watch([selection, locked], syncTreeSelection, { immediate: true })
+const checkedIds = computed(() => [...new Set([...selection.value, ...locked.value])])
+const requests = useLatestRequest()
+const branches = useTreeBranches(departments, async (id, signal) =>
+  nodes((await getDepartmentListApi({ parent_id: id }, signal)).items),
+)
 const departmentOptions = computed(() => {
   function decorate(items: Node[]): (Node & { disabled: boolean })[] {
     return items.map((item) => ({
@@ -229,40 +212,18 @@ function nodes(
   }
   return roots
 }
-let branchController = new AbortController()
-const loadChildren: NonNullable<TreeProps['load']> = async (node) => {
-  const controller = branchController
-  try {
-    const children = nodes(
-      (await getDepartmentListApi({ parent_id: String(node.value) }, controller.signal)).items,
-    )
-    if (controller.signal.aborted) return []
-    // The tree installs lazy children itself; rebuilding its data here races checked-state restore.
-    return children.map((item) => ({ ...item, disabled: locked.value.has(item.value) }))
-  } catch (error) {
-    if (controller.signal.aborted) return []
-    throw error
-  }
-}
-let generation = 0,
-  timer: ReturnType<typeof setTimeout> | undefined
-let optionsController: AbortController | undefined
 let queriedDepartment = ''
 async function load() {
-  const current = ++generation
-  optionsController?.abort()
-  const controller = new AbortController()
-  optionsController = controller
+  const request = requests.begin()
   loading.value = true
   try {
     if (props.type === 'DEPARTMENT') {
       const result = await getDepartmentListApi(
         keyword.value ? { search: keyword.value } : {},
-        controller.signal,
+        request.signal,
       )
-      if (current === generation) {
+      if (request.isCurrent()) {
         departments.value = nodes(result.items)
-        treeVersion.value++
       }
     } else {
       const params = {
@@ -274,7 +235,7 @@ async function load() {
       const result =
         props.purpose === 'balance'
           ? await modelAccessApi.B06({
-              signal: controller.signal,
+              signal: request.signal,
               params: {
                 page: params.page,
                 page_size: params.page_size,
@@ -284,7 +245,7 @@ async function load() {
               },
             })
           : await modelAccessApi.A12({
-              signal: controller.signal,
+              signal: request.signal,
               params: {
                 page: params.page,
                 page_size: params.page_size,
@@ -293,7 +254,7 @@ async function load() {
                 subject_type: props.type,
               },
             })
-      if (current !== generation) return
+      if (!request.isCurrent()) return
       const rows = [
         ...result.items,
         ...('selected_items' in result ? result.selected_items : []),
@@ -324,18 +285,17 @@ async function load() {
       emit('records', rows)
     }
   } catch {
-    if (current === generation) {
+    if (request.isCurrent()) {
       options.value = []
       departments.value = []
     }
   } finally {
-    if (current === generation) loading.value = false
+    if (request.isCurrent()) loading.value = false
   }
 }
 function query() {
   if (!popupVisible.value) return
-  branchController.abort()
-  branchController = new AbortController()
+  branches.invalidate()
   page.value = 1
   void load()
 }
@@ -355,9 +315,10 @@ function toggle(id: string, checked: boolean) {
     ? [...new Set([...selection.value, id])]
     : selection.value.filter((x) => x !== id)
 }
-const treeChanged: NonNullable<TreeProps['onChange']> = (_keys, context) => {
+const treeChanged: NonNullable<TreeProps['onChange']> = (keys, context) => {
   if (context.trigger === 'setItem') return
-  commitTreeSelection()
+  const id = String(context.node.value)
+  toggle(id, keys.map(String).includes(id))
 }
 const changeTags: NonNullable<SelectInputProps['onTagChange']> = (_value, context) => {
   if (context.trigger === 'clear') selection.value = []
@@ -365,19 +326,16 @@ const changeTags: NonNullable<SelectInputProps['onTagChange']> = (_value, contex
     selection.value = selection.value.filter((_id, index) => index !== context.index)
 }
 watch(keyword, () => {
-  clearTimeout(timer)
-  generation++
-  optionsController?.abort()
+  requests.invalidate()
+  branches.invalidate()
   if (!popupVisible.value) return
   if (!keyword.value) query()
-  else timer = setTimeout(query, 250)
+  else requests.schedule(query, 250)
 })
 watch(popupVisible, (visible) => {
   if (!visible) {
-    generation++
-    clearTimeout(timer)
-    optionsController?.abort()
-    branchController.abort()
+    requests.invalidate()
+    branches.invalidate()
     return
   }
   department.value = ''
@@ -391,12 +349,6 @@ watch(locale, () => {
 })
 watch(locked, () => {
   selection.value = selection.value.filter((id) => !locked.value.has(id))
-})
-onBeforeUnmount(() => {
-  generation++
-  optionsController?.abort()
-  branchController.abort()
-  clearTimeout(timer)
 })
 </script>
 <style scoped>

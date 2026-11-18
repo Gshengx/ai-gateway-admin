@@ -48,18 +48,30 @@
       <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
       <template #updated_at="{ row }">{{ formatDateTime(row.updated_at) }}</template>
       <template #content="{ row }"
-        ><div>{{ t(`budgetFlow.${row.target}`) }} · {{ row.project_name }}</div>
+        ><div>
+          {{ t(`budgetFlow.${row.target}`) }} ·
+          {{
+            row.target === 'PERSONAL'
+              ? userLabel(row.project_name, row.applicant_username)
+              : row.project_name
+          }}
+        </div>
         <span class="hint"
           >{{ t(`budgetFlow.${row.mode}`) }} {{ money(row.requested_amount) }}</span
         ></template
       >
       <template #applicant="{ row }"
-        ><div>{{ row.applicant_name }}</div>
+        ><div>{{ userLabel(row.applicant_name, row.applicant_username) }}</div>
         <span class="hint">{{ row.department }}</span></template
       ><template #level="{ row }">{{ t('budgetFlow.levelValue', { level: row.level }) }}</template>
       <template #flow>{{ t('budgetFlow.flowName') }}</template>
       <template #handler="{ row }">{{
-        row.status === 'PENDING' ? row.steps[row.level - 1]?.approver_name : '—'
+        row.status === 'PENDING' && row.steps[row.level - 1]
+          ? approvers.label(
+              row.steps[row.level - 1].approver_id,
+              row.steps[row.level - 1].approver_name,
+            )
+          : '—'
       }}</template>
       <template #status="{ row }"
         ><t-tag :theme="theme(row.status)" variant="light">{{
@@ -175,10 +187,21 @@
             ><t-select
               class="list-filter"
               v-model="form.first_approver_id"
-              :options="options?.approvers.map((u) => ({ value: u.id, label: u.display_name }))"
+              :options="
+                options?.approvers.map((u) => ({
+                  value: u.id,
+                  label: approvers.label(u.id, u.name),
+                }))
+              "
               filterable /></t-form-item
           ><t-form-item :label="t('budgetFlow.second')"
-            ><t-input :value="options?.second_approver?.name ?? '—'" readonly
+            ><t-input
+              :value="
+                options?.second_approver
+                  ? approvers.label(options.second_approver.id, options.second_approver.name)
+                  : '—'
+              "
+              readonly
           /></t-form-item>
         </div>
       </section>
@@ -198,13 +221,18 @@
         ><t-tag>{{ t(`budgetFlow.${detail.execution}`) }}</t-tag></t-space
       ><t-descriptions :column="2" layout="vertical"
         ><t-descriptions-item :label="t('budgetFlow.applicant')">{{
-          detail.applicant_name
+          userLabel(detail.applicant_name, detail.applicant_username)
         }}</t-descriptions-item
         ><t-descriptions-item :label="t('budgetFlow.created')">{{
           formatDateTime(detail.created_at)
         }}</t-descriptions-item
         ><t-descriptions-item :label="t('budgetFlow.owner')"
-          >{{ t(`budgetFlow.${detail.target}`) }} · {{ detail.project_name }}</t-descriptions-item
+          >{{ t(`budgetFlow.${detail.target}`) }} ·
+          {{
+            detail.target === 'PERSONAL'
+              ? userLabel(detail.project_name, detail.applicant_username)
+              : detail.project_name
+          }}</t-descriptions-item
         ><t-descriptions-item :label="t('budgetFlow.mode')">{{
           t(`budgetFlow.${detail.mode}`)
         }}</t-descriptions-item
@@ -226,7 +254,7 @@
         ><t-timeline-item v-for="(step, index) in detail.steps" :key="step.approver_id"
           ><strong
             >{{ t(index ? 'budgetFlow.second' : 'budgetFlow.first') }} ·
-            {{ step.approver_name }}</strong
+            {{ approvers.label(step.approver_id, step.approver_name) }}</strong
           >
           <p>
             {{ t(`budgetFlow.${step.status}`)
@@ -289,7 +317,12 @@
         <h4>{{ t('budgetFlow.quotaContext') }}</h4>
         <t-descriptions :column="2" layout="vertical"
           ><t-descriptions-item :label="t('budgetFlow.owner')"
-            >{{ t(`budgetFlow.${detail.target}`) }} · {{ detail.project_name }}</t-descriptions-item
+            >{{ t(`budgetFlow.${detail.target}`) }} ·
+            {{
+              detail.target === 'PERSONAL'
+                ? userLabel(detail.project_name, detail.applicant_username)
+                : detail.project_name
+            }}</t-descriptions-item
           ><t-descriptions-item :label="t('budgetFlow.requested')">{{
             money(detail.requested_amount)
           }}</t-descriptions-item
@@ -325,6 +358,8 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
+import { useUserLabels } from '@/utils/useUserLabels'
 import { computed, onMounted, ref, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -351,6 +386,7 @@ import { formatDate, formatDateTime } from '@/utils/datetime'
 import '@/styles/cost.css'
 import '@/styles/projects.css'
 const { t, locale, money, error } = useCost()
+const approvers = useUserLabels()
 const route = useRoute(),
   router = useRouter()
 const tabs = ['mine', 'pending', 'processed']
@@ -370,6 +406,14 @@ const items = ref<BudgetWorkOrder[]>([]),
   formError = ref(''),
   approvalAction = ref('')
 const options = ref<Awaited<ReturnType<typeof getBudgetApplicationOptions>>>()
+watch([items, detail, options], () => {
+  void approvers.resolve([
+    ...items.value.flatMap((item) => item.steps.map((step) => step.approver_id)),
+    ...(detail.value?.steps.map((step) => step.approver_id) ?? []),
+    ...(options.value?.approvers.map((user) => user.id) ?? []),
+    options.value?.second_approver?.id ?? '',
+  ])
+})
 const form = reactive<BudgetApplication>({
   target: 'PERSONAL',
   project_id: '',

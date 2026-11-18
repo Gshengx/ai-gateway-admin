@@ -14,6 +14,8 @@ import { computed, ref, watch } from 'vue'
 import type { TreeProps } from 'tdesign-vue-next'
 import { getCostContext, getCostDepartment, type CostDepartment } from '@/api/modules/cost'
 import { useCost } from '../useCost'
+import { useTreeBranches } from '@/utils/useTreeBranches'
+import { useLatestRequest } from '@/utils/useLatestRequest'
 const props = defineProps<{ modelValue: string[]; unrestricted?: boolean; rootId?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
 const { t, english, departments, ensureDepartments, error } = useCost()
@@ -40,26 +42,29 @@ function convert(items: CostDepartment[]): Node[] {
     }
   })
 }
+const requests = useLatestRequest()
+const branches = useTreeBranches(nodes, async (id, signal) => {
+  const result = await getCostContext(id)
+  return signal.aborted ? [] : convert(result.departments)
+})
 const treeProps = computed<TreeProps>(() => ({
   lazy: true,
   checkStrictly: true,
-  load: async (node) => {
-    try {
-      return convert((await getCostContext(String(node.value))).departments)
-    } catch (e) {
-      error(e)
-      return []
-    }
-  },
+  onExpand: branches.onExpand,
+  icon: branches.icon,
 }))
 async function open(visible: boolean) {
+  requests.invalidate()
+  branches.invalidate()
   if (!visible) return
+  const current = requests.begin()
   try {
-    nodes.value = convert(
-      props.rootId ? [await getCostDepartment(props.rootId)] : (await getCostContext()).departments,
-    )
+    const items = props.rootId
+      ? [await getCostDepartment(props.rootId)]
+      : (await getCostContext()).departments
+    if (current.isCurrent()) nodes.value = convert(items)
   } catch (e) {
-    error(e)
+    if (current.isCurrent()) error(e)
   }
 }
 watch(

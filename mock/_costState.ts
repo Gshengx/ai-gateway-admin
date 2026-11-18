@@ -1,5 +1,11 @@
 import { runtimeState, directory, existingState } from './_runtime'
-import { seedCostState, seedBudget, costUserFor, costDirectory } from '../src/api/mock/cost'
+import {
+  seedCostState,
+  seedBudget,
+  costUserFor,
+  costDirectory,
+  costDepartmentId,
+} from '../src/api/mock/cost'
 export const sharedCostState = runtimeState('sharedCostBudgetState', seedCostState)
 runtimeState('costBillFailureFixtureV14', () => {
   if (!sharedCostState.bills.some((b) => b.id === 'bill-failed-june'))
@@ -7,15 +13,6 @@ runtimeState('costBillFailureFixtureV14', () => {
   return true
 })
 export function syncCostUsers() {
-  const map: Record<string, string> = {
-    'd-root': 'hq',
-    'd-tech': 'tech',
-    'd-algo': 'algorithm',
-    'd-platform': 'platform',
-    'd-ops': 'operations',
-    'd-hr': 'hr',
-  }
-  const id = (value: string) => map[value] ?? value.replace(/^d-/, '')
   const source =
     existingState<
       {
@@ -27,8 +24,8 @@ export function syncCostUsers() {
     >('departments') ?? []
   if (source.length) {
     const nodes = source.map((d) => ({
-      id: id(d.id),
-      parent_id: d.parent_id ? id(d.parent_id) : null,
+      id: costDepartmentId(d.id),
+      parent_id: d.parent_id ? costDepartmentId(d.parent_id) : null,
       name: d.name,
       name_en: d.translations?.['en-US']?.name ?? d.name,
       path: '',

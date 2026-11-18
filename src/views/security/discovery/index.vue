@@ -20,7 +20,15 @@
         </p>
       </div>
     </div>
-    <t-alert v-if="errorMessage" theme="error" :message="errorMessage" />
+    <t-alert
+      v-if="errorMessage || pollFailed"
+      theme="error"
+      :message="errorMessage || t('common.loadFailed')"
+    >
+      <template v-if="pollFailed" #operation>
+        <t-button variant="text" @click="retryQuery">{{ t('common.retry') }}</t-button>
+      </template>
+    </t-alert>
     <t-alert v-if="!modelReady" theme="warning" :message="label('discoveryModelMissing')" />
     <template v-if="active">
       <div class="security-inline">
@@ -348,6 +356,7 @@ const taskColumns = computed<TableProps['columns']>(() =>
   ['source', 'scope', 'created_at', 'status', 'count', 'operations'].map((colKey) => ({
     colKey,
     title: label(colKey),
+    ...(colKey === 'operations' ? { fixed: 'right' as const } : {}),
   })),
 )
 async function refresh() {
@@ -456,8 +465,14 @@ async function start() {
     starting.value = false
   }
 }
+const pollFailed = ref(false)
+function retryQuery() {
+  clearErrors()
+  poll()
+}
 function poll() {
   clearTimeout(timer)
+  pollFailed.value = false
   const id = active.value?.id
   if (!id) return
   timer = setTimeout(async () => {
@@ -468,18 +483,24 @@ function poll() {
       if (['READING', 'RECOGNIZING'].includes(task.status)) poll()
       else await refresh()
     } catch (e) {
+      if (disposed || active.value?.id !== id) return
       error(e)
-      if (active.value?.id === id) active.value.status = 'FAILED'
+      pollFailed.value = true
     }
   }, 700)
 }
 function back() {
   clearTimeout(timer)
+  pollFailed.value = false
+  clearErrors()
   active.value = undefined
   editing.value = undefined
   void refresh()
 }
 function openTask(task: DiscoveryTask) {
+  clearTimeout(timer)
+  pollFailed.value = false
+  clearErrors()
   source.value = task.source
   active.value = task
   if (['READING', 'RECOGNIZING'].includes(task.status)) poll()

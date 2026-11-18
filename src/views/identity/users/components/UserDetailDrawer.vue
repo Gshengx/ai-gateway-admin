@@ -2,7 +2,7 @@
   <t-drawer
     :visible="visible"
     :header="t('users.detail.title')"
-    size="760px"
+    size="var(--user-detail-drawer-width)"
     destroy-on-close
     :footer="false"
     @close="onClose"
@@ -29,7 +29,14 @@
         </t-tag>
       </div>
 
-      <t-tabs ref="tabsRef" v-model="activeTab" class="drawer-tabs">
+      <t-tabs
+        :title="
+          authorizedModelTotal === null || apiKeyCount === null ? t('route.forbidden') : undefined
+        "
+        ref="tabsRef"
+        v-model="activeTab"
+        class="drawer-tabs"
+      >
         <t-tab-panel value="basic" :label="t('users.detail.tabs.basic')">
           <dl class="detail-grid">
             <dt>{{ t('users.detail.username') }}</dt>
@@ -124,10 +131,15 @@
         <t-tab-panel
           value="models"
           lazy
-          :label="
-            t('users.detail.tabs.models', { n: modelsLoaded ? (accessibleModelTotal ?? '—') : '—' })
-          "
+          :label="t('users.detail.tabs.models', { n: authorizedModelTotal ?? '—' })"
         >
+          <t-alert v-if="modelsFailed" theme="error" :message="t('common.loadFailed')">
+            <template #operation>
+              <t-button variant="text" @click="detail && loadModels(detail.id)">
+                {{ t('common.retry') }}
+              </t-button>
+            </template>
+          </t-alert>
           <div v-if="canWriteUsers" class="model-toolbar">
             <ModelGrantSelect
               :key="detail.id"
@@ -153,6 +165,14 @@
             row-key="id"
             :data="modelRows"
             :columns="modelColumns"
+            :disable-data-page="true"
+            :pagination="{
+              current: modelPage,
+              pageSize: modelPageSize,
+              total: authorizedModelTotal ?? 0,
+              pageSizeOptions: [10, 20, 50, 100],
+            }"
+            @page-change="changeModelPage"
             :loading="modelsLoading"
             hover
             table-layout="fixed"
@@ -164,11 +184,15 @@
                 <span class="cell-ellipsis">{{ row.name }}</span>
               </t-tooltip>
             </template>
-            <template #provider>—</template>
             <template #sources="{ row }">
               <t-tooltip :content="row.sources">
                 <span class="cell-ellipsis">{{ row.sources }}</span>
               </t-tooltip>
+            </template>
+            <template #status="{ row }">
+              <t-tag variant="light" :theme="statusTheme(row.status)">
+                {{ t(`ma.${row.status}`) }}
+              </t-tag>
             </template>
             <template #actions="{ row }">
               <t-link
@@ -188,7 +212,7 @@
           v-if="canViewKeys"
           value="keys"
           lazy
-          :label="t('users.detail.tabs.keys', { n: keysLoaded ? keyTotal : '—' })"
+          :label="t('users.detail.tabs.keys', { n: apiKeyCount ?? '—' })"
         >
           <t-alert
             v-if="detail.status !== 'ACTIVE'"
@@ -319,7 +343,7 @@
       :confirm-btn="{
         content: t('common.confirm'),
         loading: grantDialog.loading,
-        disabled: !canConfirmGrant,
+        disabled: !canWriteUsers || !canConfirmGrant,
       }"
       :cancel-btn="{ content: t('common.cancel'), disabled: grantDialog.loading }"
       :close-btn="!grantDialog.loading"
@@ -363,7 +387,9 @@
 <script setup lang="ts">
 import { useDrawerTabs } from '@/utils/useDrawerTabs'
 import LoadingState from '@/components/LoadingState.vue'
+import { statusTheme } from '@/views/model/access/helpers'
 import ModelGrantSelect from './ModelGrantSelect.vue'
+import type { UserGrantDelta } from '@/api/modules/modelAccessContract'
 import { usePageSelection } from '@/utils/usePageSelection'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
@@ -375,12 +401,10 @@ import {
   getUserApiKeysApi,
   getUserDetailApi,
   getUserModelGrantSourcesApi,
-  getUserAccessibleModelsApi,
-  getUserModelGrantsApi,
-  setUserModelGrantsApi,
+  addUserModelGrantsApi,
+  removeUserModelGrantsApi,
   type UserApiKeyItem,
   type UserItem,
-  type UserModelGrant,
   type UserModelGrantSource,
   type UserTermsInfo,
 } from '@/api/modules/identity'
@@ -390,7 +414,6 @@ import {
   batchDisableManagedKeysApi,
   batchDeleteManagedKeysApi,
 } from '@/api/modules/apiKeys'
-import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
 import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
 
@@ -421,9 +444,26 @@ const modelsLoaded = ref(false)
 const keysLoaded = ref(false)
 const keyRequest = useLatestRequest()
 const modelSources = ref<UserModelGrantSource[]>([])
-const accessibleModelTotal = ref<number>()
+const authorizedModelTotal = ref<number | null>(null)
+const apiKeyCount = ref<number | null>(null)
 /** 用户级直接授权（F-USER-09：取消授权只能作用于直接授权） */
-const directGrants = ref<UserModelGrant[]>([])
+const modelPage = ref(1)
+const modelPageSize = ref(20)
+function changeModelPage(info: PageInfo) {
+  if (modelsLoading.value || grantDialog.loading || !props.user) return
+  const pageSize = Math.min(100, Math.max(1, info.pageSize))
+  modelPage.value = pageSize !== modelPageSize.value ? 1 : info.current
+  modelPageSize.value = pageSize
+  void loadModels(props.user.id)
+}
+const authorizationVersion = ref<number | null>(null)
+let grantController: AbortController | undefined
+let pendingGrant: {
+  userId: string
+  mode: 'add' | 'remove'
+  body: UserGrantDelta
+  key: string
+} | null = null
 const grantsReady = ref(false)
 const modelNames = ref<Record<string, string>>({})
 const keys = ref<UserApiKeyItem[]>([])
@@ -453,9 +493,30 @@ const lastAcceptance = computed(() =>
 
 const canViewKeys = computed(() => hasPermission(userStore.permissions, 'identity.keys'))
 const canWriteKeys = computed(() => canWriteResource(userStore.permissions, 'identity.keys'))
-const canWriteUsers = computed(() => canWriteResource(userStore.permissions, 'identity.users'))
+const grantPermitted = computed(() =>
+  ['identity.users', 'model.permissions'].every((resource) =>
+    userStore.permissionSnapshot?.capabilities.some(
+      (capability) => capability.resource_code === resource && capability.can_write,
+    ),
+  ),
+)
+const canWriteUsers = computed(() => userStore.permissionsReady && grantPermitted.value)
 
-const directModelIds = computed(() => new Set(directGrants.value.map((item) => item.id)))
+const directModelIds = computed(
+  () =>
+    new Set(
+      modelSources.value
+        .filter((entry) =>
+          entry.sources.some(
+            (source) =>
+              source.subject_type === 'USER' &&
+              source.subject_id === props.user?.id &&
+              !source.inherited,
+          ),
+        )
+        .map((entry) => entry.model.id),
+    ),
+)
 const directModelIdList = computed(() => [...directModelIds.value])
 
 const grantDialog = reactive({
@@ -465,6 +526,24 @@ const grantDialog = reactive({
   modelIds: [] as string[],
   loading: false,
 })
+
+function resetGrantOperation() {
+  grantController?.abort()
+  grantController = undefined
+  pendingGrant = null
+  selectedModelIds.value = []
+  grantDialog.visible = false
+  grantDialog.loading = false
+  grantDialog.target = null
+  grantDialog.modelIds = []
+}
+watch(
+  grantPermitted,
+  (allowed) => {
+    if (!allowed) resetGrantOperation()
+  },
+  { flush: 'sync' },
+)
 
 const canConfirmGrant = computed(
   () => grantDialog.mode === 'remove' || grantDialog.modelIds.length > 0,
@@ -479,6 +558,7 @@ const groupNames = computed(() =>
 )
 
 interface ModelRow {
+  status: UserModelGrantSource['model']['status']
   provider: string
   available: boolean
   unavailableReason: string | null
@@ -508,6 +588,7 @@ const modelRows = computed<ModelRow[]>(() =>
       id: entry.model.id,
       name: entry.model.model_id_at_gateway,
       provider: entry.model.provider_name,
+      status: entry.model.status,
       available: entry.available,
       unavailableReason: entry.unavailable_reason,
       sources: sources.join(t('users.detail.listSeparator')),
@@ -523,8 +604,9 @@ const modelRows = computed<ModelRow[]>(() =>
 
 const modelColumns = computed<PrimaryTableCol<ModelRow>[]>(() => {
   const columns: PrimaryTableCol<ModelRow>[] = [
-    { colKey: 'name', title: t('users.detail.models.columns.model'), width: 135, ellipsis: true },
-    { colKey: 'provider', title: t('users.detail.models.columns.provider'), width: 110 },
+    { colKey: 'name', title: t('users.detail.models.columns.model'), width: 180, ellipsis: true },
+    { colKey: 'provider', title: t('users.detail.models.columns.provider'), width: 180 },
+    { colKey: 'status', title: t('users.detail.models.columns.status'), width: 90 },
     { colKey: 'sources', title: t('users.detail.models.columns.sources'), ellipsis: true },
     {
       colKey: 'grantType',
@@ -538,6 +620,7 @@ const modelColumns = computed<PrimaryTableCol<ModelRow>[]>(() => {
       colKey: 'actions',
       title: t('users.detail.models.columns.actions'),
       width: 120,
+      fixed: 'right',
     })
   }
   return columns
@@ -581,7 +664,6 @@ const keyConfirmVisible = ref(false)
 const keyOperation = ref<KeyOperation>('disable')
 const keyTargets = ref<UserApiKeyItem[]>([])
 let keyGeneration = 0
-let keyListRequest = 0
 let drawerGeneration = 0
 const keyDialogTitle = computed(() => t(`managedKeys.${keyOperation.value}Title`))
 const keyDialogContent = computed(() =>
@@ -607,26 +689,9 @@ function selectKeyRows(ids: Array<string | number>) {
   if (!canWriteKeys.value || keyBusy.value || keysLoading.value) return
   updateKeySelection(ids)
 }
-/** Collect complete data for model aggregation and grant replacement; stop when stale. */
-async function collectPages<T>(
-  fetchPage: (query: OffsetPageQuery) => Promise<OffsetPageResult<T>>,
-  isCurrent: () => boolean,
-): Promise<T[]> {
-  const items: T[] = []
-  for (let page = 1; ; page += 1) {
-    if (!isCurrent()) return []
-    const result = await fetchPage({ page, page_size: 100 })
-    if (!isCurrent()) return []
-    items.push(...result.items)
-    if (page >= result.total_pages) return items
-    if (result.page !== page || !result.items.length || items.length >= 10000)
-      throw new Error(t('authErrors.fallback'))
-  }
-}
 async function loadKeys(userId: string) {
   keysFailed.value = false
   const current = keyRequest.begin()
-  const request = ++keyListRequest
   keysLoading.value = true
   try {
     const result = await getUserApiKeysApi(
@@ -638,14 +703,9 @@ async function loadKeys(userId: string) {
       },
       { signal: current.signal },
     )
-    if (
-      !current.isCurrent() ||
-      request !== keyListRequest ||
-      !props.visible ||
-      props.user?.id !== userId
-    )
-      return
+    if (!current.isCurrent()) return
     keyTotal.value = result.total
+    apiKeyCount.value = result.total
     keyPageSize.value = result.page_size
     const lastPage = Math.max(1, result.total_pages)
     if (result.page > lastPage) {
@@ -660,13 +720,12 @@ async function loadKeys(userId: string) {
     if (current.isCurrent()) keysFailed.value = true
     throw error
   } finally {
-    if (current.isCurrent() && request === keyListRequest) keysLoading.value = false
+    if (current.isCurrent()) keysLoading.value = false
   }
 }
 function resetKeyOperation() {
   keyRequest.invalidate()
   ++keyGeneration
-  ++keyListRequest
   keyConfirmVisible.value = false
   keyBusy.value = false
   keysLoading.value = false
@@ -723,6 +782,7 @@ async function submitKeyOperation() {
 onBeforeUnmount(() => {
   ++drawerGeneration
   resetKeyOperation()
+  resetGrantOperation()
 })
 
 let consumedInitialDetail: typeof props.initialDetail
@@ -735,9 +795,7 @@ watch(
     })
     ++drawerGeneration
     resetKeyOperation()
-    grantDialog.loading = false
-    selectedModelIds.value = []
-    grantDialog.visible = false
+    resetGrantOperation()
     if (!visible) return
     modelsLoaded.value = false
     detailFailed.value = false
@@ -748,15 +806,18 @@ watch(
     activeTab.value = 'basic'
     keyPage.value = 1
     keyTotal.value = 0
+    apiKeyCount.value = null
     keySearch.value = ''
     modelSources.value = []
-    directGrants.value = []
+    authorizedModelTotal.value = null
+    modelPage.value = 1
+    modelPageSize.value = 20
+    authorizationVersion.value = null
     grantsReady.value = false
     modelNames.value = {}
     keys.value = []
     termsLoading.value = true
     termsInfo.value = null
-    grantDialog.visible = false
     detail.value = props.user
     if (!props.user) return
 
@@ -772,6 +833,8 @@ watch(
         .then((result) => {
           if (stale) return
           detail.value = result.user
+          authorizedModelTotal.value = result.authorized_model_count ?? null
+          apiKeyCount.value = result.api_key_count
           termsInfo.value = result.terms ?? null
         })
         .catch((error) => {
@@ -809,19 +872,25 @@ async function loadModels(userId: string, generation = drawerGeneration) {
     generation === drawerGeneration && props.visible && props.user?.id === userId
   modelsLoading.value = true
   modelsFailed.value = false
+  modelsLoaded.value = false
+  grantsReady.value = false
   try {
-    const [sources, accessibleTotal] = await Promise.all([
-      collectPages((query) => getUserModelGrantSourcesApi(userId, query), current),
-      detail.value?.status === 'ACTIVE'
-        ? getUserAccessibleModelsApi(userId, { page: 1, page_size: 1 }).then(
-            (result) => result.total,
-          )
-        : Promise.resolve(0),
-      loadModelGrants(userId, generation),
-    ])
+    const sources = await getUserModelGrantSourcesApi(userId, {
+      page: modelPage.value,
+      page_size: modelPageSize.value,
+    })
+    if (current() && modelPage.value > Math.max(1, sources.total_pages)) {
+      modelPage.value = Math.max(1, sources.total_pages)
+      await loadModels(userId, generation)
+      return
+    }
     if (current()) {
-      modelSources.value = sources
-      accessibleModelTotal.value = accessibleTotal
+      modelPage.value = sources.page
+      modelPageSize.value = sources.page_size
+      modelSources.value = sources.items
+      authorizedModelTotal.value = sources.total
+      authorizationVersion.value = sources.authorization_version
+      grantsReady.value = true
       modelsLoaded.value = true
     }
   } catch {
@@ -829,16 +898,6 @@ async function loadModels(userId: string, generation = drawerGeneration) {
     // Request errors are reported by the interceptor; returning to the tab retries.
   } finally {
     if (current()) modelsLoading.value = false
-  }
-}
-
-async function loadModelGrants(userId: string, generation = drawerGeneration) {
-  const current = () =>
-    generation === drawerGeneration && props.visible && props.user?.id === userId
-  const result = await collectPages((query) => getUserModelGrantsApi(userId, query), current)
-  if (current()) {
-    directGrants.value = result
-    grantsReady.value = true
   }
 }
 
@@ -875,7 +934,7 @@ function onGrantClose() {
   grantDialog.visible = false
 }
 
-/** 后端按全量覆盖用户直接授权集合：新增取并集，取消取差集，继承权限不受影响 */
+/** 增量修改当前用户直授；不提交其他直授及继承关系。 */
 async function submitGrant() {
   const userId = detail.value?.id
   if (
@@ -888,37 +947,72 @@ async function submitGrant() {
   )
     return
   const generation = drawerGeneration
+  const signal = (grantController ??= new AbortController()).signal
   const current = () =>
-    generation === drawerGeneration && props.visible && props.user?.id === userId
-  const currentIds = [...directModelIds.value]
+    !signal.aborted && generation === drawerGeneration && props.visible && props.user?.id === userId
   const modelIds =
     grantDialog.mode === 'add'
-      ? [...new Set([...currentIds, ...grantDialog.modelIds])]
-      : currentIds.filter((id) => id !== grantDialog.target?.id)
-
+      ? [...new Set(grantDialog.modelIds)].sort()
+      : grantDialog.target
+        ? [grantDialog.target.id]
+        : []
+  if (!modelIds.length || modelIds.length > 100 || authorizationVersion.value === null) return
+  const mode = grantDialog.mode
+  const samePending =
+    pendingGrant?.userId === userId &&
+    pendingGrant.mode === mode &&
+    JSON.stringify(pendingGrant.body.physical_model_ids) === JSON.stringify(modelIds)
+  const command =
+    samePending && pendingGrant
+      ? pendingGrant
+      : {
+          userId,
+          mode,
+          body: {
+            physical_model_ids: modelIds,
+            expected_authorization_version: authorizationVersion.value,
+          },
+          key: createIdempotencyKey(),
+        }
+  pendingGrant = command
   grantDialog.loading = true
+  let saved = false
   try {
-    const result = await setUserModelGrantsApi(userId, { physical_model_ids: modelIds })
+    const api = mode === 'add' ? addUserModelGrantsApi : removeUserModelGrantsApi
+    const result = await api(userId, command.body, { idempotencyKey: command.key, signal })
     if (!current()) return
+    pendingGrant = null
+    saved = true
     MessagePlugin.success(
-      result.changed_model_versions.length > 0
-        ? t('users.detail.models.grantSuccess')
-        : t('users.detail.models.grantUnchanged'),
+      t(
+        result.changed_count > 0
+          ? 'users.detail.models.grantSuccess'
+          : 'users.detail.models.grantUnchanged',
+      ),
     )
     grantDialog.visible = false
     selectedModelIds.value = []
-    // 直接授权变化会同时改变「授权来源」列，两个数据源一起刷新
-    await Promise.allSettled([
-      loadModelGrants(userId),
-      getUserAccessibleModelsApi(userId, { page: 1, page_size: 1 }).then((data) => {
-        if (current()) accessibleModelTotal.value = data.total
-      }),
-      collectPages((query) => getUserModelGrantSourcesApi(userId, query), current).then((items) => {
-        if (current()) modelSources.value = items
-      }),
-    ])
-  } catch {
-    /* 错误提示由请求拦截器统一处理 */
+    await loadModels(userId, generation)
+  } catch (error) {
+    if (!current()) return
+    if (saved) return
+    const failure = error as NotifiedError
+    if (failure.code === 'VERSION_CONFLICT') {
+      pendingGrant = null
+      await loadModels(userId, generation)
+      if (!current()) return
+      MessagePlugin.warning(t('users.detail.models.versionConflict'))
+      grantDialog.visible = true
+    } else {
+      const uncertain =
+        !failure.status ||
+        ['OPERATION_RESULT_UNKNOWN', 'IDEMPOTENCY_IN_PROGRESS'].includes(failure.code ?? '')
+      if (!uncertain) pendingGrant = null
+      if (uncertain) {
+        grantDialog.visible = true
+        MessagePlugin.warning(t('users.detail.models.retrySameCommand'))
+      }
+    }
   } finally {
     if (current()) grantDialog.loading = false
   }
@@ -927,9 +1021,8 @@ async function submitGrant() {
 function onClose() {
   if (grantDialog.loading || keyBusy.value) return
   ++drawerGeneration
-  selectedModelIds.value = []
   resetKeyOperation()
-  grantDialog.visible = false
+  resetGrantOperation()
   emit('update:visible', false)
 }
 </script>

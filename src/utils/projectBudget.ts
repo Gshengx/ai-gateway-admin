@@ -1,23 +1,28 @@
 import type { BudgetPeriodType, ProjectBudgetConfig } from '@/api/modules/projectBudgets'
 
 export function budgetDates(start: string, end: string, type: BudgetPeriodType) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end)
-    return []
+  const validDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const date = new Date(`${value}T00:00:00Z`)
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  }
+  if (!validDate(start) || !validDate(end) || start > end) return []
   const result: { start: string; end: string }[] = []
   let cursor = start
-  for (let i = 0; cursor <= end && i < 120; i++) {
+  while (cursor <= end) {
     const date = new Date(`${cursor}T00:00:00Z`)
-    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== cursor) return []
     const month = date.getUTCMonth()
-    const next = new Date(
-      Date.UTC(
-        date.getUTCFullYear(),
-        type === 'YEARLY' ? 12 : type === 'QUARTERLY' ? Math.floor(month / 3) * 3 + 3 : month + 1,
-        1,
-      ),
+    const next = new Date(date)
+    next.setUTCMonth(
+      type === 'YEARLY' ? 12 : type === 'QUARTERLY' ? Math.floor(month / 3) * 3 + 3 : month + 1,
+      1,
     )
-    const boundary = new Date(next.getTime() - 86400000).toISOString().slice(0, 10)
+    const boundary =
+      next.getUTCFullYear() > 9999
+        ? end
+        : new Date(next.getTime() - 86400000).toISOString().slice(0, 10)
     result.push({ start: cursor, end: boundary < end ? boundary : end })
+    if (boundary >= end) break
     cursor = next.toISOString().slice(0, 10)
   }
   return result

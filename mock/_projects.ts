@@ -171,6 +171,19 @@ export function userProjects(id: string) {
     .filter((project) => projectIds(project).includes(id))
     .map((project) => ({ id: project.id, name: project.name, display_name: project.name }))
 }
+export function wouldRemoveAllProjectAdmins(userIds: readonly string[]): boolean {
+  const removing = new Set(userIds)
+  return projects().some(
+    (project) => project.admin_ids.length > 0 && project.admin_ids.every((id) => removing.has(id)),
+  )
+}
+export function removeProjectMember(userId: string) {
+  for (const project of projects()) {
+    project.admin_ids = project.admin_ids.filter((id) => id !== userId)
+    project.member_ids = project.member_ids.filter((id) => id !== userId)
+    delete project.joined[userId]
+  }
+}
 export function departmentPath(id: string | null, english = false): string {
   if (!id) return '—'
   const departments =

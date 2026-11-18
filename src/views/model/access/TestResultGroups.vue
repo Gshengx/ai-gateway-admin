@@ -36,7 +36,9 @@
               {{ t('ma.troubleshooting') }}：{{ t('ma.testTroubleshooting') }}
             </div>
           </div>
-          <span v-else-if="row.status === 'PASSED'">{{ t('ma.checkPassed') }}</span>
+          <span v-else-if="row.status === 'PASSED'">{{
+            t(row.key === 'CONNECTIVITY' ? 'ma.connectivityPassed' : 'ma.checkPassed')
+          }}</span>
           <span v-else>——</span>
         </template>
       </t-table>
@@ -60,13 +62,16 @@ const checkGroups = computed(() => {
     { id: string; name: string; passed: number; rows: typeof checkRows.value }
   >()
   for (const row of checkRows.value) {
-    const id = row.upstream_path ? `path:${row.upstream_path}` : `api:${row.invocation_api ?? ''}`
+    const id =
+      row.invocation_api_id ?? `api:${row.invocation_api ?? ''}:path:${row.upstream_path ?? ''}`
     let group = groups.get(id)
     if (!group) {
       group = {
         id,
         name:
-          row.upstream_path ||
+          (row.upstream_path && row.invocation_api
+            ? `${invocationLabel(row.invocation_api)} ${row.upstream_path}`
+            : row.upstream_path) ||
           (row.invocation_api ? invocationLabel(row.invocation_api) : row.display_name || '—'),
         passed: 0,
         rows: [],

@@ -151,16 +151,8 @@ watch(
     const current = ++version
     source.value = null
     if (!id) return
-    const map: Record<string, string> = {
-      'd-root': 'hq',
-      'd-tech': 'tech',
-      'd-algo': 'algorithm',
-      'd-platform': 'platform',
-      'd-ops': 'operations',
-      'd-hr': 'hr',
-    }
     try {
-      const result = await getBudget('departments', map[id] ?? id.replace(/^d-/, ''))
+      const result = await getBudget('departments', id)
       if (current !== version) return
       source.value = result
       form.currency = result.currency

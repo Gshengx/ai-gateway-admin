@@ -38,7 +38,7 @@
                 class="dept-tree"
                 :data="treeData"
                 lazy
-                :load="loadDepartmentChildren"
+                :icon="departmentBranches.icon"
                 :keys="{ value: 'id', label: 'label' }"
                 :label="true"
                 activable
@@ -153,7 +153,7 @@
               <t-button
                 v-permission.write="'identity.users'"
                 size="small"
-                :disabled="!selectedKeys.length"
+                :disabled="!selectedKeys.length || selectedAdmin"
                 @click="onBatchStatus('ACTIVE')"
               >
                 {{ t('users.enable') }}
@@ -161,7 +161,7 @@
               <t-button
                 v-permission.write="'identity.users'"
                 size="small"
-                :disabled="!selectedKeys.length"
+                :disabled="!selectedKeys.length || selectedAdmin"
                 @click="onBatchStatus('DISABLED')"
               >
                 {{ t('users.disable') }}
@@ -171,7 +171,7 @@
                 size="small"
                 theme="danger"
                 variant="outline"
-                :disabled="!selectedKeys.length"
+                :disabled="!selectedKeys.length || selectedAdmin"
                 @click="onBatchDelete"
               >
                 {{ t('users.delete') }}
@@ -255,6 +255,7 @@
                   v-permission.write="'identity.users'"
                   theme="primary"
                   hover="color"
+                  :disabled="!canEditUser(row)"
                   @click="onEdit(row)"
                 >
                   {{ t('users.edit') }}
@@ -263,6 +264,7 @@
                   v-permission.write="'identity.users'"
                   theme="primary"
                   hover="color"
+                  :disabled="!canEditUser(row)"
                   @click="onResetPassword(row)"
                 >
                   {{ t('users.resetPassword') }}
@@ -271,6 +273,7 @@
                   v-permission.write="'identity.users'"
                   theme="primary"
                   hover="color"
+                  :disabled="row.is_initial_admin"
                   @click="onToggleStatus(row)"
                 >
                   {{ row.status === 'ACTIVE' ? t('users.disable') : t('users.enable') }}
@@ -401,6 +404,7 @@
 </template>
 
 <script setup lang="ts">
+import { useTreeBranches } from '@/utils/useTreeBranches'
 import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
 import { copyText } from '@/utils/clipboard'
 import { usePageSelection } from '@/utils/usePageSelection'
@@ -416,11 +420,13 @@ import {
   type PaginationProps,
   type PrimaryTableCol,
   type TreeNodeModel,
+  type TreeProps,
   type TreeInstanceFunctions,
   type TreeOptionData,
 } from 'tdesign-vue-next'
 
 import FilterBar from '@/components/FilterBar.vue'
+import { userLabel } from '@/utils/userLabel'
 import { canWriteResource, useUserStore } from '@/stores/modules/user'
 import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
@@ -569,11 +575,9 @@ function buildTree(items: DepartmentItem[]): TreeDataNode[] {
 const lazyTree = ref<TreeDataNode[]>([])
 const searchTree = ref<TreeDataNode[]>([])
 const departmentTreeRef = ref<TreeInstanceFunctions<TreeDataNode> | null>(null)
-const departmentChildrenInFlight = new Map<string, Promise<TreeDataNode[]>>()
 const departmentBranchVersions = new Map<string, number>()
 let departmentSession = 0
-let searchVersion = 0
-let searchTimer: ReturnType<typeof setTimeout> | undefined
+const departmentSearchRequest = useLatestRequest()
 const isDepartmentSearching = computed(() => Boolean(departmentKeyword.value.trim()))
 const treeData = computed(() => (isDepartmentSearching.value ? searchTree.value : lazyTree.value))
 
@@ -597,82 +601,51 @@ function departmentNodes(items: DepartmentItem[], parentPath = ''): TreeDataNode
   }))
 }
 
-function loadDepartmentChildren(node: Pick<TreeNodeModel, 'value'>): Promise<TreeDataNode[]> {
-  if (isDepartmentSearching.value) return Promise.resolve([])
-  const session = departmentSession
+const departmentBranches = useTreeBranches(
+  lazyTree,
+  async (id, signal) => {
+    const parent = findTreeNode(lazyTree.value, id)
+    const result = await getDepartmentListApi({ parent_id: id }, signal)
+    if (signal.aborted) return []
+    mergeDepartments(result.items)
+    return departmentNodes(result.items, parent?.path)
+  },
+  (node) => node.id,
+)
+async function loadDepartmentChildren(node: Pick<TreeNodeModel, 'value'>): Promise<TreeDataNode[]> {
+  await departmentBranches.load(String(node.value))
   const parent = findTreeNode(lazyTree.value, String(node.value))
-  if (!parent) return Promise.resolve([])
-  const version = departmentBranchVersions.get(parent.id) ?? 0
-  const inFlight = departmentChildrenInFlight.get(parent.id)
-  if (inFlight) return inFlight
-  if (Array.isArray(parent.children)) return Promise.resolve(parent.children)
-  const request = (async () => {
-    try {
-      const result = await getDepartmentListApi({ parent_id: parent.id })
-      if (
-        session !== departmentSession ||
-        version !== (departmentBranchVersions.get(parent.id) ?? 0)
-      )
-        return []
-      const children = departmentNodes(result.items, parent.path)
-      const attach = (nodes: TreeDataNode[]): boolean => {
-        for (const item of nodes) {
-          if (item.id === parent.id) {
-            item.children = children
-            return true
-          }
-          if (Array.isArray(item.children) && attach(item.children)) return true
-        }
-        return false
-      }
-      attach(lazyTree.value)
-      mergeDepartments(result.items)
-      return children
-    } catch {
-      // Request errors are reported by the interceptor.
-      return []
-    }
-  })().finally(() => {
-    if (departmentChildrenInFlight.get(parent.id) === request) {
-      departmentChildrenInFlight.delete(parent.id)
-    }
-  })
-  departmentChildrenInFlight.set(parent.id, request)
-  return request
+  return Array.isArray(parent?.children) ? parent.children : []
 }
 
 const departmentSearching = ref(false)
 const departmentLoading = ref(true),
   departmentFailed = ref(false)
 function searchDepartments() {
-  clearTimeout(searchTimer)
-  const version = ++searchVersion
-  const session = departmentSession
+  departmentSearchRequest.invalidate()
   const keyword = departmentKeyword.value.trim()
   searchTree.value = []
   departmentFailed.value = false
   departmentSearching.value = Boolean(keyword)
   if (!keyword) return
-  searchTimer = setTimeout(async () => {
+  departmentSearchRequest.schedule(async () => {
+    const current = departmentSearchRequest.begin()
     try {
-      const result = await getDepartmentListApi({ search: keyword })
-      if (version !== searchVersion || session !== departmentSession) return
+      const result = await getDepartmentListApi({ search: keyword }, current.signal)
+      if (!current.isCurrent()) return
       mergeDepartments(result.items)
       searchTree.value = buildTree(result.items)
     } catch {
-      if (version === searchVersion && session === departmentSession) departmentFailed.value = true
+      if (current.isCurrent()) departmentFailed.value = true
     } finally {
-      if (version === searchVersion && session === departmentSession)
-        departmentSearching.value = false
+      if (current.isCurrent()) departmentSearching.value = false
     }
   }, 300)
 }
 
 watch(departmentKeyword, searchDepartments, { flush: 'sync' })
 onBeforeUnmount(() => {
-  clearTimeout(searchTimer)
   departmentSession += 1
-  searchVersion += 1
 })
 
 const expandedKeys = ref<Array<string | number>>([])
@@ -694,8 +667,11 @@ const treeExpandedKeys = computed<Array<string | number>>(() => {
   return keys
 })
 
-function onTreeExpand(value: Array<string | number>) {
-  if (!isDepartmentSearching.value) expandedKeys.value = [...value]
+const onTreeExpand: NonNullable<TreeProps['onExpand']> = (value, context) => {
+  if (!isDepartmentSearching.value) {
+    expandedKeys.value = [...value]
+    departmentBranches.onExpand(value, context)
+  }
 }
 
 function resetExpandedKeys() {
@@ -744,7 +720,13 @@ function departmentLevel(item: Pick<DepartmentItem, 'depth'>): number {
 const activedKeys = computed(() => (selectedDepartmentId.value ? [selectedDepartmentId.value] : []))
 
 const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
-  { colKey: 'row-select', type: 'multiple', width: 48, fixed: 'left' },
+  {
+    colKey: 'row-select',
+    type: 'multiple',
+    width: 48,
+    fixed: 'left',
+    checkProps: ({ row }) => ({ disabled: row.is_initial_admin }),
+  },
   { colKey: 'username', title: t('users.columns.username'), width: 140 },
   { colKey: 'display_name', title: t('users.columns.displayName'), width: 100 },
   { colKey: 'email', title: t('users.columns.email'), width: 200, ellipsis: true },
@@ -775,7 +757,11 @@ const pagination = reactive<PaginationProps>({
 })
 
 const tableData = ref<UserItem[]>([])
-const { selectedKeys, selectRows, clearSelection } = usePageSelection(tableData)
+const { selectedKeys, selectedItems, selectRows, clearSelection } = usePageSelection(tableData)
+const selectedAdmin = computed(() => selectedItems.value.some((user) => user.is_initial_admin))
+function canEditUser(user: UserItem) {
+  return !user.is_initial_admin || user.id === userStore.context.session?.user_id
+}
 watch(
   [query, selectedDepartmentId],
   () => {
@@ -790,9 +776,8 @@ async function fetchDepartments(options: { loadUsers?: boolean } = {}) {
   departmentLoading.value = true
   departmentFailed.value = false
   const session = ++departmentSession
-  departmentChildrenInFlight.clear()
-  clearTimeout(searchTimer)
-  searchVersion += 1
+  departmentBranches.invalidate()
+  departmentSearchRequest.invalidate()
   searchTree.value = []
   lazyTree.value = []
   departments.value = []
@@ -950,7 +935,13 @@ function onPageChange(pageInfo: PageInfo) {
 }
 
 function onSelectChange(keys: Array<string | number>) {
-  selectRows(keys)
+  const protectedIds = new Set(
+    [...tableData.value, ...selectedItems.value]
+      .filter((user) => user.is_initial_admin)
+      .map((user) => user.id),
+  )
+  selectedKeys.value = selectedKeys.value.filter((id) => !protectedIds.has(id))
+  selectRows(keys.filter((id) => !protectedIds.has(String(id))))
 }
 
 /* ------------------------------- 部门维护 ------------------------------- */
@@ -1018,7 +1009,7 @@ async function refreshDepartmentBranch(parentId: string | null) {
   const key = parentId ?? ''
   const version = (departmentBranchVersions.get(key) ?? 0) + 1
   departmentBranchVersions.set(key, version)
-  departmentChildrenInFlight.delete(key)
+  departmentBranches.invalidate(key)
   const session = departmentSession
   const parent = parentId ? findTreeNode(lazyTree.value, parentId) : undefined
   if (parentId && !parent) return
@@ -1290,6 +1281,7 @@ async function onCreate() {
 }
 
 async function onEdit(row: UserItem) {
+  if (!canEditUser(row)) return
   if (!(await fetchFormRoles())) return
   drawerMode.value = 'edit'
   editingUser.value = row
@@ -1368,6 +1360,16 @@ async function refreshDepartmentNodes(ids: string[]) {
 
 async function onDrawerSubmit(payload: CreateUserPayload | UpdateUserPayload) {
   if (submitting.value) return
+  if (editingUser.value && drawerMode.value === 'edit') {
+    if (!canEditUser(editingUser.value)) return
+    if (editingUser.value.is_initial_admin) {
+      payload = {
+        display_name: payload.display_name,
+        email: payload.email,
+        phone: payload.phone,
+      }
+    }
+  }
   submitting.value = true
   const creating = drawerMode.value === 'create'
   const departmentIds = [payload.department_id ?? '', editingUser.value?.department?.id ?? '']
@@ -1444,7 +1446,8 @@ function chunk<T>(list: T[], size: number): T[][] {
 }
 
 function onBatchStatus(status: UserStatus) {
-  let ids = [...selectedKeys.value]
+  if (selectedAdmin.value) return
+  let ids = selectedItems.value.filter((user) => !user.is_initial_admin).map((user) => user.id)
   if (!ids.length) return
   openConfirmDialog({
     title: status === 'ACTIVE' ? t('users.confirm.enableTitle') : t('users.confirm.disableTitle'),
@@ -1488,12 +1491,13 @@ function onBatchStatus(status: UserStatus) {
 
 /** 单用户启用 / 禁用 */
 function onToggleStatus(row: UserItem) {
+  if (row.is_initial_admin) return
   const enabling = row.status === 'DISABLED'
   openConfirmDialog({
     title: enabling ? t('users.confirm.enableTitle') : t('users.confirm.disableTitle'),
     content: enabling
-      ? t('users.confirm.enableSingle', { name: row.display_name })
-      : t('users.confirm.disableSingle', { name: row.display_name }),
+      ? t('users.confirm.enableSingle', { name: userLabel(row.display_name, row.username) })
+      : t('users.confirm.disableSingle', { name: userLabel(row.display_name, row.username) }),
     action: async () => {
       if (enabling) {
         await enableUserApi(row.id)
@@ -1508,6 +1512,7 @@ function onToggleStatus(row: UserItem) {
 }
 
 function onBatchDelete() {
+  if (selectedAdmin.value) return
   const ids = [...selectedKeys.value]
   if (!ids.length) return
   if (ids.length > BATCH_LIMIT) {
@@ -1565,9 +1570,10 @@ const passwordDialog = reactive({
 })
 
 function onResetPassword(row: UserItem) {
+  if (!canEditUser(row)) return
   openConfirmDialog({
     title: t('users.confirm.resetTitle'),
-    content: t('users.confirm.resetContent', { name: row.display_name }),
+    content: t('users.confirm.resetContent', { name: userLabel(row.display_name, row.username) }),
     action: async () => {
       const username = row.username
       const res = await resetUserPasswordApi(row.id)

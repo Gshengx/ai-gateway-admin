@@ -149,7 +149,13 @@
         >
           <template #expandedRow="{ row }">
             <div class="member-models">
-              <h3>{{ t('projects.memberModelDetails', { name: row.display_name }) }}</h3>
+              <h3>
+                {{
+                  t('projects.memberModelDetails', {
+                    name: userLabel(row.display_name, row.username),
+                  })
+                }}
+              </h3>
               <t-table row-key="id" :data="row.model_usage" :columns="usageColumns">
                 <template #amount="{ row: usage }">{{ money(usage.amount) }}</template>
                 <template
@@ -178,9 +184,11 @@
               ><t-link v-if="row.role !== 'ADMIN'" theme="primary" @click="promote(row.id)">{{
                 t('projects.promote')
               }}</t-link
-              ><t-link theme="danger" @click="prepare(row.id, row.display_name)">{{
-                t('projects.remove')
-              }}</t-link></t-space
+              ><t-link
+                theme="danger"
+                @click="prepare(row.id, userLabel(row.display_name, row.username))"
+                >{{ t('projects.remove') }}</t-link
+              ></t-space
             ></template
           >
         </t-table>
@@ -240,6 +248,7 @@
   <t-loading v-else :loading="loading" />
 </template>
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'

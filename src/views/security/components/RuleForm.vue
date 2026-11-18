@@ -21,7 +21,7 @@
           required
           :status="fieldErrors.includes('name') ? 'error' : undefined"
           :tips="fieldErrors.includes('name') ? errorMessage : ''"
-          ><t-input v-model="form.name" :maxlength="200" @change="form.seed_key = undefined"
+          ><t-input v-model="displayName" :maxlength="200"
         /></t-form-item>
         <div class="security-grid">
           <t-form-item :label="label('ruleDomain')"
@@ -283,7 +283,13 @@ const {
 const form = ref<DetectionRule>(
   props.value ? JSON.parse(JSON.stringify(props.value)) : emptyRule(props.security),
 )
-if (props.value) form.value.name = name(props.value)
+const displayName = computed({
+  get: () => name(form.value),
+  set: (value: string) => {
+    form.value.name = value
+    form.value.seed_key = undefined
+  },
+})
 const method = computed(() => form.value.config.detection_method[0]!)
 const saving = ref(false),
   testing = ref(false),
@@ -312,7 +318,6 @@ function engineChanged() {
 }
 function payload() {
   const value = JSON.parse(JSON.stringify(form.value)) as DetectionRule
-  if (props.value?.seed_key && value.seed_key) value.name = props.value.name
   return value
 }
 async function save() {

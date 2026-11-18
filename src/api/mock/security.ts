@@ -25,6 +25,7 @@ import {
   fieldSeeds,
   securityRuleSeeds,
   seedMessages,
+  policyFieldSeed,
 } from './securitySeeds'
 
 export const securityMockCapabilities = [
@@ -804,12 +805,12 @@ async function handle(
         list.filter(
           (p) =>
             (!q.name ||
-              [p.name, seedMessages[p.seed_key ?? '']?.[1] ?? '']
+              [p.name, seedMessages[policyFieldSeed(p, 'name') ?? '']?.[1] ?? '']
                 .join(' ')
                 .toLowerCase()
                 .includes(q.name.toLowerCase())) &&
             (!q.description ||
-              [p.description, seedMessages[`${p.seed_key}Description`]?.[1] ?? '']
+              [p.description, seedMessages[policyFieldSeed(p, 'description') ?? '']?.[1] ?? '']
                 .join(' ')
                 .toLowerCase()
                 .includes(q.description.toLowerCase())) &&
@@ -874,6 +875,7 @@ async function handle(
       Object.assign(existing, value, {
         id: existing.id,
         priority: existing.priority,
+        seed_key: existing.seed_key,
         built_in: existing.built_in,
         created_at: existing.created_at,
         created_by: existing.created_by,

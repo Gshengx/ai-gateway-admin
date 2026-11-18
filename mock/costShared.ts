@@ -1,12 +1,13 @@
 import {
   updateBill,
+  completeBill,
   recordBillItems,
   recordBillCsv,
   refreshCostConsumption,
   costDepartmentId,
   costSubtree,
 } from './_costBills'
-import type { Dimension } from '../src/api/modules/cost'
+import type { Bill, Dimension } from '../src/api/modules/cost'
 import { sharedCostState, syncCostUsers } from './_costState'
 import {
   handleCost,
@@ -48,8 +49,11 @@ export default [
       if (hybrid) hybridRequests.set(req, hybrid)
       const handle = async () => {
         if (!checkToken(req)) return unauthorized()
-        const method = String(req.body?.method ?? 'get'),
-          path = String(req.body?.path ?? '')
+        const method = String(req.body?.method ?? 'get')
+        const path = String(req.body?.path ?? '').replace(
+          /^(\/budgets\/departments\/)([^/]+)/,
+          (_match, prefix: string, id: string) => prefix + costDepartmentId(id),
+        )
         const supported =
           (path === '/bills/generate' && method === 'post') ||
           (/^\/bills(?:\/[^/]+(?:\/(?:items|export))?)?$/.test(path) &&
@@ -129,10 +133,6 @@ export default [
         )
           return fail('OUT_OF_SCOPE', '')
         try {
-          sharedCostState.bills.forEach((b) => {
-            if (b.status === 'GENERATING' && Date.now() - Date.parse(b.generated_at) > 600)
-              b.status = 'COMPLETED'
-          })
           refreshCostConsumption(sharedCostState)
           sharedCostState.bills.forEach(updateBill)
           const analytics = path.match(/^\/budgets\/(departments|users)\/([^/]+)\/analytics$/)
@@ -193,8 +193,9 @@ export default [
             method,
             query,
             (req.body?.body as Record<string, unknown>) ?? {},
-            String(req.headers?.['accept-language']).startsWith('en'),
           )
+          if (path === '/bills/generate' && method === 'post')
+            setTimeout(() => completeBill(result as Bill), 0)
           if (
             method === 'put' &&
             path === '/budgets/departments/hq' &&
@@ -210,7 +211,7 @@ export default [
                   id: `currency-${project.id}-${ledger.version}`,
                   action: 'CONFIGURED',
                   at: new Date().toISOString(),
-                  actor: currentActor.display_name,
+                  actor: `${currentActor.display_name} (${currentActor.username})`,
                   amount: config.total,
                   work_order_id: null,
                   configuration: structuredClone(config),
@@ -265,7 +266,7 @@ export default [
                 id: `cascade-${project.id}-${ledger.version}`,
                 action: 'REMOVED',
                 at: new Date().toISOString(),
-                actor: currentActor.display_name,
+                actor: `${currentActor.display_name} (${currentActor.username})`,
                 amount: 0,
                 work_order_id: null,
                 configuration: ledger.config ? structuredClone(ledger.config) : null,

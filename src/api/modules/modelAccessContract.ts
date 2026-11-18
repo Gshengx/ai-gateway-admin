@@ -1,4 +1,4 @@
-// Source: docs/04B-API接口与字段字典.md and 04-openapi-review.json (V1.4 ADJ). Read and write DTOs are separate.
+// Source: docs/04B-API接口与字段字典.md (V33) and current backend OpenAPI. Read and write DTOs are separate.
 
 export type Decimal = string
 
@@ -27,12 +27,16 @@ export interface CustomAPIInput {
   path: string
 }
 
+export interface InvocationAPIInput {
+  id?: string
+  protocol: string
+  path: string
+}
+
 export interface InvocationAPI {
-  protocol?: string
+  protocol: string
   id: string
-  api_key: string
-  kind: 'STANDARD' | 'CUSTOM'
-  path: string | null
+  path: string
   adapter_key: string
   adapter_revision: string
   streaming_applicable: boolean
@@ -229,8 +233,6 @@ export interface ModelBase {
   provider_id: string
   model_id_at_gateway: string
   model_id_at_provider: string
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis?: Array<CustomAPIInput>
   input_modalities?: Array<string>
   output_modalities?: Array<string>
   context_window?: number | null
@@ -238,6 +240,7 @@ export interface ModelBase {
   tags?: Array<string>
   description?: string | null
   catalog_model_version_id?: string | null
+  invocation_apis: Array<InvocationAPIInput>
 }
 
 export interface GrantDelta {
@@ -251,8 +254,6 @@ export interface ModelCreate {
   provider_id: string
   model_id_at_gateway: string
   model_id_at_provider: string
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis?: Array<CustomAPIInput>
   input_modalities?: Array<string>
   output_modalities?: Array<string>
   context_window?: number | null
@@ -264,6 +265,7 @@ export interface ModelCreate {
   pricing: PricingInput | null
   catalog_model_version_id?: string
   expected_provider_version: number
+  invocation_apis: Array<InvocationAPIInput>
 }
 
 export interface ModelVersions {
@@ -279,8 +281,6 @@ export interface Model {
   provider_id: string
   model_id_at_gateway: string
   model_id_at_provider: string
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis: Array<CustomAPIView>
   input_modalities: Array<string>
   output_modalities: Array<string>
   context_window: number | null
@@ -382,10 +382,9 @@ export interface ImportItem {
   discovery_id?: string
   model_id_at_provider: string
   model_id_at_gateway: string
-  supported_invocation_apis?: Array<string>
-  custom_invocation_apis?: Array<CustomAPIInput>
   catalog_model_version_id?: string
   pricing?: null
+  invocation_apis?: Array<InvocationAPIInput>
 }
 
 export interface ImportInput {
@@ -421,9 +420,8 @@ export interface HealthCheckInput {
 export interface AdmissionModelInput {
   physical_model_id: string
   expected_base_version: number
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis?: Array<CustomAPIInput>
   reuse_job_id?: string
+  invocation_apis: Array<InvocationAPIInput>
 }
 
 export interface ProviderAdmissionInput {
@@ -461,7 +459,7 @@ export interface CostRecord {
   provider_id: string
   purpose: 'ADMISSION' | 'HEALTH'
   api_key: string
-  check_type: 'MODEL_REQUEST' | 'PROTOCOL' | 'STREAMING'
+  check_type: 'MODEL_REQUEST' | 'PROTOCOL' | 'STREAMING' | 'CONNECTIVITY'
   model_provider_snapshot: ModelProviderSnapshot
   billing_identity_snapshot: BillingIdentitySnapshot
   department_snapshot: DepartmentSnapshot
@@ -495,7 +493,7 @@ export interface HttpExchange {
 export interface CheckItem {
   id: string
   api_key: string
-  check_type: 'MODEL_REQUEST' | 'PROTOCOL' | 'STREAMING'
+  check_type: 'MODEL_REQUEST' | 'PROTOCOL' | 'STREAMING' | 'CONNECTIVITY'
   status: 'WAITING' | 'RUNNING' | 'PASS' | 'FAIL' | 'ERROR' | 'NOT_APPLICABLE' | 'REUSED'
   dispatch_state: 'READY' | 'DISPATCHED' | 'FINISHED' | 'NOT_SENT'
   dispatch_count: number
@@ -701,6 +699,7 @@ export interface ModelPage {
 }
 
 export interface ModelTemplatePage {
+  custom_passthrough_supported: boolean | null
   protocol_options: Array<{ protocol: string; default_path: string | null }>
   items: Array<ModelTemplate>
   page: number | null
@@ -725,6 +724,7 @@ export interface CheckJobPage {
 }
 
 export interface AccessibleModelPage {
+  authorization_version: number
   items: Array<AccessibleModel>
   page: number
   page_size: number
@@ -1232,8 +1232,6 @@ export interface ImportedModelView {
   provider_name: string
   status: 'DRAFT' | 'TESTING' | 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED'
   versions: ModelVersions
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis: Array<CustomAPIView>
   invocation_apis: Array<InvocationAPI>
   catalog_model_version_id: string | null
 }
@@ -1262,8 +1260,6 @@ export interface BatchModelContext {
   provider_name: string
   status: 'DRAFT' | 'TESTING' | 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED'
   versions: ModelVersions
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis: Array<CustomAPIView>
   invocation_apis: Array<InvocationAPI>
   catalog_model_version_id: string | null
 }
@@ -1364,9 +1360,8 @@ export interface ModelIdentityInput {
   provider_id: string
   model_id_at_gateway: string
   model_id_at_provider: string
-  supported_invocation_apis: Array<string>
-  custom_invocation_apis: Array<CustomAPIInput>
   catalog_model_version_id?: string | null
+  invocation_apis: Array<InvocationAPIInput>
 }
 
 export interface ModelMetadataInput {
@@ -1406,4 +1401,28 @@ export interface DefaultPricingPreparation {
   default_reference: EnterpriseDefaultPricingTemplate | null
   internal_pricing_prefill: PricingInput | null
   model_id: string | null
+}
+
+export interface AdmissionPricingCheckInput {
+  expected_base_version: number
+  invocation_apis?: InvocationAPIInput[]
+}
+
+export interface AdmissionPricingCheckResult {
+  pricing_check_passed: boolean
+  reason: 'PRICE_CONFIGURED' | 'NO_BILLING_ITEMS' | 'PRICE_NOT_CONFIGURED' | 'PRICE_NOT_APPLICABLE'
+}
+
+export interface UserGrantDelta {
+  physical_model_ids: string[]
+  expected_authorization_version: number
+  reason?: string | null
+}
+
+export interface UserGrantDeltaResult {
+  authorization_version: number
+  requested_count: number
+  changed_count: number
+  unchanged_count: number
+  items: Array<{ physical_model_id: string; direct_granted: boolean; changed: boolean }>
 }

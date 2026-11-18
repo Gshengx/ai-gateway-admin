@@ -147,9 +147,7 @@
       <template #module="{ row }">{{
         row.prototype ? t(`logs.modules.${row.prototype.module}`) : '—'
       }}</template>
-      <template #object="{ row }">{{
-        row.prototype?.resource_name || row.target_display_name_snapshot || row.resource_id || '—'
-      }}</template>
+      <template #object="{ row }">{{ objectLabel(row) }}</template>
       <template #description="{ row }">{{
         row.prototype?.description || row.reason || row.action
       }}</template>
@@ -311,6 +309,7 @@
 </template>
 
 <script setup lang="ts">
+import { useUserLabels } from '@/utils/useUserLabels'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingState from '@/components/LoadingState.vue'
@@ -439,7 +438,11 @@ function timestamp(value: string) {
 function actor(row: ManagementLog) {
   const name = row.actor_display_name_snapshot
   const username = row.actor_username_snapshot
-  return name && username ? `${name} (${username})` : name || username || '—'
+  return username
+    ? name
+      ? `${name} (${username})`
+      : username
+    : userLabels.label(row.actor_user_id ?? '', name)
 }
 const operationName = (row: ManagementLog) =>
   row.prototype ? t(`logs.operations.${row.prototype.operation}`) : row.action
@@ -558,6 +561,24 @@ const detailVisible = ref(false),
   detailLoading = ref(false)
 const operationDetail = ref<ManagementLog | null>(null),
   runtimeDetail = ref<RuntimeLog | null>(null)
+const userLabels = useUserLabels()
+watch([rows, operationDetail], () => {
+  const logs = [...rows.value.filter((row): row is ManagementLog => 'actor_user_id' in row)]
+  if (operationDetail.value) logs.push(operationDetail.value)
+  void userLabels.resolve(
+    logs.flatMap((row) => [
+      row.actor_username_snapshot ? '' : (row.actor_user_id ?? ''),
+      row.resource_type === 'user' ? (row.resource_id ?? '') : '',
+    ]),
+  )
+})
+function objectLabel(row: ManagementLog) {
+  const name = row.prototype?.resource_name || row.target_display_name_snapshot
+  return row.resource_type === 'user' && row.resource_id
+    ? userLabels.label(row.resource_id, name)
+    : name || row.resource_id || '—'
+}
+
 let detailVersion = 0
 const onRowClick: NonNullable<TableProps['onRowClick']> = ({ row }) => {
   openDetail(row as ManagementLog | RuntimeLog)
@@ -611,7 +632,7 @@ const operationInfo = computed(() => {
         [t('logs.module'), r.prototype ? t(`logs.modules.${r.prototype.module}`) : '—'],
         [t('logs.resourceType'), r.resource_type],
         [t('logs.resourceId'), r.resource_id || '—'],
-        [t('logs.resourceName'), r.prototype?.resource_name || '—'],
+        [t('logs.resourceName'), objectLabel(r)],
         [t('logs.description'), r.prototype?.description || r.reason || r.action],
         [t('logs.outcome'), t(`logs.outcomes.${r.outcome}`)],
       ]
@@ -715,7 +736,7 @@ async function exportLogs() {
       r.prototype ? t(`logs.roles.${r.prototype.role}`) : '—',
       operationName(r),
       r.prototype ? t(`logs.modules.${r.prototype.module}`) : '—',
-      r.prototype?.resource_name || r.resource_id || '—',
+      objectLabel(r),
       r.prototype?.description || r.action,
       t(`logs.outcomes.${r.outcome}`),
     ])

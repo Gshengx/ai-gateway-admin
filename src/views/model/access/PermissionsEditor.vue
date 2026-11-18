@@ -1,5 +1,5 @@
 <template>
-  <div class="ma-stack">
+  <div class="ma-stack" :inert="!canWrite">
     <section v-for="kind in kinds" :key="kind" class="permission-group ma-stack">
       <LoadingState
         height="var(--stable-permission-height)"
@@ -77,7 +77,7 @@
       :close-on-esc-keydown="!saving"
       :close-on-overlay-click="false"
       :cancel-btn="{ content: t('ma.cancel'), disabled: saving }"
-      :confirm-btn="{ content: t('ma.confirm'), loading: saving }"
+      :confirm-btn="{ content: t('ma.confirm'), loading: saving, disabled: !canWrite }"
       @close="!saving && (removing = [])"
       @confirm="remove"
       ><div class="ma-stack">
@@ -100,13 +100,15 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLatestRequest } from '@/utils/useLatestRequest'
+import { usePermissionScope } from '@/utils/usePermissionScope'
 import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
 import SubjectSelect from './SubjectSelect.vue'
 import { accessApi, type Permission, type Subject } from '@/api/modules/modelAccess'
 
 const props = defineProps<{ modelId: string }>()
-const emit = defineEmits<{ 'busy-change': [value: boolean] }>()
+const emit = defineEmits<{ 'busy-change': [value: boolean]; revoked: [] }>()
+const { canWrite, signal } = usePermissionScope('model.permissions', () => emit('revoked'))
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
 const pageSize = 5
@@ -141,7 +143,7 @@ watch(
 const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'row-select', type: 'multiple', width: 40 },
   { colKey: 'subject_name', title: t('ma.subject') },
-  { colKey: 'action', title: t('ma.actions'), width: 100 },
+  { colKey: 'action', title: t('ma.actions'), width: 100, fixed: 'right' },
 ])
 function remember(map: Record<string, string>) {
   Object.assign(names.value, map)
@@ -177,14 +179,14 @@ async function load(kind: Subject) {
   }
 }
 async function add(kind: Subject) {
-  if (loading[kind] || failed[kind] || saving.value) return
+  if (!canWrite.value || loading[kind] || failed[kind] || saving.value) return
   saving.value = true
   try {
     const grants = candidates[kind]
       .filter((id) => !authorized[kind].includes(id))
       .map((subject_id) => ({ subject_type: kind, subject_id }))
     if (!grants.length) return
-    await accessApi.grant(props.modelId, grants)
+    await accessApi.grant(props.modelId, grants, { signal })
     candidates[kind] = []
     selected[kind] = []
     MessagePlugin.success(t('ma.success'))
@@ -197,10 +199,11 @@ async function add(kind: Subject) {
   }
 }
 function requestRemove(ids: string[]) {
+  if (!canWrite.value) return
   removing.value = ids
 }
 async function remove() {
-  if (saving.value || !removing.value.length) return
+  if (!canWrite.value || saving.value || !removing.value.length) return
   if (!reason.value.trim()) {
     MessagePlugin.warning(t('ma.reasonRequired'))
     return
@@ -210,7 +213,7 @@ async function remove() {
   if (!changedKinds.size) return
   saving.value = true
   try {
-    await accessApi.revoke(props.modelId, removing.value, reason.value)
+    await accessApi.revoke(props.modelId, removing.value, reason.value, { signal })
     MessagePlugin.success(t('ma.success'))
     removing.value = []
     reason.value = ''
@@ -218,6 +221,7 @@ async function remove() {
     await Promise.all([...changedKinds].map(load))
   } catch {
     // Reconcile the current grants before a retry.
+    if (signal.aborted) return
     await Promise.allSettled([...changedKinds].map(load))
     removing.value = removing.value.filter((id) => savedGrants.has(id))
   } finally {

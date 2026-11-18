@@ -129,7 +129,7 @@
         <section v-if="kind === 'departments'">
           <h3>{{ t('cost.userRanking') }}</h3>
           <div v-for="item in analytics.users" :key="item.name" class="rank">
-            <span>{{ item.name }}</span
+            <span>{{ item.id ? costUserLabel(item.id) : item.name }}</span
             ><strong>{{ money(item.cost, budget.currency) }}</strong>
           </div>
         </section>
@@ -167,8 +167,7 @@
               {{ t(`cost.history${item.action}`) }} · {{ money(item.amount, budget.currency) }}
             </div>
             <span class="hint"
-              >{{ formatDateTime(item.at) }} ·
-              {{ users.find((u) => u.id === item.actor)?.name ?? item.actor }}</span
+              >{{ formatDateTime(item.at) }} · {{ costUserLabel(item.actor) }}</span
             >
             <p v-if="item.reason">{{ item.reason }}</p>
             <p v-if="item.configuration" class="hint">
@@ -204,6 +203,7 @@
   </t-drawer>
 </template>
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
 import { computed, ref, watch } from 'vue'
 import {
   getBudgetAnalytics,
@@ -231,11 +231,15 @@ const periodColumns = computed(() =>
 const props = defineProps<{ budget: Budget | null; kind: 'departments' | 'users' }>()
 const emit = defineEmits<{ close: []; edit: [budget: Budget] }>()
 const { t, users, deptName, money, statusText, statusTheme, userName, error } = useCost()
+function costUserLabel(id?: string | null) {
+  const user = users.find((item) => item.id === id)
+  return user ? userLabel(user.name, user.username) : id || '—'
+}
 const analytics = ref<BudgetAnalytics | null>(null)
 const levels: Level[] = ['WARNING', 'CRITICAL', 'EXCEEDED']
 const title = computed(() =>
   props.kind === 'users'
-    ? users.find((u) => u.id === props.budget?.user_id)?.name
+    ? costUserLabel(props.budget?.user_id)
     : deptName(props.budget?.department_id),
 )
 const periodText = computed(() =>
@@ -267,9 +271,7 @@ function notification(level: Level) {
   const budget = props.budget!
   const channels = budget.notification_channels[level]
   if (!channels.length) return t('cost.noNotify')
-  const names = budget.notification_recipients[level].map(
-    (id) => users.find((u) => u.id === id)?.name || userName(id),
-  )
+  const names = budget.notification_recipients[level].map((id) => costUserLabel(id))
   if (props.kind === 'users') names.unshift(t('cost.ownerDefault'))
   return `${names.join(', ') || t('cost.noNotify')} · ${channels.map((channel) => t(`cost.${channel}`)).join(', ')}`
 }

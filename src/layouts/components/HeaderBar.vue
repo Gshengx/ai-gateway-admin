@@ -23,7 +23,7 @@
       <t-dropdown trigger="click" :options="userOptions" @click="onUserAction">
         <t-button variant="text" class="header-bar__user">
           <t-icon name="user-circle" class="header-bar__user-icon" />
-          <span>{{ userStore.userInfo?.name ?? '-' }}</span>
+          <span>{{ userLabel(userStore.userInfo?.name, userStore.userInfo?.username) }}</span>
           <t-icon name="chevron-down" class="header-bar__user-arrow" />
         </t-button>
       </t-dropdown>
@@ -32,6 +32,7 @@
 </template>
 
 <script setup lang="ts">
+import { userLabel } from '@/utils/userLabel'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'

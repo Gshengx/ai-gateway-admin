@@ -15,7 +15,10 @@
           class="basic-layout__page-loading"
           :aria-busy="navigationStore.loading"
         >
-          <router-view v-if="pageAllowed" :key="permissionStore.generation" />
+          <router-view
+            v-if="pageAllowed"
+            :key="`${permissionStore.generation}:${pageGeneration}`"
+          />
         </t-loading>
       </t-content>
     </t-layout>
@@ -23,10 +26,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePermissionStore } from '@/stores/modules/permission'
 import { useNavigationStore } from '@/stores/modules/navigation'
+import { useUserStore } from '@/stores/modules/user'
 import { useI18n } from 'vue-i18n'
 
 import SideMenu from './components/SideMenu.vue'
@@ -36,7 +40,24 @@ const collapsed = ref(false)
 const route = useRoute()
 const permissionStore = usePermissionStore()
 const navigationStore = useNavigationStore()
+const userStore = useUserStore()
+const pageGeneration = ref(0)
 const { t } = useI18n()
+watch(
+  [() => userStore.permissionSnapshot, () => route.meta.permission],
+  ([next, resource], [previous, previousResource]) => {
+    if (!previous || !next || resource !== previousResource) return
+    const before = previous.capabilities.find((item) => item.resource_code === resource)
+    const after = next.capabilities.find((item) => item.resource_code === resource)
+    if (
+      previous.department_scope_root_id !== next.department_scope_root_id ||
+      (before?.can_read && !after?.can_read) ||
+      (before?.can_write && !after?.can_write) ||
+      before?.data_scope !== after?.data_scope
+    )
+      pageGeneration.value++
+  },
+)
 const pageAllowed = computed(() =>
   permissionStore.routes.some((item) => item.meta?.routeId === route.meta.routeId),
 )

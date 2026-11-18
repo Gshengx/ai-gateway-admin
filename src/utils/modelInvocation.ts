@@ -16,13 +16,29 @@ export function validInvocationPath(path: string) {
   return /^\/(?!\/)[^\s?#\\]*$/.test(path) && !path.includes('://')
 }
 
-/** Standard APIs and custom paths are alternatives; every supplied path must be valid. */
+/** Both flows submit one ordered configuration with unique standard protocols and custom paths. */
 export function invocationConfigurationError(
   model: Pick<Model, 'supported_invocation_apis' | 'custom_invocation_apis'>,
 ): 'required' | 'path' | null {
-  if (model.custom_invocation_apis.some((api) => !validInvocationPath(api.path))) return 'path'
-  if (!model.supported_invocation_apis.length && !model.custom_invocation_apis.length)
-    return 'required'
+  if (!model.custom_invocation_apis.length) return 'required'
+  const standards = model.custom_invocation_apis.filter(
+    (a) => a.invocation_api !== 'CUSTOM_PASSTHROUGH',
+  )
+  const passthrough = model.custom_invocation_apis.filter(
+    (a) => a.invocation_api === 'CUSTOM_PASSTHROUGH',
+  )
+  if (
+    model.custom_invocation_apis.length > 32 ||
+    new Set(standards.map((a) => a.invocation_api)).size !== standards.length ||
+    new Set(passthrough.map((a) => a.path)).size !== passthrough.length
+  )
+    return 'path'
+  if (
+    model.custom_invocation_apis.some(
+      (api) => !api.invocation_api || !validInvocationPath(api.path),
+    )
+  )
+    return 'path'
   return null
 }
 
