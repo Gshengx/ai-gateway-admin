@@ -708,7 +708,7 @@ const labels: Record<string, [string, string]> = {
   ACTIVE: ['已上架', 'Active'],
   SUSPENDED: ['已暂停', 'Suspended'],
   RETIRED: ['已下架', 'Retired'],
-  statusFlowGuide: ['状态流程说明', 'Status workflow'],
+  statusFlowGuide: ['模型状态说明', 'Model status guide'],
   statusFlowAdmission: ['准入检测', 'Admission test'],
   fullStatusHint: ['展开完整说明', 'Expand full explanation'],
   collapseStatusHint: ['收起说明', 'Collapse explanation'],

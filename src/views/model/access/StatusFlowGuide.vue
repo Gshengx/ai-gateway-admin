@@ -94,7 +94,7 @@ const states = [
 }
 .status-flow-guide__state dt {
   color: var(--td-text-color-primary);
-  font-weight: var(--td-font-weight-600);
+  font: var(--td-font-mark-small);
 }
 .status-flow-guide__state dd {
   margin: var(--td-comp-margin-xs) 0 0;
