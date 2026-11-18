@@ -102,10 +102,21 @@ async function onLanguageChange(value: unknown) {
   const locale = normalizeLocale(String(value ?? ''))
   if (locale === getCurrentLocale()) return
   const apiCode = remoteLocales.value.find((option) => option.value === locale)?.code ?? locale
-  currentLocale.value = locale
-  setLocale(locale)
-  setApiLocale(apiCode)
-  const refresh = userStore.fetchUserInfo().catch(() => undefined)
+  try {
+    const applied = await userStore.fetchPermissionSnapshot({
+      code: apiCode,
+      commit: () => {
+        currentLocale.value = locale
+        setLocale(locale)
+        setApiLocale(apiCode)
+      },
+    })
+    if (!applied) return
+  } catch {
+    // 保留当前语言；权限错误由全局状态展示。
+    return
+  }
+  if (getCurrentLocale() !== locale) return
   setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
   const userId = userStore.context.session?.user_id
   // Serialize writes so a slower earlier selection cannot overwrite the final preference.
@@ -117,12 +128,6 @@ async function onLanguageChange(value: unknown) {
     .then(() => undefined)
     .catch(() => {})
   await preferenceUpdate
-  try {
-    await refresh
-    setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
-  } catch {
-    // 权限错误由全局状态展示，保留草稿且禁止写入。
-  }
 }
 
 async function onUserAction({ value }: { value: string | number }) {

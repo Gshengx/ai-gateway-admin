@@ -16,21 +16,21 @@
     </LoadingState>
     <FilterBar class="ma-filter"
       ><template #content
-        ><div class="ma-row">
+        ><div class="list-toolbar">
           <t-input
             v-model="search"
-            class="ma-search"
+            class="list-search"
             :placeholder="t('ma.search')"
             clearable
           /><t-select
             v-model="status"
-            class="ma-filter-select"
+            class="list-filter"
             :options="[
               { value: '', label: t('ma.allStatus') },
               ...statuses.map((v) => ({ value: v, label: t('ma.' + v) })),
             ]"
           />
-          <t-button theme="default" variant="outline" @click="reset">{{ t('ma.reset') }}</t-button>
+          <t-button theme="default" @click="reset">{{ t('ma.reset') }}</t-button>
         </div></template
       ></FilterBar
     >
@@ -38,7 +38,6 @@
       <div class="ma-row model-list-toolbar__actions">
         <t-button
           theme="primary"
-          variant="outline"
           v-permission.write="'model.models'"
           :disabled="tabsLoading || tabsFailed"
           @click="
@@ -51,7 +50,6 @@
         ><t-button
           v-permission.write="'model.permissions'"
           theme="default"
-          variant="outline"
           :disabled="!canBatchAuthorize"
           @click="
             authorization = {

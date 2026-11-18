@@ -11,6 +11,8 @@ export interface RequestConfig extends AxiosRequestConfig {
   idempotencyKey?: string
   /** 关闭 GET 请求自动注入的 locale 查询参数（文件下载等接口使用） */
   skipLocale?: boolean
+  /** 单次请求使用目标语言，不提前切换全局界面。 */
+  locale?: string
   /** 关闭非 GET 请求自动注入的 Idempotency-Key（后端未声明该头的接口使用） */
   skipIdempotency?: boolean
   /** 跳过全局错误提示与登录失效处理，由调用方自行处理 */
@@ -165,7 +167,7 @@ instance.interceptors.request.use(async (config) => {
     throw error
   }
   const method = (config.method ?? 'get').toUpperCase()
-  const locale = getCurrentLocale()
+  const locale = (config as RequestConfig).locale ?? getCurrentLocale()
 
   // 空筛选不参与请求；保留有意义的 0 和 false，不影响请求体中的清空操作。
   const hasQueryValue = (value: unknown) =>

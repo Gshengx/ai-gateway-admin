@@ -112,8 +112,9 @@ export function getSessionApi() {
   return request.get<SessionInfo>('/auth/me', { skipLocale: true })
 }
 
-export function getPermissionsApi() {
+export function getPermissionsApi(locale?: string) {
   return request.get<PermissionsResult>('/me/permissions', {
+    locale,
     adapter: 'fetch',
     fetchOptions: { cache: 'no-store', credentials: 'same-origin' },
     headers: { 'Cache-Control': 'no-store' },

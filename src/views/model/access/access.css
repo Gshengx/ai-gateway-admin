@@ -442,13 +442,6 @@
 .model-status-cell {
   min-width: 0;
 }
-/* 数字步进按钮保留组件自身的边框及交互状态，避免被页面描边按钮规则覆盖。 */
-.model-list-panel
-  :deep(
-    .t-button--variant-outline:where(:not(.t-input-number__decrease, .t-input-number__increase))
-  ) {
-  border-color: currentColor;
-}
 .model-health-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

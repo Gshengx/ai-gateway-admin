@@ -135,7 +135,7 @@ export const useUserStore = defineStore('user', {
     async fetchUserInfo() {
       const key = `${this.context.session?.user_id}:${this.context.session?.expires_at}:${getCurrentLocale()}`
       if (permissionRequest?.key === key) return permissionRequest.promise
-      const pending = this.fetchPermissionSnapshot()
+      const pending = this.fetchPermissionSnapshot().then(() => undefined)
       permissionRequest = { key, promise: pending }
       try {
         await pending
@@ -143,26 +143,26 @@ export const useUserStore = defineStore('user', {
         if (permissionRequest?.promise === pending) permissionRequest = undefined
       }
     },
-    async fetchPermissionSnapshot() {
+    async fetchPermissionSnapshot(language?: { code: string; commit: () => void }) {
       const session = this.context.session
       if (!session || session.scope !== 'FULL' || session.gate !== 'READY') {
         throw new Error('Session gate is not ready')
       }
       const epoch = ++this.permissionEpoch
       const locale = getCurrentLocale()
-      this.permissionsReady = false
+      if (!language) this.permissionsReady = false
       this.permissionsLoading = true
       this.permissionError = ''
       try {
         let permissions: PermissionsResult
         try {
-          permissions = await getPermissionsApi()
+          permissions = await getPermissionsApi(language?.code)
         } catch (error) {
           const busy = error as { code?: string; retryAfter?: number }
           if (busy.code !== 'AUTHENTICATION_BUSY' || (busy.retryAfter ?? 1) > 5) throw error
           await new Promise((resolve) => setTimeout(resolve, (busy.retryAfter ?? 1) * 1000))
           if (epoch !== this.permissionEpoch) return
-          permissions = await getPermissionsApi()
+          permissions = await getPermissionsApi(language?.code)
         }
         if (
           epoch !== this.permissionEpoch ||
@@ -172,6 +172,7 @@ export const useUserStore = defineStore('user', {
         )
           return
         validatePermissions(permissions)
+        language?.commit()
         setCostMockActor(session.user_id)
         setSecurityMockActor(session.user_id)
         this.userInfo = {
@@ -185,6 +186,7 @@ export const useUserStore = defineStore('user', {
         this.permissionsReady = true
         usePermissionStore().generateRoutes(permissions, this.permissions)
         this.loaded = true
+        return true
       } catch (error) {
         if (epoch !== this.permissionEpoch) return
         const err = error as { code?: string; status?: number; request_id?: string }
