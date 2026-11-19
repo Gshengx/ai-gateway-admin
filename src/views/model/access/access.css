@@ -4,6 +4,45 @@
   gap: var(--td-comp-margin-l);
   min-width: 0;
 }
+.model-lifecycle-timeline {
+  margin-inline-start: var(--td-comp-margin-m);
+  overflow-wrap: anywhere;
+}
+.model-lifecycle-timeline > .t-button {
+  align-self: center;
+}
+.model-lifecycle-event {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-comp-margin-s);
+  min-width: 0;
+}
+.model-lifecycle-event__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
+}
+.model-lifecycle-event__header time {
+  font-size: var(--td-font-size-body-medium);
+  white-space: nowrap;
+}
+.model-lifecycle-event__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--td-comp-margin-s);
+  margin: 0;
+  font-size: var(--td-font-size-body-medium);
+}
+.model-lifecycle-event__details dt,
+.model-lifecycle-event__details dd {
+  min-width: 0;
+  margin: 0;
+}
+.model-lifecycle-event__details dt {
+  white-space: nowrap;
+}
 .onboarding-manual {
   background: var(--td-bg-color-secondarycontainer);
 }

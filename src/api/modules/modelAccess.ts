@@ -121,6 +121,7 @@ export interface Model {
   security_level?: 'INTERNET' | 'TRUSTED_CLOUD' | 'PRIVATE'
   provider_name?: string
   lifecycle_events?: {
+    id?: string
     sourceAction?: LifecycleEvent['action']
     fromStatus?: string | null
     action: 'CREATE' | 'UPDATE' | 'STATUS'

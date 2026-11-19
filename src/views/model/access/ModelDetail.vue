@@ -174,27 +174,46 @@
         </div>
         <div class="ma-stack">
           <h3>{{ t('ma.timeline') }}</h3>
-          <t-timeline
-            ><t-timeline-item v-for="(event, index) in lifecycleEvents" :key="index"
-              ><p class="ma-muted">{{ event.actor }} · {{ formatDateTime(event.created_at) }}</p>
-              <strong
-                ><template v-if="event.action !== 'STATUS'"
-                  >{{ t('ma.' + event.action) }} ·
-                </template>
-                <template v-if="event.action === 'STATUS'"
-                  >{{ event.fromStatus ? t('ma.' + event.fromStatus) : '—' }} → </template
-                >{{ t('ma.' + event.status) }}</strong
-              >
-              <p v-if="event.reason?.trim()" class="ma-muted">
-                {{
-                  t('ma.lifecycleReasonText', {
-                    label: lifecycleReasonLabel(event.sourceAction),
-                    reason: event.reason,
-                  })
-                }}
-              </p></t-timeline-item
-            ></t-timeline
-          >
+          <div class="ma-stack model-lifecycle-timeline">
+            <t-timeline mode="same"
+              ><t-timeline-item v-for="(event, index) in lifecycleEvents" :key="event.id ?? index"
+                ><div class="model-lifecycle-event">
+                  <div class="model-lifecycle-event__header">
+                    <strong>
+                      {{ event.fromStatus ? `${t('ma.' + event.fromStatus)} → ` : ''
+                      }}{{ t('ma.' + event.status) }}
+                    </strong>
+                    <time class="ma-muted" :datetime="event.created_at">{{
+                      formatDateTime(event.created_at)
+                    }}</time>
+                  </div>
+                  <dl
+                    v-if="event.actor || event.reason?.trim()"
+                    class="model-lifecycle-event__details ma-muted"
+                  >
+                    <template v-if="event.actor">
+                      <dt>{{ t('ma.lifecycleActorLabel') }}</dt>
+                      <dd>{{ event.actor }}</dd>
+                    </template>
+                    <template v-if="event.reason?.trim()">
+                      <dt>{{ t('ma.lifecycleReasonLabel') }}</dt>
+                      <dd>{{ event.reason }}</dd>
+                    </template>
+                  </dl>
+                </div></t-timeline-item
+              ></t-timeline
+            >
+            <p v-if="lifecycleFailed" class="ma-muted" role="alert">{{ t('common.loadFailed') }}</p>
+            <t-button
+              v-if="lifecycleLoading || lifecycleFailed || lifecyclePage < lifecycleTotalPages"
+              variant="text"
+              theme="primary"
+              :loading="lifecycleLoading"
+              :disabled="lifecycleLoading"
+              @click="loadLifecycle()"
+              >{{ t(lifecycleFailed ? 'common.retry' : 'ma.timelineShowMore') }}</t-button
+            >
+          </div>
         </div>
       </div></LoadingState
     >
@@ -223,7 +242,6 @@ import AuthorizationDrawer from './AuthorizationDrawer.vue'
 import ModelForm from './ModelForm.vue'
 import { useI18n } from 'vue-i18n'
 import { accessApi, type Model, type Pricing, type TestRun } from '@/api/modules/modelAccess'
-import type { LifecycleEvent } from '@/api/modules/modelAccessContract'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
@@ -331,21 +349,37 @@ async function loadHistory(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestR
     if (current.isCurrent()) historyLoading.value[purpose] = false
   }
 }
-const lifecycleEvents = computed(() => model.value?.lifecycle_events ?? [])
-const lifecycleReasonKeys: Record<LifecycleEvent['action'], string> = {
-  CREATED: 'ma.lifecycleReasonCreated',
-  ADMISSION_STARTED: 'ma.lifecycleReasonAdmissionStarted',
-  ADMISSION_PASSED: 'ma.lifecycleReasonAdmissionPassed',
-  ADMISSION_FAILED: 'ma.lifecycleReasonAdmissionFailed',
-  APPROVED: 'ma.lifecycleReasonApproved',
-  REJECTED: 'ma.lifecycleReasonRejected',
-  SUSPENDED: 'ma.lifecycleReasonSuspended',
-  RESUMED: 'ma.lifecycleReasonResumed',
-  RETIRED: 'ma.lifecycleReasonRetired',
-  REACTIVATED: 'ma.lifecycleReasonReactivated',
-}
-function lifecycleReasonLabel(action?: LifecycleEvent['action']) {
-  return t(action ? lifecycleReasonKeys[action] : 'ma.reason')
+const lifecycleEvents = ref<NonNullable<Model['lifecycle_events']>>([])
+const lifecyclePage = ref(0)
+const lifecycleTotalPages = ref(0)
+const lifecycleLoading = ref(false)
+const lifecycleFailed = ref(false)
+const lifecycleRequest = useLatestRequest()
+async function loadLifecycle(reset = false) {
+  if (lifecycleLoading.value && !reset) return
+  const current = lifecycleRequest.begin()
+  const modelId = props.id
+  if (reset) {
+    lifecycleEvents.value = []
+    lifecyclePage.value = 0
+    lifecycleTotalPages.value = 0
+  }
+  lifecycleLoading.value = true
+  lifecycleFailed.value = false
+  try {
+    const result = await accessApi.lifecycleEvents(modelId, lifecyclePage.value + 1, 10, {
+      signal: current.signal,
+    })
+    if (!current.isCurrent() || modelId !== props.id) return
+    const existing = new Set(lifecycleEvents.value.map((event) => event.id))
+    lifecycleEvents.value.push(...result.items.filter((event) => !existing.has(event.id)))
+    lifecyclePage.value = result.page
+    lifecycleTotalPages.value = result.total_pages
+  } catch {
+    if (current.isCurrent() && modelId === props.id) lifecycleFailed.value = true
+  } finally {
+    if (current.isCurrent()) lifecycleLoading.value = false
+  }
 }
 const info = computed(() => {
   if (!model.value) return []
@@ -428,7 +462,8 @@ async function loadPriceHistory(refreshCurrent = false) {
 async function refresh() {
   const current = modelRequest.begin()
   const [updated] = await Promise.all([
-    accessApi.model(props.id, true, { signal: current.signal }),
+    accessApi.model(props.id, false, { signal: current.signal }),
+    loadLifecycle(true),
     loadPrices(),
     loadAdmissionSummary(),
     ...(['ADMISSION', 'HEALTH'] as const).map((purpose) => loadHistory(purpose)),
@@ -438,7 +473,8 @@ async function refresh() {
 async function refreshTest(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestRun) {
   const current = modelRequest.begin()
   const [updated] = await Promise.all([
-    accessApi.model(props.id, purpose !== 'HEALTH', { signal: current.signal }),
+    accessApi.model(props.id, false, { signal: current.signal }),
+    purpose === 'ADMISSION' ? loadLifecycle(true) : undefined,
     loadHistory(purpose, completedRun),
     purpose === 'ADMISSION' ? loadPrices() : undefined,
     purpose === 'ADMISSION' ? loadAdmissionSummary() : undefined,

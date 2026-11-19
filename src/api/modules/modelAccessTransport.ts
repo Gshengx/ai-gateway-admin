@@ -37,6 +37,18 @@ const balanceDrafts = new Map<string, string>()
 const priceFacts = new Map<string, D.CurrentPricing>()
 const templateFacts = new Map<string, D.Template>()
 const preparations = new Map<string, D.PricingPreparation>()
+function lifecycleEventView(e: D.LifecycleEvent): NonNullable<Model['lifecycle_events']>[number] {
+  return {
+    id: e.id,
+    sourceAction: e.action,
+    action: e.action === 'CREATED' ? 'CREATE' : 'STATUS',
+    fromStatus: e.from_status,
+    status: e.to_status,
+    created_at: e.occurred_at,
+    actor: e.actor?.display_name?.trim() || e.actor?.username?.trim() || '',
+    reason: e.reason ?? '',
+  }
+}
 const localizedKey = (key: string) => `${getApiLocale()}:${key}`
 const preparedKey = (provider: string, upstream: string) => localizedKey(`${provider}:${upstream}`)
 const currentTemplates = () =>
@@ -725,16 +737,15 @@ export const transport = {
         : undefined,
     ])
     const view = modelView(m)
-    view.lifecycle_events = events?.items.map((e) => ({
-      sourceAction: e.action,
-      action: e.action === 'CREATED' ? 'CREATE' : 'STATUS',
-      fromStatus: e.from_status,
-      status: e.to_status,
-      created_at: e.occurred_at,
-      actor: userDisplayName(e.actor.display_name, e.actor.username),
-      reason: e.reason ?? '',
-    }))
+    view.lifecycle_events = events?.items.map(lifecycleEventView)
     return view
+  },
+  lifecycleEvents: async (id: string, page: number, pageSize: number, config?: RequestConfig) => {
+    const result = await api.M11(id, {
+      ...config,
+      params: { page, page_size: pageSize },
+    })
+    return { ...paged(result), items: result.items.map(lifecycleEventView) }
   },
   saveModel: async (
     m: Model,
