@@ -82,7 +82,11 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
     if (seconds > 0) retryUntil.set(config?.url ?? '', Date.now() + seconds * 1000)
   }
   if (config?.skipErrorHandler || (code && config?.handledErrorCodes?.includes(code))) throw error
-  if (status === 401 || UNAUTHORIZED_CODES.includes(code ?? '')) {
+  // A rejected sign-in is a form error, not an expired authenticated session.
+  if (
+    config?.url !== '/auth/login' &&
+    (status === 401 || UNAUTHORIZED_CODES.includes(code ?? ''))
+  ) {
     await handleUnauthorized()
     error.notified = true
     throw error
@@ -132,7 +136,9 @@ async function handleUnauthorized(): Promise<void> {
   const { pathname, search, hash } = window.location
   // hash 路由：当前业务路径在 hash 内，取其作为 redirect 便于登录后回跳
   const current = hash.replace(/^#/, '') || '/'
-  const target = `${pathname}${search}#/login?redirect=${encodeURIComponent(current)}`
+  const target = /^\/login(?:[?#]|$)/.test(current)
+    ? `${pathname}${search}#${current}`
+    : `${pathname}${search}#/login?redirect=${encodeURIComponent(current)}`
   window.location.href = target
   window.location.reload()
 }
@@ -162,8 +168,10 @@ instance.interceptors.request.use(async (config) => {
     const error: NotifiedError = new Error(businessMessage('RATE_LIMITED'))
     error.status = 429
     error.code = 'RATE_LIMITED'
-    MessagePlugin.error(error.message)
-    error.notified = true
+    if (!(config as RequestConfig).skipErrorHandler) {
+      MessagePlugin.error(error.message)
+      error.notified = true
+    }
     throw error
   }
   const method = (config.method ?? 'get').toUpperCase()

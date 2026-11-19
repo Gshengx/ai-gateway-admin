@@ -32,7 +32,12 @@
             </template>
           </t-input>
         </t-form-item>
-        <t-form-item name="password">
+        <t-form-item
+          name="password"
+          :status="loginErrorText ? 'error' : undefined"
+          :tips="loginErrorText"
+          aria-live="polite"
+        >
           <t-input
             v-model="formData.password"
             name="password"
@@ -75,10 +80,11 @@ import LocaleSelect from '@/components/LocaleSelect.vue'
 import { useTermsStore } from '@/stores/modules/terms'
 import { useUserStore } from '@/stores/modules/user'
 import { useLocaleOptionsStore } from '@/stores/modules/localeOptions'
+import type { NotifiedError } from '@/api/request'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const userStore = useUserStore()
 const termsStore = useTermsStore()
 async function completeLogin() {
@@ -115,9 +121,18 @@ watch(
 )
 
 const loading = ref(false)
+const loginError = ref<NotifiedError | null>(null)
+const loginErrorText = computed(() => {
+  if (!loginError.value) return ''
+  const key = `authErrors.${loginError.value.code}`
+  return te(key) ? t(key) : loginError.value.message || t('authErrors.fallback')
+})
 const formData = reactive({
   username: '',
   password: '',
+})
+watch([() => formData.username, () => formData.password], () => {
+  loginError.value = null
 })
 
 const formRules = computed<Record<string, FormRule[]>>(() => ({
@@ -137,6 +152,7 @@ const formRules = computed<Record<string, FormRule[]>>(() => ({
 
 /** t-form @submit 回调自带校验结果（回车/按钮提交均走此处），无需手动二次 validate */
 async function onSubmit(ctx: { validateResult: boolean | Record<string, unknown> }) {
+  if (!loading.value) loginError.value = null
   if (ctx.validateResult !== true || loading.value) return
 
   loading.value = true
@@ -157,9 +173,9 @@ async function onSubmit(ctx: { validateResult: boolean | Record<string, unknown>
     )
       await completeLogin()
   } catch (error) {
-    // 网络/业务错误已由 Axios 拦截器统一提示（带 notified 标记）；此处提示登录门禁类错误
-    const err = error as Error & { notified?: boolean }
-    if (!err.notified) MessagePlugin.warning(t('authErrors.fallback'))
+    // Keep sign-in errors visible beside the credentials until the user edits or retries.
+    const err = error as NotifiedError
+    if (!err.notified) loginError.value = err
   } finally {
     loading.value = false
   }

@@ -80,7 +80,7 @@ export interface PermissionsResult {
 }
 
 export function loginApi(data: LoginParams) {
-  return request.post<LoginResult>('/auth/login', data)
+  return request.post<LoginResult>('/auth/login', data, { skipErrorHandler: true })
 }
 
 export async function getAuthContextApi() {
