@@ -136,7 +136,7 @@ export default {
         removeHint:
           'Remove the direct grant of model "{name}" for this user? Permissions inherited from departments or user groups are unaffected.',
         selectLabel: 'Models',
-        selectPlaceholder: 'Select Models',
+        selectPlaceholder: 'Select published models',
         searchPlaceholder: 'Search Models',
         grantSuccess: 'Model grants updated',
         versionConflict: 'Grants changed. Review the refreshed list and confirm again.',

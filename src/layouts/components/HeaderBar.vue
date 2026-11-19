@@ -18,6 +18,8 @@
     <div class="header-bar__right">
       <t-select
         :value="currentLocale"
+        :loading="changingLanguage"
+        :disabled="changingLanguage || !remoteLocales.length"
         :options="languageOptions"
         class="header-bar__language"
         :placeholder="t('header.language')"
@@ -29,33 +31,38 @@
           <t-icon name="user-circle" class="header-bar__user-icon" />
           <span
             class="header-bar__username"
-            :title="userLabel(userStore.userInfo?.name, userStore.userInfo?.username)"
-            >{{ userLabel(userStore.userInfo?.name, userStore.userInfo?.username) }}</span
+            :title="userDisplayName(userStore.userInfo?.name, userStore.userInfo?.username)"
+            >{{ userDisplayName(userStore.userInfo?.name, userStore.userInfo?.username) }}</span
           >
           <t-icon name="chevron-down" class="header-bar__user-arrow" />
         </t-button>
       </t-dropdown>
     </div>
+    <ProfileDrawer v-if="profileOpen" @close="profileOpen = false" />
+    <ChangePasswordDialog v-if="passwordOpen" manual @close="passwordOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
-import { computed, onMounted, ref } from 'vue'
+import ProfileDrawer from '@/views/personal/profile/ProfileDrawer.vue'
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
+import { userDisplayName } from '@/utils/userLabel'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { DropdownProps, SelectProps } from 'tdesign-vue-next'
 
-import { updateMyPreferencesApi } from '@/api/modules/identity'
+import { getMyProfileApi, updateMyPreferencesApi } from '@/api/modules/identity'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { getTimeZone } from '@/utils/datetime'
 import {
   getCurrentLocale,
+  getApiLocale,
   normalizeLocale,
   setApiLocale,
   setDocumentTitle,
   setLocale,
-  SUPPORTED_LOCALES,
-  type AppLocale,
 } from '@/locales'
 import { menuTrail, usePermissionStore } from '@/stores/modules/permission'
 import { useUserStore } from '@/stores/modules/user'
@@ -65,25 +72,33 @@ const props = defineProps<{ collapsed: boolean }>()
 const emit = defineEmits<{ toggle: [] }>()
 void props // collapsed 在模板中使用
 
+const profileOpen = ref(false)
+const passwordOpen = ref(false)
 const route = useRoute()
+watch(
+  () => route.path,
+  () => {
+    profileOpen.value = false
+    passwordOpen.value = false
+  },
+)
 const router = useRouter()
 const { t } = useI18n()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 
-const currentLocale = ref<AppLocale>(getCurrentLocale())
-/** 语言选项：value 为前端语言包代码，code 为后端注册的原始语言代码 */
+const currentLocale = computed(() => getApiLocale())
+const changingLanguage = ref(false)
+/** 语言选项值使用后端注册代码。 */
 const localeOptionsStore = useLocaleOptionsStore()
 const remoteLocales = computed(() => localeOptionsStore.options)
 
 /** 面包屑覆盖全部获准入口，包括 sidebar_hidden 的页面。 */
 const breadcrumbs = computed(() => menuTrail(permissionStore.navigationMenus, route.meta.routeId))
 
-/** 语言下拉：优先使用后端启用的语言，失败时回退本地内置语言 */
+/** 语言下拉只使用后端启用且有 UI 语言包的选项。 */
 const languageOptions = computed<SelectProps['options']>(() =>
-  remoteLocales.value.length
-    ? remoteLocales.value.map(({ label, value }) => ({ label, value }))
-    : SUPPORTED_LOCALES.map((item) => ({ label: item.label, value: item.value })),
+  remoteLocales.value.map(({ label, value }) => ({ label, value })),
 )
 
 const userOptions = computed<DropdownProps['options']>(() => [
@@ -98,50 +113,65 @@ async function loadLocales() {
     if (!localeOptionsStore.attempted) await localeOptionsStore.load()
     const options = remoteLocales.value
     // 记录后端原始语言代码，保证请求 locale 入参与后端注册值一致（如 en 而非 en-US）
-    const matched = options.find((option) => option.value === getCurrentLocale())
-    if (matched) setApiLocale(matched.code)
+    const matched = options.find((option) => option.uiLocale === getCurrentLocale())
+    if (matched) setApiLocale(matched.value)
   } catch {
-    // 后端不可用时使用本地语言列表
+    // 保留当前语言；目录错误由请求层提示，禁止提交未知选项。
   }
 }
 
-let preferenceUpdate = Promise.resolve()
+let preferenceAttempt: { code: string; key: string } | undefined
 async function onLanguageChange(value: unknown) {
-  const locale = normalizeLocale(String(value ?? ''))
-  if (locale === getCurrentLocale()) return
-  const apiCode = remoteLocales.value.find((option) => option.value === locale)?.code ?? locale
+  const apiCode = String(value ?? '')
+  const option = remoteLocales.value.find((item) => item.value === apiCode)
+  if (!option || apiCode === currentLocale.value || changingLanguage.value) return
+  const session = userStore.context.session
+  if (!session) return
+  if (preferenceAttempt?.code !== apiCode)
+    preferenceAttempt = { code: apiCode, key: createIdempotencyKey() }
+  changingLanguage.value = true
   try {
+    // Save first: profile and model authorization summaries read the persisted preference.
+    const saved = await updateMyPreferencesApi(
+      { preferred_locale: apiCode, time_zone: getTimeZone() },
+      { idempotencyKey: preferenceAttempt.key, locale: apiCode },
+    )
+    if (userStore.context.session?.user_id !== session.user_id) return
+    session.preferred_locale = saved.preferred_locale ?? ''
     const applied = await userStore.fetchPermissionSnapshot({
       code: apiCode,
       commit: () => {
-        currentLocale.value = locale
-        setLocale(locale)
+        setLocale(normalizeLocale(apiCode))
         setApiLocale(apiCode)
       },
     })
     if (!applied) return
-  } catch {
-    // 保留当前语言；权限错误由全局状态展示。
-    return
+    preferenceAttempt = undefined
+    setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
+    const profile = await getMyProfileApi()
+    if (userStore.context.session?.user_id !== profile.id) return
+    session.preferred_locale = profile.preferred_locale ?? ''
+    session.time_zone = profile.time_zone
+    session.display_name = profile.display_name
+  } catch (error) {
+    if (!(error as NotifiedError).notified) MessagePlugin.error(t('header.languageChangeFailed'))
+  } finally {
+    changingLanguage.value = false
   }
-  if (getCurrentLocale() !== locale) return
-  setDocumentTitle(breadcrumbs.value[breadcrumbs.value.length - 1]?.title)
-  const userId = userStore.context.session?.user_id
-  // Serialize writes so a slower earlier selection cannot overwrite the final preference.
-  preferenceUpdate = preferenceUpdate
-    .then(() => {
-      if (userId && userStore.context.session?.user_id === userId)
-        return updateMyPreferencesApi({ preferred_locale: apiCode, time_zone: getTimeZone() })
-    })
-    .then(() => undefined)
-    .catch(() => {})
-  await preferenceUpdate
 }
 
 async function onUserAction({ value }: { value: string | number }) {
   const entry = permissionStore.navigationMenus.find(
     (item) => item.sidebarHidden && item.routeId === value,
   )
+  if (entry?.routeId === 'profile') {
+    profileOpen.value = true
+    return
+  }
+  if (entry?.routeId === 'change_password') {
+    passwordOpen.value = true
+    return
+  }
   if (entry) {
     await router.push(entry.path)
     return
@@ -173,7 +203,7 @@ onMounted(loadLocales)
   display: flex;
   flex: 1;
   align-items: center;
-  gap: var(--td-comp-margin-m);
+  gap: var(--td-comp-margin-xs);
 }
 
 .header-bar__breadcrumbs {

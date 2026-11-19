@@ -78,12 +78,13 @@
     :close-btn="!saving"
     @close="close"
   >
+    <DrawerSaving :loading="saving" />
     <LoadingState :loading="formLoading">
       <t-form
         class="permission-form"
         :data="form"
         label-align="top"
-        :disabled="readonly || saving || formLoading"
+        :disabled="readonly || formLoading"
       >
         <t-form-item :label="t('roles.name')" required>
           <t-input v-model="form.name" :maxlength="30" :placeholder="t('roles.namePlaceholder')" />
@@ -114,9 +115,7 @@
                   <t-checkbox
                     :checked="allChecked(group.entries)"
                     :indeterminate="someChecked(group.entries) && !allChecked(group.entries)"
-                    :disabled="
-                      readonly || saving || formLoading || !editableEntries(group.entries).length
-                    "
+                    :disabled="readonly || formLoading || !editableEntries(group.entries).length"
                     @change="(value: boolean) => selectGroup(group.entries, Boolean(value))"
                     >{{ t('roles.all') }}</t-checkbox
                   >
@@ -131,17 +130,13 @@
                   <t-checkbox
                     class="permission-cell"
                     :checked="grants[entry.code]?.can_read || false"
-                    :disabled="
-                      readonly || saving || formLoading || !entry.assignable || !entry.read
-                    "
+                    :disabled="readonly || formLoading || !entry.assignable || !entry.read"
                     @change="(value: boolean) => setGrant(entry.code, 'can_read', Boolean(value))"
                   />
                   <t-checkbox
                     class="permission-cell"
                     :checked="grants[entry.code]?.can_write || false"
-                    :disabled="
-                      readonly || saving || formLoading || !entry.assignable || !entry.write
-                    "
+                    :disabled="readonly || formLoading || !entry.assignable || !entry.write"
                     @change="(value: boolean) => setGrant(entry.code, 'can_write', Boolean(value))"
                   />
                 </div>
@@ -188,6 +183,7 @@
 </template>
 
 <script setup lang="ts">
+import DrawerSaving from '@/components/DrawerSaving.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { useLatestRequest } from '@/utils/useLatestRequest'

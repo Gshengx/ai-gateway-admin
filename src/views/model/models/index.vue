@@ -49,7 +49,8 @@
           ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
         ><t-button
           v-permission.write="'model.permissions'"
-          theme="default"
+          class="list-action-soft"
+          theme="primary"
           :disabled="!canBatchAuthorize"
           @click="
             authorization = {
@@ -203,7 +204,7 @@ import TestDialog from '../access/TestDialog.vue'
 import AuthorizationDrawer from '../access/AuthorizationDrawer.vue'
 import BatchAuthorizationDialog from '../access/BatchAuthorizationDialog.vue'
 import { useActionColumnWidth } from '../access/useActionColumnWidth'
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const user = useUserStore()
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth()
 const detailRef = ref<InstanceType<typeof ModelDetail>>()
@@ -504,6 +505,10 @@ watch([search, status], () => {
     pagination.current = 1
     void load()
   }, 250)
+})
+watch(locale, () => {
+  pagination.current = 1
+  void loadAll()
 })
 onMounted(loadAll)
 onBeforeUnmount(() => {

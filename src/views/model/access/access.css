@@ -226,6 +226,17 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.model-invocation-list {
+  display: grid;
+  gap: var(--td-comp-margin-m);
+}
+.model-invocation-group.ma-definitions {
+  margin: 0;
+  padding: var(--td-comp-paddingTB-s) var(--td-comp-paddingLR-s);
+  gap: var(--td-comp-margin-s);
+  background: var(--td-bg-color-secondarycontainer);
+  border-radius: var(--td-radius-default);
+}
 .provider-detail :deep(.t-divider) {
   margin: 0;
 }
@@ -624,11 +635,13 @@
 .invocation-editor__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--td-comp-size-m);
-  align-items: end;
+  align-items: start;
   gap: var(--td-comp-margin-l);
 }
 .invocation-editor__row > .t-button {
   width: var(--td-comp-size-m);
+  /* Match the TDesign top-label height without following validation tips. */
+  margin-top: var(--td-comp-margin-xxxl);
   padding: 0;
 }
 .invocation-editor__row :deep(.t-input__wrap) {

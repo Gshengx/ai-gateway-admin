@@ -36,16 +36,21 @@ const user = useUserStore(),
 const available = computed(() =>
   props.actions.filter((a) => !a.permission || canWriteResource(user.permissions, a.permission)),
 )
+const groupedOverflow = computed(() => available.value.filter((item) => item.overflow))
 const inline = computed(() =>
   props.grouped
-    ? available.value.filter((item) => !item.overflow)
+    ? groupedOverflow.value.length > 1
+      ? available.value.filter((item) => !item.overflow)
+      : available.value
     : !props.expanded && available.value.length > 2
       ? available.value.slice(0, 1)
       : available.value,
 )
 const overflow = computed(() =>
   props.grouped
-    ? available.value.filter((item) => item.overflow)
+    ? groupedOverflow.value.length > 1
+      ? groupedOverflow.value
+      : []
     : !props.expanded && available.value.length > 2
       ? available.value.slice(1)
       : [],

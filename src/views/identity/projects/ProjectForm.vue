@@ -4,8 +4,11 @@
     :header="t(project ? 'projects.edit' : 'projects.create')"
     size="var(--project-form-width)"
     :close-on-overlay-click="false"
-    @close="emit('close')"
+    :close-btn="!saving"
+    :close-on-esc-keydown="!saving"
+    @close="!saving && emit('close')"
   >
+    <DrawerSaving :loading="saving" />
     <t-form class="project-form" label-align="top" :data="form">
       <section>
         <h3>{{ t('projects.basic') }}</h3>
@@ -84,7 +87,9 @@
     </t-form>
     <template #footer>
       <t-space>
-        <t-button theme="default" @click="emit('close')">{{ t('projects.cancel') }}</t-button>
+        <t-button theme="default" :disabled="saving" @click="emit('close')">{{
+          t('projects.cancel')
+        }}</t-button>
         <t-button theme="primary" :loading="saving" @click="save">{{
           t(project ? 'projects.save' : 'projects.createSubmit')
         }}</t-button>
@@ -93,6 +98,7 @@
   </t-drawer>
 </template>
 <script setup lang="ts">
+import DrawerSaving from '@/components/DrawerSaving.vue'
 import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'

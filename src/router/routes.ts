@@ -97,7 +97,7 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
   terms_acceptances: {
     path: '/system/terms-acceptances',
     name: 'TermsAcceptances',
-    component: placeholder,
+    component: () => import('@/views/system/terms-acceptances/index.vue'),
     meta: { permission: 'audit.terms_acceptances', icon: 'file-search' },
   },
   managed_keys: {
@@ -143,13 +143,13 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
     path: '/account',
     alias: '/personal/overview',
     name: 'PersonalOverview',
-    component: placeholder,
+    component: () => import('@/views/personal/profile/index.vue'),
     meta: { permission: 'personal.profile', icon: 'user' },
   },
   change_password: {
     path: '/account/password',
     name: 'AccountPassword',
-    component: placeholder,
+    component: () => import('@/views/personal/profile/index.vue'),
     meta: { icon: 'lock-on' },
   },
   terms: {

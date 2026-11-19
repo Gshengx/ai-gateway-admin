@@ -294,7 +294,7 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
+import { userDisplayName } from '@/utils/userLabel'
 import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { accessApi, blankProvider, type Provider, type Template } from '@/api/modules/modelAccess'
@@ -496,16 +496,18 @@ onMounted(async () => {
   const session = user.context.session
   if (session) {
     cacheUsers([
-      { id: session.user_id, name: userLabel(session.display_name, session.username), email: null },
+      {
+        id: session.user_id,
+        name: userDisplayName(session.display_name, session.username),
+        email: null,
+      },
     ])
     if (!props.initial) provider.value.balance_alert_recipients = [session.user_id]
   }
   cacheUsers(
     (provider.value.recipient_users ?? []).map((u) => ({
       id: u.user_id,
-      name: u.username
-        ? `${u.display_name ?? t('ma.unavailable')} (${u.username})`
-        : (u.display_name ?? t('ma.unavailable')),
+      name: userDisplayName(u.display_name, u.username),
       email: u.email,
     })),
   )

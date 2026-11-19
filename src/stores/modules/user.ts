@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useTermsStore } from './terms'
+import { useLocaleOptionsStore } from './localeOptions'
 
 import {
   getAuthContextApi,
@@ -12,7 +13,7 @@ import {
   type PermissionsResult,
 } from '@/api/modules/auth'
 import { validatePermissions } from '@/router/navigation'
-import { getCurrentLocale, i18n } from '@/locales'
+import { getCurrentLocale, i18n, normalizeLocale, setLocale, setApiLocale } from '@/locales'
 import { usePermissionStore } from './permission'
 import { clearSession, clearCsrf, setCsrfToken } from '@/utils/auth'
 import { setCostMockActor } from '@/api/mock/cost'
@@ -120,6 +121,20 @@ export const useUserStore = defineStore('user', {
           this.reset()
         setCsrfToken(csrf_token, context.csrf_header)
         this.context = configuration
+        const locales = useLocaleOptionsStore()
+        try {
+          if (!locales.attempted) await locales.load()
+        } catch {
+          // Keep the current language if the public directory is temporarily unavailable.
+        }
+        if (epoch !== contextEpoch) return
+        if (locales.options.length) {
+          const preferred = context.session.preferred_locale
+          const code =
+            locales.options.find((item) => item.value === preferred)?.value ?? locales.defaultLocale
+          setLocale(normalizeLocale(code))
+          setApiLocale(code)
+        }
         this.contextLoaded = true
         this.loaded = false
       } catch (error) {
@@ -127,6 +142,15 @@ export const useUserStore = defineStore('user', {
         if ((error as { code?: string }).code === 'UNAUTHENTICATED') this.reset()
         throw error
       }
+    },
+    /** Read current global password rules without clearing permissions or mounted drafts. */
+    async refreshPasswordRules() {
+      const userId = this.context.session?.user_id
+      const context = await getAuthContextApi()
+      if (!userId || this.context.session?.user_id !== userId || context.session.user_id !== userId)
+        throw new Error('Session changed while loading password rules')
+      this.context.password_rules = context.password_rules
+      setCsrfToken(context.csrf_token, context.csrf_header)
     },
     async refreshContext() {
       clearCsrf()

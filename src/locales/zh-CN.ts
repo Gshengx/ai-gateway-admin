@@ -1,3 +1,5 @@
+import termsAudit from './modules/termsAudit/zh-CN'
+import profile from './modules/profile/zh-CN'
 import common from './common/zh-CN'
 import auth from './modules/auth/zh-CN'
 import settings from './modules/settings/zh-CN'
@@ -18,6 +20,8 @@ import security from './modules/security/zh-CN'
 import cost from './modules/cost/zh-CN'
 
 export default {
+  ...termsAudit,
+  ...profile,
   ...common,
   ...auth,
   ...settings,

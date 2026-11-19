@@ -107,7 +107,11 @@ import SubjectSelect from './SubjectSelect.vue'
 import { accessApi, type Permission, type Subject } from '@/api/modules/modelAccess'
 
 const props = defineProps<{ modelId: string }>()
-const emit = defineEmits<{ 'busy-change': [value: boolean]; revoked: [] }>()
+const emit = defineEmits<{
+  'busy-change': [value: boolean]
+  'saving-change': [value: boolean]
+  revoked: []
+}>()
 const { canWrite, signal } = usePermissionScope('model.permissions', () => emit('revoked'))
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
@@ -128,6 +132,7 @@ const loading = reactive({ DEPARTMENT: true, USER_GROUP: true, USER: true })
 const failed = reactive({ DEPARTMENT: false, USER_GROUP: false, USER: false })
 const names = ref<Record<string, string>>({})
 const saving = ref(false)
+watch(saving, (value) => emit('saving-change', value), { flush: 'sync' })
 const removing = ref<string[]>([])
 const reason = ref('')
 const requests = {

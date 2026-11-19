@@ -130,7 +130,7 @@ export default {
         removeHint:
           '确认取消模型「{name}」的用户级直接授权？该用户通过部门、用户组继承的权限不受影响。',
         selectLabel: '选择模型',
-        selectPlaceholder: '选择模型',
+        selectPlaceholder: '选择已上架模型',
         searchPlaceholder: '搜索模型名称',
         grantSuccess: '模型授权已更新',
         versionConflict: '授权已发生变化，请核对刷新后的列表，再确认提交。',

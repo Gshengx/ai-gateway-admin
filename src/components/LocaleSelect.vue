@@ -2,6 +2,7 @@
   <t-select
     :value="current"
     :options="options"
+    :disabled="!options?.length"
     size="small"
     class="locale-select"
     :aria-label="t('header.language')"
@@ -10,34 +11,46 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { SelectProps } from 'tdesign-vue-next'
 
 import {
-  getCurrentLocale,
+  getApiLocale,
+  setApiLocale,
   normalizeLocale,
   setDocumentTitle,
   setLocale,
   translateRouteTitle,
-  SUPPORTED_LOCALES,
 } from '@/locales'
 
+import { useLocaleOptionsStore } from '@/stores/modules/localeOptions'
+
+const localeOptions = useLocaleOptionsStore()
 const route = useRoute()
 const { t } = useI18n()
 
-const current = computed(() => getCurrentLocale())
+const current = computed(() => getApiLocale())
 const options = computed<SelectProps['options']>(() =>
-  SUPPORTED_LOCALES.map((item) => ({ label: item.label, value: item.value })),
+  localeOptions.options.map(({ label, value }) => ({ label, value })),
 )
 
 function onChange(value: unknown) {
-  const locale = normalizeLocale(String(value ?? ''))
-  if (locale === current.value) return
-  setLocale(locale)
+  const code = String(value ?? '')
+  if (code === current.value || !localeOptions.options.some((item) => item.value === code)) return
+  setLocale(normalizeLocale(code))
+  setApiLocale(code)
   setDocumentTitle(translateRouteTitle(route.meta.title))
 }
+onMounted(async () => {
+  if (localeOptions.attempted) return
+  try {
+    await localeOptions.load()
+  } catch {
+    // A failed public directory request is reported by the request layer.
+  }
+})
 </script>
 
 <style scoped>

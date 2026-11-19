@@ -61,13 +61,13 @@
         ></template
       >
       <template #applicant="{ row }"
-        ><div>{{ userLabel(row.applicant_name, row.applicant_username) }}</div>
+        ><div>{{ userDisplayName(row.applicant_name, row.applicant_username) }}</div>
         <span class="hint">{{ row.department }}</span></template
       ><template #level="{ row }">{{ t('budgetFlow.levelValue', { level: row.level }) }}</template>
       <template #flow>{{ t('budgetFlow.flowName') }}</template>
       <template #handler="{ row }">{{
         row.status === 'PENDING' && row.steps[row.level - 1]
-          ? approvers.label(
+          ? approvers.displayName(
               row.steps[row.level - 1].approver_id,
               row.steps[row.level - 1].approver_name,
             )
@@ -190,7 +190,7 @@
               :options="
                 options?.approvers.map((u) => ({
                   value: u.id,
-                  label: approvers.label(u.id, u.name),
+                  label: approvers.displayName(u.id, u.name),
                 }))
               "
               filterable /></t-form-item
@@ -198,7 +198,7 @@
             ><t-input
               :value="
                 options?.second_approver
-                  ? approvers.label(options.second_approver.id, options.second_approver.name)
+                  ? approvers.displayName(options.second_approver.id, options.second_approver.name)
                   : '—'
               "
               readonly
@@ -221,7 +221,7 @@
         ><t-tag>{{ t(`budgetFlow.${detail.execution}`) }}</t-tag></t-space
       ><t-descriptions :column="2" layout="vertical"
         ><t-descriptions-item :label="t('budgetFlow.applicant')">{{
-          userLabel(detail.applicant_name, detail.applicant_username)
+          userDisplayName(detail.applicant_name, detail.applicant_username)
         }}</t-descriptions-item
         ><t-descriptions-item :label="t('budgetFlow.created')">{{
           formatDateTime(detail.created_at)
@@ -254,7 +254,7 @@
         ><t-timeline-item v-for="(step, index) in detail.steps" :key="step.approver_id"
           ><strong
             >{{ t(index ? 'budgetFlow.second' : 'budgetFlow.first') }} ·
-            {{ approvers.label(step.approver_id, step.approver_name) }}</strong
+            {{ approvers.displayName(step.approver_id, step.approver_name) }}</strong
           >
           <p>
             {{ t(`budgetFlow.${step.status}`)
@@ -358,7 +358,7 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
+import { userLabel, userDisplayName } from '@/utils/userLabel'
 import { useUserLabels } from '@/utils/useUserLabels'
 import { computed, onMounted, ref, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

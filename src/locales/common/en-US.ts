@@ -131,6 +131,7 @@ export default {
     notFound: 'The page does not exist or has been removed.',
   },
   header: {
+    languageChangeFailed: 'Unable to change language. Please try again.',
     language: 'Language',
     profile: 'Profile',
     logout: 'Sign out',

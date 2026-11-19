@@ -34,7 +34,6 @@ export const useTermsStore = defineStore('terms', {
     },
     async loadStatus() {
       this.loaded = false
-      this.status = null
       this.status = await getRequiredTermsApi()
       // Seed this login's memory once; later config reads must not be overwritten by its snapshot.
       if (!this.configuration) this.updateConfiguration(this.status)

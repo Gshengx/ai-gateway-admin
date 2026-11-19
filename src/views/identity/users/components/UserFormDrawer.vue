@@ -8,9 +8,9 @@
     :close-on-esc-keydown="!submitting && !validating"
     @close="onClose"
   >
+    <DrawerSaving :loading="submitting" />
     <t-form
       autocomplete="off"
-      :disabled="submitting || validating"
       ref="formRef"
       :data="form"
       :rules="rules"
@@ -129,6 +129,7 @@
 </template>
 
 <script setup lang="ts">
+import DrawerSaving from '@/components/DrawerSaving.vue'
 import { useTreeBranches } from '@/utils/useTreeBranches'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'

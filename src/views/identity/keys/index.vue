@@ -42,21 +42,26 @@
     <t-space class="key-toolbar" align="center">
       <t-button
         v-permission.write="'identity.keys'"
-        variant="outline"
+        variant="base"
+        class="list-action-soft"
+        theme="primary"
         :disabled="loading || busy || !selectedItems.some((row) => row.status !== 'ACTIVE')"
         @click="openOperation('enable')"
         >{{ t('managedKeys.enable') }}</t-button
       >
       <t-button
         v-permission.write="'identity.keys'"
-        variant="outline"
+        variant="base"
+        class="list-action-soft"
+        theme="primary"
         :disabled="loading || busy || !selectedItems.some((row) => row.status === 'ACTIVE')"
         @click="openOperation('disable')"
         >{{ t('managedKeys.disable') }}</t-button
       >
       <t-button
+        class="list-action-soft"
         v-permission.write="'identity.keys'"
-        variant="outline"
+        variant="base"
         theme="danger"
         :disabled="loading || busy || !selectedKeys.length"
         @click="openOperation('delete')"

@@ -127,6 +127,7 @@ export default {
     notFound: '页面不存在或已被移除。',
   },
   header: {
+    languageChangeFailed: '语言切换失败，请重试。',
     language: '语言',
     profile: '个人中心',
     logout: '退出登录',

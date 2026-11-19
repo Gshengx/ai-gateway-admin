@@ -167,7 +167,7 @@
               {{ t(`cost.history${item.action}`) }} · {{ money(item.amount, budget.currency) }}
             </div>
             <span class="hint"
-              >{{ formatDateTime(item.at) }} · {{ costUserLabel(item.actor) }}</span
+              >{{ formatDateTime(item.at) }} · {{ costUserLabel(item.actor, false) }}</span
             >
             <p v-if="item.reason">{{ item.reason }}</p>
             <p v-if="item.configuration" class="hint">
@@ -203,7 +203,7 @@
   </t-drawer>
 </template>
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
+import { userLabel, userDisplayName } from '@/utils/userLabel'
 import { computed, ref, watch } from 'vue'
 import {
   getBudgetAnalytics,
@@ -231,9 +231,11 @@ const periodColumns = computed(() =>
 const props = defineProps<{ budget: Budget | null; kind: 'departments' | 'users' }>()
 const emit = defineEmits<{ close: []; edit: [budget: Budget] }>()
 const { t, users, deptName, money, statusText, statusTheme, userName, error } = useCost()
-function costUserLabel(id?: string | null) {
+function costUserLabel(id?: string | null, includeUsername = true) {
   const user = users.find((item) => item.id === id)
-  return user ? userLabel(user.name, user.username) : id || '—'
+  return user
+    ? (includeUsername ? userLabel : userDisplayName)(user.name, user.username)
+    : id || '—'
 }
 const analytics = ref<BudgetAnalytics | null>(null)
 const levels: Level[] = ['WARNING', 'CRITICAL', 'EXCEEDED']
@@ -271,7 +273,7 @@ function notification(level: Level) {
   const budget = props.budget!
   const channels = budget.notification_channels[level]
   if (!channels.length) return t('cost.noNotify')
-  const names = budget.notification_recipients[level].map((id) => costUserLabel(id))
+  const names = budget.notification_recipients[level].map((id) => costUserLabel(id, false))
   if (props.kind === 'users') names.unshift(t('cost.ownerDefault'))
   return `${names.join(', ') || t('cost.noNotify')} · ${channels.map((channel) => t(`cost.${channel}`)).join(', ')}`
 }

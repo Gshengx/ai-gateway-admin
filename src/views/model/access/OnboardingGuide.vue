@@ -292,7 +292,7 @@ import { normalizeModelId } from '@/utils/modelContract'
 import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import InvocationEditor from './InvocationEditor.vue'
 import { invocationTargets, invocationConfigurationError } from '@/utils/modelInvocation'
-import { invocationLabel, statusTheme, tagLabel } from './helpers'
+import { invocationErrorsMessage, invocationLabel, statusTheme, tagLabel } from './helpers'
 const props = defineProps<{ provider: Provider }>()
 const emit = defineEmits<{ close: [] }>()
 const { t, te } = useI18n(),
@@ -490,6 +490,13 @@ async function testAll() {
           pricingStandardRoutes.value[m.id] = route
             ? `${route.method ?? ''} ${route.path ?? ''}`.trim()
             : ''
+          pricingFailures.value[m.id] =
+            invocationErrorsMessage(
+              pricingFieldErrors.value[m.id] ?? {},
+              pricingStandardRoutes.value[m.id],
+            ) ||
+            pricingFailures.value[m.id] ||
+            ''
           failures.push({ name: m.model_id_at_gateway, code: failure.code ?? '' })
           notice.value = failureNotice('test', failures)
           continue

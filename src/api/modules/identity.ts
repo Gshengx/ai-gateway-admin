@@ -681,8 +681,35 @@ export function getLocaleOptionsApi() {
 }
 
 /** 更新当前用户偏好（语言 / 时区） */
-export function updateMyPreferencesApi(payload: MyPreferencesPayload) {
-  return request.patch<MyPreferences>('/me/preferences', payload)
+export function updateMyPreferencesApi(payload: MyPreferencesPayload, config?: RequestConfig) {
+  return request.patch<MyPreferences>('/me/preferences', payload, config)
+}
+
+export interface MyProfile {
+  id: string
+  username: string
+  display_name: string
+  email: string | null
+  phone: string | null
+  department: { id: string; name: string; display_name: string }
+  role_name: string
+  is_initial_admin: boolean
+  preferred_locale: string | null
+  time_zone: string
+  requested_locale: string
+  resolved_locale: string
+  created_at: string
+  updated_at: string
+}
+
+export type MyProfilePayload = Pick<MyProfile, 'display_name' | 'email' | 'phone' | 'time_zone'>
+
+export function getMyProfileApi() {
+  return request.get<MyProfile>('/me/profile', { skipLocale: true })
+}
+
+export function updateMyProfileApi(payload: MyProfilePayload, config?: RequestConfig) {
+  return request.patch<MyProfile>('/me/profile', payload, config)
 }
 
 export function createUserApi(payload: CreateUserPayload) {
@@ -1057,8 +1084,8 @@ export function removeUserGroupMembersApi(id: string, payload: UserGroupMemberPa
   return request.post<UserGroupMemberMutationResult>(`/groups/${id}/members/remove`, payload)
 }
 
-export function getUserRoleOptionsApi() {
-  return request.get<{ items: RoleOption[] }>('/user-role-options')
+export function getUserRoleOptionsApi(config?: RequestConfig) {
+  return request.get<{ items: RoleOption[] }>('/user-role-options', config)
 }
 
 export function getGroupApi(id: string) {

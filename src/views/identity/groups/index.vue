@@ -53,7 +53,7 @@
       <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
       <template #created_by="{ row }">
         <span :class="{ 'cell-empty': !row.created_by }">
-          {{ userLabel(row.created_by?.display_name, row.created_by?.username) }}
+          {{ userDisplayName(row.created_by?.display_name, row.created_by?.username) }}
         </span>
       </template>
       <template #action="{ row }">
@@ -124,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
+import { userDisplayName } from '@/utils/userLabel'
 import { h, computed, onMounted, reactive, ref, watch } from 'vue'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { useI18n } from 'vue-i18n'
@@ -153,7 +153,7 @@ import {
   type ModelGrantSourceModel,
 } from '@/api/modules/identity'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const keyword = ref('')
 const loading = ref(true)
@@ -382,6 +382,10 @@ function onDelete(row: UserGroupItem) {
   void checkReferences(row.id)
 }
 
+watch(locale, () => {
+  pagination.current = 1
+  void fetchGroups()
+})
 onMounted(fetchGroups)
 </script>
 

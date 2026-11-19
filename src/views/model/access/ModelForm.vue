@@ -18,18 +18,14 @@
     @close="close"
     @confirm="save"
   >
+    <DrawerSaving :loading="saving" />
     <div v-if="error || preparationError" ref="errorNotice" class="model-form-error">
       <t-alert theme="error" :message="preparationError || error" />
     </div>
     <LoadingState :loading="loading" :failed="loadFailed" retryable @retry="loadModel"
       ><t-tabs ref="tabsRef" v-model="tab" class="drawer-tabs">
-        <t-tab-panel :disabled="saving" value="basic" :label="t('ma.basic')"
-          ><t-form
-            class="ma-form ma-section"
-            :disabled="saving"
-            label-align="top"
-            required-mark-position="right"
-          >
+        <t-tab-panel value="basic" :label="t('ma.basic')"
+          ><t-form class="ma-form ma-section" label-align="top" required-mark-position="right">
             <div class="ma-grid">
               <t-form-item
                 v-bind="basicFieldState('provider')"
@@ -37,7 +33,7 @@
                 required-mark
                 ><t-select
                   v-model="model.provider_id"
-                  :disabled="identityLocked || saving"
+                  :disabled="identityLocked"
                   :placeholder="t('ma.chooseProvider')"
                   :options="providerChoices"
                   :loading="providerOptionsLoading"
@@ -50,7 +46,7 @@
                 required-mark
                 ><t-input
                   v-model="model.model_id_at_provider"
-                  :disabled="identityLocked || saving"
+                  :disabled="identityLocked"
                   :placeholder="t('ma.upstreamHint')"
                   @change="prefill"
                   @blur="loadMetadata"
@@ -60,7 +56,7 @@
               ><div class="ma-stack">
                 <t-input
                   v-model="model.model_id_at_gateway"
-                  :disabled="basicLocked || saving"
+                  :disabled="basicLocked"
                   :placeholder="t('ma.nameHint')"
                   :status="nameError ? 'error' : undefined"
                   @change="nameChanged"
@@ -84,13 +80,13 @@
               ref="invocationEditor"
               :validate-required="basicValidationAttempted && !basicLocked"
               v-model:configuration="model"
-              :disabled="basicLocked || saving"
+              :disabled="basicLocked"
             />
             <div class="ma-grid">
               <t-form-item :label="t('ma.input')"
                 ><t-select
                   v-model="model.input_modalities"
-                  :disabled="metadataLocked || saving"
+                  :disabled="metadataLocked"
                   multiple
                   filterable
                   creatable
@@ -107,7 +103,7 @@
               ><t-form-item :label="t('ma.output')"
                 ><t-select
                   v-model="model.output_modalities"
-                  :disabled="metadataLocked || saving"
+                  :disabled="metadataLocked"
                   multiple
                   filterable
                   creatable
@@ -126,7 +122,7 @@
             <t-form-item :label="t('ma.tags')"
               ><t-select
                 v-model="model.tags"
-                :disabled="metadataLocked || saving"
+                :disabled="metadataLocked"
                 multiple
                 filterable
                 creatable
@@ -139,7 +135,7 @@
                 ><t-input-number
                   v-nonnegative-number
                   v-model="contextK"
-                  :disabled="metadataLocked || saving"
+                  :disabled="metadataLocked"
                   :min="0"
                   :decimal-places="3"
                   :placeholder="t('ma.noMetadata')"
@@ -148,7 +144,7 @@
                 ><t-input-number
                   v-nonnegative-number
                   v-model="outputK"
-                  :disabled="metadataLocked || saving"
+                  :disabled="metadataLocked"
                   :min="0"
                   :decimal-places="3"
                   :placeholder="t('ma.noMetadata')"
@@ -158,7 +154,7 @@
             <t-form-item :label="t('ma.description')"
               ><t-textarea
                 v-model="model.description"
-                :disabled="metadataLocked || saving"
+                :disabled="metadataLocked"
                 :placeholder="t('ma.optional')"
             /></t-form-item>
             <div class="ma-box ma-stack model-health-card">
@@ -170,14 +166,14 @@
               </div>
               <p class="ma-muted">{{ t('ma.healthHelp') }}</p>
               <div class="model-health-fields">
-                <t-checkbox v-model="model.auto_health_check" :disabled="saving || editLocked">{{
+                <t-checkbox v-model="model.auto_health_check" :disabled="editLocked">{{
                   t('ma.autoHealth')
                 }}</t-checkbox>
                 <div class="ma-row model-health-fields__interval">
                   <span>{{ t('ma.interval') }}</span
                   ><t-select
                     v-model="model.health_check_interval_minutes"
-                    :disabled="saving || editLocked || !model.auto_health_check"
+                    :disabled="editLocked || !model.auto_health_check"
                     :options="
                       [60, 360, 720, 1440].map((v) => ({
                         value: v,
@@ -193,14 +189,13 @@
         >
         <t-tab-panel
           v-if="canReadPrice"
-          :disabled="saving"
           :destroy-on-hide="false"
           value="price"
           :label="t('ma.pricing')"
         >
           <PricingEditor
             v-if="isEditing || configurePricing"
-            :inert="saving || editLocked || !canWritePrice"
+            :inert="editLocked || !canWritePrice"
             :default-price="defaultPrice"
             :load-default="model.id || price.metric_rates.length ? loadDefaultPricing : undefined"
             ref="priceEditor"
@@ -262,8 +257,9 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
+import DrawerSaving from '@/components/DrawerSaving.vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import LoadingState from '@/components/LoadingState.vue'
@@ -278,7 +274,7 @@ import {
   type Pricing,
   type Model,
 } from '@/api/modules/modelAccess'
-import { statusTheme, tagLabel } from './helpers'
+import { invocationErrorsMessage, statusTheme, tagLabel } from './helpers'
 import PricingEditor from './PricingEditor.vue'
 import PricingSummary from './PricingSummary.vue'
 import InvocationEditor from './InvocationEditor.vue'
@@ -311,9 +307,20 @@ const model = ref({ ...blankModel(), provider_id: props.providerId ?? '' }),
 const providerOptions = ref<Provider[]>([])
 const invocationFieldErrors = ref<Record<string, string>>({})
 const invocationStandardRoute = ref('')
+let invocationSaveError = ''
 watch(
   () => JSON.stringify(model.value.custom_invocation_apis),
   () => {
+    const previousMessage = invocationErrorsMessage(
+      invocationFieldErrors.value,
+      invocationStandardRoute.value,
+    )
+    if (
+      (previousMessage && error.value === previousMessage) ||
+      (invocationSaveError && error.value === invocationSaveError)
+    )
+      error.value = ''
+    invocationSaveError = ''
     invocationFieldErrors.value = {}
   },
 )
@@ -461,14 +468,12 @@ function close() {
 const tabsRef = useDrawerTabs(tab)
 watch(
   [error, preparationError],
-  async (messages) => {
+  (messages) => {
     if (!messages.some(Boolean)) return
-    await nextTick()
-    requestAnimationFrame(() => {
-      errorNotice.value?.closest('.t-drawer__body')?.scrollTo({ top: 0 })
-    })
+    errorNotice.value?.closest('.t-drawer__body')?.scrollTo({ top: 0 })
   },
-  { flush: 'sync' },
+  // Scroll after the alert renders, before a frame can show scroll anchoring's intermediate position.
+  { flush: 'post' },
 )
 let originalPrice = JSON.stringify(price.value)
 const tagOptions = ref<{ value: string; label: string }[]>([])
@@ -737,7 +742,8 @@ async function save() {
     priceComparison.value
   )
     return
-  error.value = ''
+  // Keep the previous failure visible until this attempt produces a new result.
+  // Clearing it here collapses the alert during the request and flashes it back on rejection.
   basicValidationFailed.value = false
   const m = model.value
   basicValidationAttempted.value = true
@@ -745,13 +751,15 @@ async function save() {
     const invocationError = invocationEditor.value?.validate() ?? invocationConfigurationError(m)
     if (invocationError) {
       tab.value = 'basic'
-      error.value = t(
-        invocationError === 'required'
-          ? 'ma.invocationRequired'
-          : invocationError === 'duplicate'
-            ? 'ma.protocolDuplicate'
-            : 'ma.protocolIncomplete',
-      )
+      error.value =
+        invocationErrorsMessage(invocationFieldErrors.value, invocationStandardRoute.value) ||
+        t(
+          invocationError === 'required'
+            ? 'ma.invocationRequired'
+            : invocationError === 'duplicate'
+              ? 'ma.protocolDuplicate'
+              : 'ma.protocolIncomplete',
+        )
       return
     }
   }
@@ -839,6 +847,7 @@ async function save() {
       return
     }
     error.value =
+      invocationErrorsMessage(invocationFieldErrors.value, invocationStandardRoute.value) ||
       (e as Error).message ||
       t(
         detail?.model_access === 'NAME_CONFLICT'
@@ -847,6 +856,7 @@ async function save() {
             ? 'ma.invalidApiPath'
             : 'ma.modelSaveFailed',
       )
+    invocationSaveError = failure.code === 'METRIC_UNSUPPORTED' ? error.value : ''
   } finally {
     saving.value = false
   }

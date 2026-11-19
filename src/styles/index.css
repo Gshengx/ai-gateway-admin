@@ -373,3 +373,48 @@ body {
 .t-dialog__ctx .t-dialog__wrap > .t-dialog__position {
   padding-block: var(--td-comp-margin-l);
 }
+
+/* 个人资料无原型，520px 为只读资料和单列表单预留宽度，窄屏占满视口。 */
+:root {
+  --profile-drawer-width: min(520px, 100vw);
+}
+
+/* 条款历史证据无原型，760px 为原文和摘要预留阅读宽度，窄屏占满视口。 */
+:root {
+  --terms-evidence-drawer-width: min(760px, 100vw);
+}
+
+/* 用户确认：列表辅助操作浅色填充，创建保留主色，删除深红填充，禁用统一灰色。 */
+.list-action-soft.t-button--variant-base.t-button {
+  color: var(--td-brand-color);
+  background-color: var(--td-brand-color-light);
+  border-color: var(--td-brand-color-light);
+}
+.list-action-soft.t-button--variant-base.t-button:hover,
+.list-action-soft.t-button--variant-base.t-button:focus-visible {
+  background-color: var(--td-brand-color-light-hover);
+  border-color: var(--td-brand-color-light-hover);
+}
+.list-action-soft.t-button--variant-base.t-button:active {
+  background-color: var(--td-brand-color-focus);
+  border-color: var(--td-brand-color-focus);
+}
+.list-action-soft.t-button--variant-base.t-button--theme-danger {
+  color: var(--td-text-color-anti);
+  background-color: var(--td-error-color);
+  border-color: var(--td-error-color);
+}
+.list-action-soft.t-button--variant-base.t-button--theme-danger:hover,
+.list-action-soft.t-button--variant-base.t-button--theme-danger:focus-visible {
+  background-color: var(--td-error-color-hover);
+  border-color: var(--td-error-color-hover);
+}
+.list-action-soft.t-button--variant-base.t-button--theme-danger:active {
+  background-color: var(--td-error-color-active);
+  border-color: var(--td-error-color-active);
+}
+.list-action-soft.t-button--variant-base.t-button.t-is-disabled {
+  color: var(--td-text-color-disabled);
+  background-color: var(--td-bg-color-component-disabled);
+  border-color: var(--td-bg-color-component-disabled);
+}

@@ -10,11 +10,13 @@
     size="large"
     @close="!busy && closeDrawer()"
   >
+    <DrawerSaving :loading="saving" />
     <div class="ma-stack">
       <div>{{ model.model_id_at_gateway }}</div>
       <PermissionsEditor
         :model-id="model.id"
         @busy-change="busy = $event"
+        @saving-change="saving = $event"
         @revoked="emit('close')"
       />
     </div>
@@ -28,6 +30,7 @@
   </t-drawer>
 </template>
 <script setup lang="ts">
+import DrawerSaving from '@/components/DrawerSaving.vue'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ModelListItem } from '@/api/modules/modelAccessContract'
@@ -48,5 +51,6 @@ const { visible: drawerVisible, close: closeDrawer } = useDrawerClose(
 )
 const { t } = useI18n()
 const busy = ref(false)
+const saving = ref(false)
 </script>
 <style scoped src="./access.css"></style>

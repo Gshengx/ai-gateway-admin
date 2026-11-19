@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 import { MessagePlugin } from 'tdesign-vue-next'
 
 import type { ApiResult } from './types'
-import { i18n, getCurrentLocale } from '@/locales'
+import { i18n, getApiLocale, toApiLocale } from '@/locales'
 import { clearSession, clearCsrf, getCsrfToken, getCsrfHeader, setCsrfToken } from '@/utils/auth'
 
 /** 业务请求配置：在 Axios 配置上扩展自定义开关 */
@@ -167,7 +167,11 @@ instance.interceptors.request.use(async (config) => {
     throw error
   }
   const method = (config.method ?? 'get').toUpperCase()
-  const locale = (config as RequestConfig).locale ?? getCurrentLocale()
+  const queryLocale =
+    config.params instanceof URLSearchParams ? config.params.get('locale') : config.params?.locale
+  const requestedLocale =
+    (config as RequestConfig).locale ?? (typeof queryLocale === 'string' ? queryLocale : undefined)
+  const locale = toApiLocale(requestedLocale?.trim() || getApiLocale())
 
   // 空筛选不参与请求；保留有意义的 0 和 false，不影响请求体中的清空操作。
   const hasQueryValue = (value: unknown) =>
@@ -191,8 +195,14 @@ instance.interceptors.request.use(async (config) => {
 
   // 国际化：后端按 Accept-Language 解析 display_name 等本地化字段
   config.headers['Accept-Language'] = locale
-  // 国际化入参：读接口统一追加 locale（调用方可传 skipLocale 关闭）
-  if (method === 'GET' && !(config as RequestConfig).skipLocale) {
+  // 只有契约声明了 locale 的展示接口才能携带该查询参数。
+  const localeQueryPath =
+    /^\/(?:me\/permissions|roles(?:\/[^/]+)?|assignable-roles|user-role-options|permission-resources(?:\/(?!registrable-options$)[^/]+)?|users(?:\/[^/]+)?|departments|groups(?:\/(?:initial-member-options|member-department-options|[^/]+(?:\/(?:member-options|members))?))?|api-keys(?:\/[^/]+)?|terms\/(?:current|required)|locales|audit\/(?:management|annotations|terms-acceptances))$/
+  if (
+    method === 'GET' &&
+    !(config as RequestConfig).skipLocale &&
+    localeQueryPath.test(config.url ?? '')
+  ) {
     const params =
       config.params &&
       typeof config.params === 'object' &&
@@ -201,8 +211,9 @@ instance.interceptors.request.use(async (config) => {
         : {}
     config.params =
       config.params instanceof URLSearchParams
-        ? new URLSearchParams([['locale', locale], ...config.params.entries()])
-        : { locale, ...params }
+        ? new URLSearchParams([...config.params.entries()].filter(([key]) => key !== 'locale'))
+        : { ...params, locale }
+    if (config.params instanceof URLSearchParams) config.params.set('locale', locale)
   }
 
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -220,9 +231,7 @@ instance.interceptors.request.use(async (config) => {
         throw error
       }
     }
-    const login =
-      config.url === '/auth/login' ||
-      (import.meta.env.DEV && config.url === '/auth/local-mock-login')
+    const login = config.url === '/auth/login'
     if (!login && !getCsrfToken()) {
       const { getAuthContextApi } = await import('./modules/auth')
       try {

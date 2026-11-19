@@ -4,7 +4,9 @@
       userStore.context.session?.gate !== 'NEEDS_PASSWORD' &&
       (termsStore.requireConfirmation || termsStore.visible || termsStore.accepting)
     "
-    width="640px"
+    dialog-class-name="terms-login-dialog"
+    width="var(--terms-login-dialog-width)"
+    placement="center"
     :header="title"
     :close-btn="!termsStore.requireConfirmation && !termsStore.accepting"
     @close="termsStore.skip()"
@@ -24,7 +26,7 @@
     @confirm="onConfirm"
     @cancel="termsStore.skip()"
   >
-    <div class="terms-content" v-html="content" />
+    <div class="terms-content terms-content--login" v-html="content" />
     <t-checkbox v-model="checked" :disabled="termsStore.accepting" class="terms-check">{{
       t('terms.gate.checkbox')
     }}</t-checkbox>

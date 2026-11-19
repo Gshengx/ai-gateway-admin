@@ -1,4 +1,5 @@
-import { userLabel } from '@/utils/userLabel'
+import { getApiLocale, toApiLocale } from '@/locales'
+import { userDisplayName } from '@/utils/userLabel'
 import { markRaw } from 'vue'
 import { createIdempotencyKey, type RequestConfig } from '@/api/request'
 import { matchesConditions } from '@/utils/modelTemplate'
@@ -36,7 +37,12 @@ const balanceDrafts = new Map<string, string>()
 const priceFacts = new Map<string, D.CurrentPricing>()
 const templateFacts = new Map<string, D.Template>()
 const preparations = new Map<string, D.PricingPreparation>()
-const preparedKey = (provider: string, upstream: string) => `${provider}:${upstream}`
+const localizedKey = (key: string) => `${getApiLocale()}:${key}`
+const preparedKey = (provider: string, upstream: string) => localizedKey(`${provider}:${upstream}`)
+const currentTemplates = () =>
+  [...templateFacts.entries()]
+    .filter(([key]) => key.startsWith(`${getApiLocale()}:`))
+    .map(([, value]) => value)
 function balanceSignature(provider: Provider) {
   return JSON.stringify({
     mode: provider.balance_query_mode,
@@ -151,13 +157,16 @@ export function pricingView(
   view.metric_rates = (price.periods[0]?.metric_rates ?? []).map((rate) => ({
     metric_key: rate.metric_key,
     unit: rate.unit,
-    unit_price: rate.unit_price,
-    period_prices: Object.fromEntries(
-      price.periods.map((p, i) => [
-        String(i),
-        p.metric_rates.find((r) => r.metric_key === rate.metric_key)?.unit_price ?? null,
-      ]),
-    ),
+    unit_price: price.pricing_mode === 'FIXED' ? rate.unit_price : null,
+    period_prices:
+      price.pricing_mode === 'TIME_BASED'
+        ? Object.fromEntries(
+            price.periods.map((p, i) => [
+              String(i),
+              p.metric_rates.find((r) => r.metric_key === rate.metric_key)?.unit_price ?? null,
+            ]),
+          )
+        : {},
     display_name:
       'display_name' in rate
         ? rate.display_name
@@ -169,7 +178,7 @@ export function pricingView(
   }))
   if ('created_at' in price) {
     view.created_at = price.created_at
-    view.created_by = userLabel(
+    view.created_by = userDisplayName(
       price.created_by_display.display_name,
       price.created_by_display.username,
     )
@@ -286,7 +295,10 @@ export function testView(j: D.CheckJob | D.CheckJobSummary): TestRun {
     billing_department: '',
     started_at: j.started_at ?? j.created_at,
     completed_at: j.completed_at,
-    triggered_by: userLabel(j.triggered_by_display.display_name, j.triggered_by_display.username),
+    triggered_by: userDisplayName(
+      j.triggered_by_display.display_name,
+      j.triggered_by_display.username,
+    ),
     dto: 'items' in j ? markRaw(j) : undefined,
   }
 }
@@ -347,21 +359,25 @@ export const transport = {
     }
   },
   prepare: async (m: Model, config?: RequestConfig) => {
-    const key = preparedKey(m.provider_id, m.model_id_at_provider)
+    const language = toApiLocale(config?.locale ?? getApiLocale())
+    const key = `${language}:${m.provider_id}:${m.model_id_at_provider}`
     const params = new URLSearchParams({
       provider_id: m.provider_id,
       model_id_at_provider: m.model_id_at_provider,
     })
     m.supported_invocation_apis.forEach((a) => params.append('supported_invocation_apis', a))
     m.custom_invocation_apis.forEach((a) => params.append('upstream_paths', a.path))
-    const result = await api.M13({ params, ...config })
+    const result = await api.M13({ params, ...config, locale: language })
     preparations.set(key, result)
     return result
   },
   catalog: async (upstream: string, provider_id?: string) => {
     const prep = provider_id
       ? preparations.get(preparedKey(provider_id, upstream))
-      : [...preparations.values()].find((p) => p.model_id_at_provider === upstream)
+      : [...preparations.entries()]
+          .filter(([key]) => key.startsWith(`${getApiLocale()}:`))
+          .map(([, value]) => value)
+          .find((p) => p.model_id_at_provider === upstream)
     if (!prep) return blankPricing()
     const view = pricingView(
       prep.internal_pricing_prefill,
@@ -405,8 +421,13 @@ export const transport = {
     }
   },
   templates: async (provider_id?: string, config?: RequestConfig): Promise<Template[]> => {
-    const data = await api.P01({ ...config, params: provider_id ? { provider_id } : undefined })
-    data.items.forEach((t) => templateFacts.set(t.template_version_id, t))
+    const language = toApiLocale(config?.locale ?? getApiLocale())
+    const data = await api.P01({
+      ...config,
+      locale: language,
+      params: provider_id ? { provider_id } : undefined,
+    })
+    data.items.forEach((t) => templateFacts.set(`${language}:${t.template_version_id}`, t))
     return data.items.map((t) => ({
       ...t,
       template_key: t.key,
@@ -477,8 +498,8 @@ export const transport = {
   },
   saveProvider: async (p: Provider) => {
     const t =
-      [...templateFacts.values()].find((t) => t.template_version_id === p.template_version_id) ??
-      [...templateFacts.values()].find((t) => t.key === p.template_key)
+      currentTemplates().find((t) => t.template_version_id === p.template_version_id) ??
+      currentTemplates().find((t) => t.key === p.template_key)
     if (!t) throw new Error('TEMPLATE_UNAVAILABLE')
     const secrets: Record<string, string> = {},
       public_config: D.ProviderPublicConfig = {}
@@ -705,11 +726,12 @@ export const transport = {
     ])
     const view = modelView(m)
     view.lifecycle_events = events?.items.map((e) => ({
+      sourceAction: e.action,
       action: e.action === 'CREATED' ? 'CREATE' : 'STATUS',
       fromStatus: e.from_status,
       status: e.to_status,
       created_at: e.occurred_at,
-      actor: userLabel(e.actor.display_name, e.actor.username),
+      actor: userDisplayName(e.actor.display_name, e.actor.username),
       reason: e.reason ?? '',
     }))
     return view

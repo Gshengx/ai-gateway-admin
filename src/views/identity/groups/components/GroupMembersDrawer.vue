@@ -22,9 +22,10 @@
             {{ t('common.clearSelection') }}
           </t-button>
           <t-button
+            class="list-action-soft"
             v-permission.write="'identity.groups'"
             theme="danger"
-            variant="outline"
+            variant="base"
             :disabled="!canWrite || !selectedKeys.length"
             @click="openRemove([...selectedKeys])"
           >

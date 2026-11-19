@@ -514,7 +514,7 @@ const labels: Record<string, [string, string]> = {
   protocolPath: ['路径', 'Path'],
   chooseProtocol: ['请选择协议', 'Select a protocol'],
   choosePath: ['请输入路径', 'Enter a path'],
-  customProtocol: ['自定义', 'Custom'],
+  customProtocol: ['自定义（透传）', 'Custom (passthrough)'],
   addProtocol: ['新增协议', 'Add protocol'],
   protocolLimit: ['最多配置 32 组协议', 'A maximum of 32 protocol entries is allowed'],
   standardRouteConflict: [
@@ -525,6 +525,10 @@ const labels: Record<string, [string, string]> = {
   removeProtocol: ['删除协议', 'Remove protocol'],
   protocolDuplicate: ['所选协议不能重复', 'Protocols cannot be duplicated'],
   protocolIncomplete: ['请完善协议和路径配置', 'Complete the protocol and path configuration'],
+  invocationPathInvalid: [
+    '路径无效：请填写以 / 开头的实际路径，不允许占位符、查询串、片段、空白或相对路径段。',
+    'Invalid path: enter an actual path starting with /. Placeholders, query strings, fragments, whitespace, and relative path segments are not allowed.',
+  ],
   protocolHelp: [
     '标准协议预填默认出站路径；自定义透传的完整路径同时用于网关入站和供应商出站，同一模型内路径不可重复。',
     'Standard protocols prefill the outbound path. Each custom passthrough path is used for both gateway ingress and upstream egress and must be unique within the model.',
@@ -627,6 +631,17 @@ const labels: Record<string, [string, string]> = {
   ],
   success: ['操作成功', 'Operation successful'],
   reason: ['操作原因', 'Reason'],
+  lifecycleReasonText: ['{label}：{reason}', '{label}: {reason}'],
+  lifecycleReasonCreated: ['创建原因', 'Creation reason'],
+  lifecycleReasonAdmissionStarted: ['准入检测原因', 'Admission test reason'],
+  lifecycleReasonAdmissionPassed: ['准入通过原因', 'Admission approval reason'],
+  lifecycleReasonAdmissionFailed: ['准入失败原因', 'Admission failure reason'],
+  lifecycleReasonApproved: ['上架原因', 'Publishing reason'],
+  lifecycleReasonRejected: ['审核拒绝原因', 'Review rejection reason'],
+  lifecycleReasonSuspended: ['暂停原因', 'Suspension reason'],
+  lifecycleReasonResumed: ['恢复原因', 'Resumption reason'],
+  lifecycleReasonRetired: ['下架原因', 'Retirement reason'],
+  lifecycleReasonReactivated: ['重新启用原因', 'Reactivation reason'],
   reasonRequired: ['请填写操作原因', 'Enter a reason'],
   deleteConfirm: [
     '确认删除？此操作将清理关联配置。',

@@ -203,7 +203,7 @@
               >{{
                 detail.config?.recipients[level]
                   .map((id) =>
-                    userLabel(
+                    userDisplayName(
                       users.find((u) => u.id === id)?.name,
                       users.find((u) => u.id === id)?.username,
                     ),
@@ -267,7 +267,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
+import { userDisplayName } from '@/utils/userLabel'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { PageInfo, PrimaryTableCol, TableRowData } from 'tdesign-vue-next'

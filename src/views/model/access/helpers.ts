@@ -1,4 +1,19 @@
 import { i18n } from '@/locales'
+export function invocationFieldErrorMessage(rule: string, standardRoute = '') {
+  if (rule === 'INVALID_PATH') return i18n.global.t('ma.invocationPathInvalid')
+  if (rule === 'STANDARD_ROUTE_CONFLICT')
+    return i18n.global.t('ma.standardRouteConflict', { route: standardRoute })
+  return i18n.global.t('requestErrors.VALIDATION_FAILED')
+}
+export function invocationErrorsMessage(fields: Record<string, string>, standardRoute = '') {
+  return [
+    ...new Set(
+      Object.entries(fields)
+        .filter(([field]) => /^(?:base\.)?invocation_apis\[\d+\]\.path$/.test(field))
+        .map(([, rule]) => invocationFieldErrorMessage(rule, standardRoute)),
+    ),
+  ].join('；')
+}
 export const authFieldLabel = (field: { key: string; label: string }) =>
   field.label ||
   (i18n.global.te('ma.auth_' + field.key) ? i18n.global.t('ma.auth_' + field.key) : field.key)

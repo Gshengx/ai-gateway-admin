@@ -95,32 +95,39 @@
       </CollapsibleSidebar>
 
       <div class="users-main">
-        <filter-bar class="users-filter" @search="onSearch" @reset="onReset">
-          <t-col :span="5">
-            <t-input
-              v-model="query.search"
-              name="user-list-filter"
-              autocomplete="off"
-              :placeholder="t('users.searchPlaceholder')"
-              clearable
-            />
-          </t-col>
-          <t-col :span="2">
-            <t-select
-              v-model="query.status"
-              :options="statusOptions"
-              :placeholder="t('users.allStatus')"
-              clearable
-            />
-          </t-col>
-          <t-col :span="2">
-            <t-select
-              v-model="query.role_id"
-              :options="roleSelectOptions"
-              :placeholder="t('users.allRoles')"
-              clearable
-            />
-          </t-col>
+        <filter-bar class="users-filter">
+          <template #content>
+            <div class="list-toolbar">
+              <t-input
+                v-model="query.search"
+                class="list-search"
+                name="user-list-filter"
+                autocomplete="off"
+                :placeholder="t('users.searchPlaceholder')"
+                clearable
+                @change="onSearchInput"
+              />
+              <t-select
+                v-model="query.status"
+                class="list-filter"
+                :options="statusOptions"
+                :placeholder="t('users.allStatus')"
+                clearable
+                @change="onSearch"
+              />
+              <t-select
+                v-model="query.role_id"
+                class="list-filter"
+                :options="roleSelectOptions"
+                :placeholder="t('users.allRoles')"
+                clearable
+                @change="onSearch"
+              />
+              <t-button theme="default" variant="base" @click="onReset">{{
+                t('common.reset')
+              }}</t-button>
+            </div>
+          </template>
         </filter-bar>
 
         <div class="users-list">
@@ -131,8 +138,10 @@
                 {{ t('users.create') }}
               </t-button>
               <t-button
+                class="list-action-soft"
                 v-permission.write="'identity.users'"
-                variant="outline"
+                variant="base"
+                theme="primary"
                 @click="importVisible = true"
               >
                 {{ t('users.import') }}
@@ -151,26 +160,31 @@
                 {{ t('common.clearSelection') }}
               </t-button>
               <t-button
+                class="list-action-soft"
                 v-permission.write="'identity.users'"
                 size="small"
+                theme="primary"
                 :disabled="!selectedKeys.length || selectedAdmin"
                 @click="onBatchStatus('ACTIVE')"
               >
                 {{ t('users.enable') }}
               </t-button>
               <t-button
+                class="list-action-soft"
                 v-permission.write="'identity.users'"
                 size="small"
+                theme="primary"
                 :disabled="!selectedKeys.length || selectedAdmin"
                 @click="onBatchStatus('DISABLED')"
               >
                 {{ t('users.disable') }}
               </t-button>
               <t-button
+                class="list-action-soft"
                 v-permission.write="'identity.users'"
                 size="small"
                 theme="danger"
-                variant="outline"
+                variant="base"
                 :disabled="!selectedKeys.length || selectedAdmin"
                 @click="onBatchDelete"
               >
@@ -840,12 +854,15 @@ async function onRefreshDepartments() {
   }
 }
 
+const roleRequest = useLatestRequest()
 async function fetchRoles() {
+  const current = roleRequest.begin()
   try {
-    const res = await getUserRoleOptionsApi()
+    const res = await getUserRoleOptionsApi({ signal: current.signal })
+    if (!current.isCurrent()) return
     roleOptions.value = res.items ?? []
   } catch {
-    roleOptions.value = []
+    if (current.isCurrent()) roleOptions.value = []
   }
 }
 
@@ -911,6 +928,10 @@ async function refreshAll() {
 
 function onSearch() {
   fetchUsers({ resetPage: true })
+}
+
+function onSearchInput() {
+  userRequest.schedule(onSearch)
 }
 
 function onReset() {
@@ -1598,6 +1619,11 @@ async function copyPassword() {
     MessagePlugin.warning(t('users.reset.copyFailed'))
   }
 }
+
+watch(locale, () => {
+  void fetchRoles()
+  void fetchDepartments({ loadUsers: true })
+})
 
 onMounted(() => {
   void fetchRoles()

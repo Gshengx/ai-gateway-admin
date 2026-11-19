@@ -64,7 +64,7 @@
           ><t-tag variant="light" theme="danger">{{ t('ma.FAILED') }}</t-tag></t-tooltip
         ></template
       >
-      <template #action="{ row }"><RowActions :actions="rowActions(row)" /></template>
+      <template #action="{ row }"><RowActions :actions="rowActions(row)" expanded /></template>
     </t-table>
     <t-loading v-if="editingLoading" fullscreen :text="t('common.loading')" />
     <ProviderForm
@@ -307,7 +307,7 @@
   </section>
 </template>
 <script setup lang="ts">
-import { userLabel } from '@/utils/userLabel'
+import { userDisplayName } from '@/utils/userLabel'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -507,9 +507,12 @@ async function openDetail(row: Provider) {
     if (version !== detailVersion) return
     const session = useUserStore().context.session
     if (session)
-      recipientNames.value[session.user_id] = userLabel(session.display_name, session.username)
+      recipientNames.value[session.user_id] = userDisplayName(
+        session.display_name,
+        session.username,
+      )
     for (const recipient of provider.recipient_users ?? [])
-      recipientNames.value[recipient.user_id] = userLabel(
+      recipientNames.value[recipient.user_id] = userDisplayName(
         recipient.display_name,
         recipient.username,
       )
@@ -632,6 +635,7 @@ function loadTemplates(providerId?: string, templateVersion?: string): Promise<v
   return request
 }
 watch(locale, () => {
+  pagination.current = 1
   void load()
   const provider = formVisible.value
     ? editing.value

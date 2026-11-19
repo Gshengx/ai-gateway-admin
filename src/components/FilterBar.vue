@@ -6,7 +6,9 @@
           <slot />
           <t-col :flex="1">
             <t-space>
-              <t-button theme="primary" type="submit">{{ t('common.search') }}</t-button>
+              <t-button v-if="showSearch" theme="primary" type="submit">{{
+                t('common.search')
+              }}</t-button>
               <t-button theme="default" variant="base" @click="onReset">{{
                 t('common.reset')
               }}</t-button>
@@ -27,6 +29,7 @@ import { useI18n } from 'vue-i18n'
  * 查询/重置通过事件抛出，由页面绑定表单数据后自行请求。
  */
 const { t } = useI18n()
+withDefaults(defineProps<{ showSearch?: boolean }>(), { showSearch: true })
 
 const emit = defineEmits<{
   search: []

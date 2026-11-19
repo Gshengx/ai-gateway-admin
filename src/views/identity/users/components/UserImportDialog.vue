@@ -7,6 +7,7 @@
     destroy-on-close
     @close="onClose"
   >
+    <DrawerSaving :loading="confirming && stage !== 'running'" />
     <t-steps :current="stepIndex" class="import-steps">
       <t-step-item :title="t('users.importDialog.steps.upload')" />
       <t-step-item :title="t('users.importDialog.steps.preview')" />
@@ -191,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import DrawerSaving from '@/components/DrawerSaving.vue'
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { createIdempotencyKey } from '@/api/request'
 import { useI18n } from 'vue-i18n'

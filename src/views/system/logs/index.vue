@@ -3,9 +3,10 @@
     <div class="logs-heading">
       <t-tabs v-model="tab" :theme="'normal'" :list="tabs" />
       <t-button
+        class="list-action-soft"
         v-permission.write="'system.settings'"
-        theme="default"
-        variant="outline"
+        theme="primary"
+        variant="base"
         @click="openConfig"
       >
         <template #icon><setting-icon /></template>{{ t('logs.config') }}
@@ -97,9 +98,9 @@
           <t-button
             v-if="tab === 'operation'"
             v-permission.write="'audit.management'"
-            class="logs-export"
-            theme="default"
-            variant="outline"
+            class="list-action-soft logs-export"
+            theme="primary"
+            variant="base"
             :loading="exporting"
             :disabled="!!dateError"
             @click="exportLogs"
@@ -436,14 +437,9 @@ function timestamp(value: string) {
     : base
 }
 function actor(row: ManagementLog) {
-  const name = row.actor_display_name_snapshot
-  const username = row.actor_username_snapshot
-  return username
-    ? name
-      ? `${name} (${username})`
-      : username
-    : userLabels.label(row.actor_user_id ?? '', name)
+  return row.actor_display_name_snapshot || row.actor_username_snapshot || '—'
 }
+
 const operationName = (row: ManagementLog) =>
   row.prototype ? t(`logs.operations.${row.prototype.operation}`) : row.action
 const operationClass = (row: ManagementLog) => ({
@@ -566,16 +562,13 @@ watch([rows, operationDetail], () => {
   const logs = [...rows.value.filter((row): row is ManagementLog => 'actor_user_id' in row)]
   if (operationDetail.value) logs.push(operationDetail.value)
   void userLabels.resolve(
-    logs.flatMap((row) => [
-      row.actor_username_snapshot ? '' : (row.actor_user_id ?? ''),
-      row.resource_type === 'user' ? (row.resource_id ?? '') : '',
-    ]),
+    logs.flatMap((row) => [row.resource_type === 'user' ? (row.resource_id ?? '') : '']),
   )
 })
 function objectLabel(row: ManagementLog) {
   const name = row.prototype?.resource_name || row.target_display_name_snapshot
   return row.resource_type === 'user' && row.resource_id
-    ? userLabels.label(row.resource_id, name)
+    ? userLabels.displayName(row.resource_id, name)
     : name || row.resource_id || '—'
 }
 

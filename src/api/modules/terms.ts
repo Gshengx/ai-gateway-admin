@@ -1,3 +1,5 @@
+import type { OffsetPageQuery, OffsetPageResult } from '@/api/types'
+import type { RequestConfig } from '@/api/request'
 import { request } from '@/api/request'
 
 export interface TermsTranslation {
@@ -89,3 +91,31 @@ export const acceptTermsApi = (payload: {
   locale_code: string
   content_digest: string
 }) => request.post<AcceptTermsResult>('/terms/accept', payload)
+
+export interface TermsAcceptance extends AcceptTermsResult {
+  content: {
+    title: string
+    body: string
+    version: string
+    bundle_digest: string
+  } | null
+}
+
+export interface TermsAcceptanceQuery extends OffsetPageQuery {
+  search?: string
+  user_id?: string
+  terms_id?: string
+  from?: string
+  to?: string
+}
+
+export function getTermsAcceptancesApi(params: TermsAcceptanceQuery, config?: RequestConfig) {
+  return request.get<OffsetPageResult<TermsAcceptance>>('/audit/terms-acceptances', {
+    ...config,
+    params,
+  })
+}
+
+export function getTermsAcceptanceApi(id: string, config?: RequestConfig) {
+  return request.get<TermsAcceptance>(`/audit/terms-acceptances/${encodeURIComponent(id)}`, config)
+}

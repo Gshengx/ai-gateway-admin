@@ -139,7 +139,6 @@
             >{{ t('ma.price') }}（{{ value.currency }} /
             {{ rate.unit_label || t('ma.' + unitLabel(rate.unit)) }}）</span
           >
-          <t-tag class="ma-push-right" size="small" variant="light">{{ t('ma.adapted') }}</t-tag>
         </div>
         <t-form-item
           v-if="value.pricing_mode === 'FIXED'"
@@ -273,7 +272,9 @@ function addPeriod() {
 function initializePeriodPrices() {
   for (const rate of value.value.metric_rates) {
     for (const period of value.value.time_periods) {
-      rate.period_prices[period.id] ??= period.is_fallback ? (rate.unit_price ?? '0') : '0'
+      if (!(period.id in rate.period_prices)) {
+        rate.period_prices[period.id] = '0'
+      }
     }
   }
 }
@@ -283,11 +284,7 @@ function modeChanged() {
     if (!namedPeriods.value.length) addPeriod()
     initializePeriodPrices()
   } else {
-    const fallback = value.value.time_periods.find((period) => period.is_fallback)
-    for (const rate of value.value.metric_rates)
-      rate.unit_price = fallback
-        ? (rate.period_prices[fallback.id] ?? rate.unit_price ?? '0')
-        : (rate.unit_price ?? '0')
+    for (const rate of value.value.metric_rates) rate.unit_price ??= '0'
   }
 }
 function addCondition(period: Period) {

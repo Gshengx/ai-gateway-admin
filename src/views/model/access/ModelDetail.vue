@@ -45,8 +45,21 @@
           <template v-for="row in info" :key="row[0]"
             ><dt>{{ row[0] }}</dt>
             <dd>
+              <div v-if="row[0] === t('ma.supportedApis')" class="model-invocation-list">
+                <dl
+                  v-for="(api, index) in model.custom_invocation_apis"
+                  :key="api.id ?? index"
+                  class="ma-definitions model-invocation-group"
+                >
+                  <dt>{{ t('ma.protocol') }}</dt>
+                  <dd>{{ invocationLabel(api.invocation_api) }}</dd>
+                  <dt>{{ t('ma.protocolPath') }}</dt>
+                  <dd>{{ api.path }}</dd>
+                </dl>
+                <span v-if="!model.custom_invocation_apis.length">—</span>
+              </div>
               <PricingSummary
-                v-if="
+                v-else-if="
                   row[0] === t('ma.priceSummary') &&
                   currentPrice &&
                   currentPrice.state !== 'UNPRICED' &&
@@ -69,11 +82,11 @@
             @retry="loadPrices"
           >
             <div v-for="price in priceHistory" :key="price.id" class="price-history-entry">
-              <strong>{{
-                currentPrice?.state === 'PRICED' && price.version === currentPrice.version
-                  ? t('ma.currentPrice')
-                  : t('ma.historicalPrice')
-              }}</strong>
+              <strong
+                v-if="currentPrice?.state === 'PRICED' && price.version === currentPrice.version"
+                >{{ t('ma.currentPrice') }}</strong
+              >
+              <strong v-else>{{ t('ma.historicalPrice') }}</strong>
               <p class="ma-muted">
                 {{ formatDateTime(price.created_at) }} · {{ price.created_by }}
               </p>
@@ -173,7 +186,12 @@
                 >{{ t('ma.' + event.status) }}</strong
               >
               <p v-if="event.reason?.trim()" class="ma-muted">
-                {{ event.reason }}
+                {{
+                  t('ma.lifecycleReasonText', {
+                    label: lifecycleReasonLabel(event.sourceAction),
+                    reason: event.reason,
+                  })
+                }}
               </p></t-timeline-item
             ></t-timeline
           >
@@ -205,6 +223,7 @@ import AuthorizationDrawer from './AuthorizationDrawer.vue'
 import ModelForm from './ModelForm.vue'
 import { useI18n } from 'vue-i18n'
 import { accessApi, type Model, type Pricing, type TestRun } from '@/api/modules/modelAccess'
+import type { LifecycleEvent } from '@/api/modules/modelAccessContract'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDateTime } from '@/utils/datetime'
 import { invocationLabel, statusTheme, tagLabel } from './helpers'
@@ -313,6 +332,21 @@ async function loadHistory(purpose: 'ADMISSION' | 'HEALTH', completedRun?: TestR
   }
 }
 const lifecycleEvents = computed(() => model.value?.lifecycle_events ?? [])
+const lifecycleReasonKeys: Record<LifecycleEvent['action'], string> = {
+  CREATED: 'ma.lifecycleReasonCreated',
+  ADMISSION_STARTED: 'ma.lifecycleReasonAdmissionStarted',
+  ADMISSION_PASSED: 'ma.lifecycleReasonAdmissionPassed',
+  ADMISSION_FAILED: 'ma.lifecycleReasonAdmissionFailed',
+  APPROVED: 'ma.lifecycleReasonApproved',
+  REJECTED: 'ma.lifecycleReasonRejected',
+  SUSPENDED: 'ma.lifecycleReasonSuspended',
+  RESUMED: 'ma.lifecycleReasonResumed',
+  RETIRED: 'ma.lifecycleReasonRetired',
+  REACTIVATED: 'ma.lifecycleReasonReactivated',
+}
+function lifecycleReasonLabel(action?: LifecycleEvent['action']) {
+  return t(action ? lifecycleReasonKeys[action] : 'ma.reason')
+}
 const info = computed(() => {
   if (!model.value) return []
   const m = model.value
@@ -322,8 +356,7 @@ const info = computed(() => {
     [t('ma.upstream'), m.model_id_at_provider],
     [t('ma.baseUrl'), m.provider_base_url || '—'],
     [t('ma.security'), m.security_level ? t('ma.' + m.security_level) : '—'],
-    [t('ma.supportedApis'), m.supported_invocation_apis.map(invocationLabel).join('、')],
-    [t('ma.customPath'), m.custom_invocation_apis.map((a) => a.path).join('、') || '—'],
+    [t('ma.supportedApis'), ''],
     [t('ma.input'), m.input_modalities.join('、') || t('ma.noMetadata')],
     [t('ma.output'), m.output_modalities.join('、') || t('ma.noMetadata')],
     [

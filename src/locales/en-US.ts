@@ -1,3 +1,5 @@
+import termsAudit from './modules/termsAudit/en-US'
+import profile from './modules/profile/en-US'
 import common from './common/en-US'
 import auth from './modules/auth/en-US'
 import settings from './modules/settings/en-US'
@@ -18,6 +20,8 @@ import security from './modules/security/en-US'
 import cost from './modules/cost/en-US'
 
 export default {
+  ...termsAudit,
+  ...profile,
   ...common,
   ...auth,
   ...settings,

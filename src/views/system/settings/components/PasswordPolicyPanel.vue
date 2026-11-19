@@ -208,6 +208,12 @@ const rules = computed<Record<string, FormRule[]>>(() =>
 )
 function apply(policy: PasswordPolicy) {
   saved.value = { ...policy }
+  userStore.context.password_rules = {
+    min_length: policy.min_length,
+    max_length: policy.max_length,
+    complexity_categories: policy.complexity_categories,
+    history_count: policy.history_count,
+  }
   for (const { key } of fields) form[key] = policy[key]
 }
 function reset() {

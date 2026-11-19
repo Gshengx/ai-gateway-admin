@@ -56,6 +56,7 @@ export const i18n = createI18n({
 export function setLocale(locale: AppLocale): void {
   i18n.global.locale.value = locale
   setStoredLocale(locale)
+  setStoredApiLocale(toApiLocale(locale))
 }
 
 /** 当前语言：请求层据此注入 Accept-Language 与 locale 查询参数 */
@@ -63,14 +64,24 @@ export function getCurrentLocale(): AppLocale {
   return i18n.global.locale.value as AppLocale
 }
 
-/** 请求层使用的后端语言代码：优先使用后端注册的原始代码（如 en），未记录时退回当前语言 */
+/** UI 语言包标识只在前端使用；控制面使用后端注册代码。 */
+export function toApiLocale(code: string): string {
+  const key = code.trim().toLowerCase().replace(/_/g, '-')
+  if (key === 'en' || key === 'en-us') return 'en'
+  if (key === 'zh' || key === 'zh-cn') return 'zh-CN'
+  return code
+}
+
 export function getApiLocale(): string {
-  return getStoredApiLocale() || getCurrentLocale()
+  const stored = getStoredApiLocale()
+  return stored && normalizeLocale(stored) === getCurrentLocale()
+    ? toApiLocale(stored)
+    : toApiLocale(getCurrentLocale())
 }
 
 /** 记录后端注册的原始语言代码，供请求层注入 locale 与 Accept-Language */
 export function setApiLocale(code: string): void {
-  setStoredApiLocale(code)
+  setStoredApiLocale(toApiLocale(code))
 }
 
 /** 路由标题翻译：meta.title 存的是 i18n key，缺失时原样返回（便于渐进迁移） */

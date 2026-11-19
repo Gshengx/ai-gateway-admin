@@ -7,6 +7,7 @@ import type {
   CheckJob,
   CheckCounts,
   OfficialModelBinding,
+  LifecycleEvent,
 } from './modelAccessContract'
 
 // Form/view models. HTTP read/write DTOs live in modelAccessContract.ts.
@@ -120,6 +121,7 @@ export interface Model {
   security_level?: 'INTERNET' | 'TRUSTED_CLOUD' | 'PRIVATE'
   provider_name?: string
   lifecycle_events?: {
+    sourceAction?: LifecycleEvent['action']
     fromStatus?: string | null
     action: 'CREATE' | 'UPDATE' | 'STATUS'
     status: Status

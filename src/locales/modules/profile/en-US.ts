@@ -1,0 +1,21 @@
+export default {
+  profile: {
+    title: 'Personal profile',
+    username: 'Username',
+    display_name: 'Display name',
+    email: 'Email',
+    phone: 'Phone',
+    department: 'Department',
+    role: 'Role',
+    language: 'Preferred language (change in header)',
+    time_zone: 'Time zone',
+    createdAt: 'Created at',
+    updatedAt: 'Updated at',
+    required: 'Enter a display name',
+    invalidEmail: 'Enter a valid email address',
+    invalidTimeZone: 'Enter a valid IANA time zone, e.g. Asia/Shanghai',
+    saved: 'Profile saved',
+    saveFailed: 'Unable to save profile. Please retry.',
+    loadFailed: 'Unable to load profile. Please retry.',
+  },
+}

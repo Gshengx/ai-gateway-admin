@@ -1,4 +1,4 @@
-/* 登录与配置预览沿用须知正文 40vh 上限，长正文在同一区域内滚动。 */
+/* 配置预览的长正文在同一区域内滚动。 */
 .terms-content {
   max-height: 40vh;
   overflow-y: auto;
@@ -9,4 +9,29 @@
 
 .terms-check {
   margin-top: var(--td-comp-margin-l);
+}
+
+/* 2026-11-19 用户要求：登录须知独占页面，扩大宽高；TDesign 无对应业务尺寸 token。 */
+:global(.terms-login-dialog) {
+  --terms-login-dialog-width: min(1200px, calc(100vw - var(--td-comp-margin-xxl) * 2));
+  height: calc(100dvh - var(--td-comp-margin-xxl) * 2);
+}
+
+:global(.terms-login-dialog.t-dialog > .t-dialog__body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+.terms-content--login {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+:global(.terms-login-dialog) .terms-check {
+  flex-shrink: 0;
 }

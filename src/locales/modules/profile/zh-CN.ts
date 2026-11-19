@@ -1,0 +1,21 @@
+export default {
+  profile: {
+    title: '个人资料',
+    username: '用户名',
+    display_name: '显示名称',
+    email: '邮箱',
+    phone: '手机号',
+    department: '所属部门',
+    role: '角色',
+    language: '语言偏好（可在顶部切换）',
+    time_zone: '时区',
+    createdAt: '创建时间',
+    updatedAt: '更新时间',
+    required: '请输入显示名称',
+    invalidEmail: '请输入有效邮箱',
+    invalidTimeZone: '请输入有效的 IANA 时区，例如 Asia/Shanghai',
+    saved: '个人资料保存成功',
+    saveFailed: '个人资料保存失败，请重试',
+    loadFailed: '个人资料加载失败，请重试',
+  },
+}

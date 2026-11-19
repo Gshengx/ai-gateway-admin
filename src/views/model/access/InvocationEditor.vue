@@ -54,9 +54,9 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AddIcon, MinusCircleIcon } from 'tdesign-icons-vue-next'
 import { accessApi, invocationApis, type Model } from '@/api/modules/modelAccess'
-import { validInvocationPath } from '@/utils/modelInvocation'
+import { resolveInvocationApiIds, validInvocationPath } from '@/utils/modelInvocation'
 import { useLatestRequest } from '@/utils/useLatestRequest'
-import { invocationLabel } from './helpers'
+import { invocationFieldErrorMessage, invocationLabel } from './helpers'
 
 const props = defineProps<{
   configuration: Model
@@ -95,7 +95,7 @@ const defaultPaths: Record<string, string> = {
 }
 const options = computed(() => {
   const protocols = new Set([
-    ...(props.providerId ? protocolOptions.value.map((item) => item.protocol) : invocationApis),
+    ...invocationApis,
     ...rows.value.map((row) => row.protocol).filter((value) => value && value !== 'CUSTOM'),
   ])
   return [
@@ -111,23 +111,28 @@ interface InvocationRow {
 }
 let nextKey = 0
 const rows = ref<InvocationRow[]>([])
+let originalApis: Model['custom_invocation_apis'] = []
 function makeRow(protocol = '', path = '', id?: string): InvocationRow {
   return { ...(id ? { id } : {}), key: nextKey++, protocol, path }
 }
 let synchronizedConfiguration = ''
 function configurationSignature(configuration: Model) {
   return JSON.stringify([
+    configuration.id,
     props.providerId,
     configuration.supported_invocation_apis,
     configuration.custom_invocation_apis,
   ])
 }
 function syncConfiguration() {
-  const custom = rows.value.map((row) => ({
-    ...(row.id ? { id: row.id } : {}),
-    invocation_api: row.protocol === 'CUSTOM' ? 'CUSTOM_PASSTHROUGH' : row.protocol,
-    path: row.path,
-  }))
+  const custom = resolveInvocationApiIds(
+    rows.value.map((row) => ({
+      ...(row.id ? { id: row.id } : {}),
+      invocation_api: row.protocol === 'CUSTOM' ? 'CUSTOM_PASSTHROUGH' : row.protocol,
+      path: row.path,
+    })),
+    originalApis,
+  )
   const configuration = {
     ...props.configuration,
     supported_invocation_apis: custom.map((row) => row.invocation_api).filter(Boolean),
@@ -148,6 +153,7 @@ watch(
     edited.value = false
     initializedProvider = ''
     const configuration = props.configuration
+    originalApis = configuration.custom_invocation_apis.map((api) => ({ ...api }))
     const configuredProtocols = new Set(
       configuration.custom_invocation_apis.map((api) => api.invocation_api),
     )
@@ -267,10 +273,7 @@ function pathError(row: InvocationRow) {
   const serverError =
     props.fieldErrors?.[`invocation_apis[${index}].path`] ??
     props.fieldErrors?.[`base.invocation_apis[${index}].path`]
-  if (serverError)
-    return serverError === 'STANDARD_ROUTE_CONFLICT'
-      ? t('ma.standardRouteConflict', { route: props.standardRoute ?? '' })
-      : t('ma.protocolIncomplete')
+  if (serverError) return invocationFieldErrorMessage(serverError, props.standardRoute)
   if (
     row.protocol === 'CUSTOM' &&
     row.path &&
