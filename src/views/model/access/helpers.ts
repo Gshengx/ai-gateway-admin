@@ -1,4 +1,6 @@
 import { i18n } from '@/locales'
+import { invocationApis } from '@/utils/modelInvocation'
+import type { ModelEditErrorDetail } from '@/api/modules/modelAccessContract'
 export function invocationFieldErrorMessage(rule: string, standardRoute = '') {
   if (rule === 'INVALID_PATH') return i18n.global.t('ma.invocationPathInvalid')
   if (rule === 'STANDARD_ROUTE_CONFLICT')
@@ -13,6 +15,63 @@ export function invocationErrorsMessage(fields: Record<string, string>, standard
         .map(([, rule]) => invocationFieldErrorMessage(rule, standardRoute)),
     ),
   ].join('；')
+}
+/** M05 diagnostics take precedence over the legacy first-error field map. */
+export function modelEditDiagnostics(params?: Record<string, unknown>): ModelEditErrorDetail[] {
+  const errors: ModelEditErrorDetail[] = []
+  const invocationField = /^(?:base\.)?invocation_apis(?:$|\[)/
+  if (Array.isArray(params?.errors)) {
+    for (const value of params.errors) {
+      if (
+        value &&
+        typeof value === 'object' &&
+        typeof value.field === 'string' &&
+        invocationField.test(value.field) &&
+        typeof value.reason_code === 'string' &&
+        typeof value.reason === 'string'
+      )
+        errors.push(value as ModelEditErrorDetail)
+    }
+  }
+  if (params?.fields && typeof params.fields === 'object' && !Array.isArray(params.fields)) {
+    for (const [field, rule] of Object.entries(params.fields)) {
+      if (
+        invocationField.test(field) &&
+        typeof rule === 'string' &&
+        !errors.some((error) => error.field === field)
+      )
+        errors.push({
+          field,
+          reason_code: rule,
+          reason: '',
+          standard_route: params.standard_route as ModelEditErrorDetail['standard_route'],
+        })
+    }
+  }
+  return errors
+}
+
+export function modelEditDiagnosticMessage(error: ModelEditErrorDetail) {
+  const key = `ma.invocationError_${error.reason_code}`
+  const route = error.standard_route
+  const message =
+    error.reason_code === 'STANDARD_ROUTE_CONFLICT' && route
+      ? i18n.global.t('ma.standardRouteConflict', { route: `${route.method} ${route.path}` })
+      : i18n.global.te(key)
+        ? i18n.global.t(key)
+        : error.reason || invocationFieldErrorMessage(error.reason_code)
+  const supported = error.supported_protocols?.filter((protocol) =>
+    invocationApis.includes(protocol),
+  )
+  return supported?.length
+    ? `${message} ${i18n.global.t('ma.invocationSupportedProtocols', {
+        protocols: supported.map(invocationLabel).join(', '),
+      })}`
+    : message
+}
+
+export function modelEditErrorsMessage(errors: ModelEditErrorDetail[]) {
+  return errors.map(modelEditDiagnosticMessage).join('；')
 }
 export const authFieldLabel = (field: { key: string; label: string }) =>
   field.label ||

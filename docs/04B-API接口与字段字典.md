@@ -4,13 +4,13 @@
 
 ## V33 协议配置和接口索引
 
-模型写入统一提交有序的 `invocation_apis`，编辑时回传已有行的 `id`，新增行由后端分配 ID。每个标准协议在一个模型内只可保存一行，`path` 是出站路径。模型可保存多条 `CUSTOM_PASSTHROUGH`，首版固定为 POST，每条完整 `path` 同时用于入站匹配和出站。模型内的透传路径须唯一，并且不能匹配标准入站路由。
+模型写入统一提交有序的 `invocation_apis`，编辑时回传已有行的 `id`，新增行由后端分配 ID。每个标准协议在一个模型内只可保存一行，`path` 是出站路径。模型可保存多条 `CUSTOM_PASSTHROUGH`，首版固定为 POST，每条 `path` 用于网关入站匹配，上游按供应商 `base_url` 的路径前缀追加该路径。模型内的透传路径须唯一，并且不能匹配标准入站路由。
 
 M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，选中可信目录型号时加 `catalog_model_version_id`。顶层 `protocol_options[]` 只返回标准协议及默认出站路径。`custom_passthrough_supported` 返回实例模板的配置能力，未指定供应商时为 `null`。M04 的 `invocation_apis[]` 是已保存配置的唯一视图。目录项继续使用 `suggested_invocation_apis` 和 `suggested_custom_invocation_apis` 同序预填。M13/M14 创建前仍用同序重复 GET 参数 `supported_invocation_apis` 与 `upstream_paths`，例如 `supported_invocation_apis=EMBEDDINGS&upstream_paths=%2Fembeddings`。M14 已有模型模式只传 `model_id`。
 
 失败重试通过 `reuse_job_id` 引用同一模型、同一准入代次下的已终结任务。服务端按配置行 ID 和检测类型核对冻结计划、路径和适配内容，只复用完整通过的配置行。仅调整行序更新 `versions.base`，原准入结果保持有效。增删配置行、修改路径或变更实际目标使旧准入失效。C04 查询当前准入代次，无匹配任务时返回 HTTP 200 且 data 为 null。C02/C03 仍可看历史，健康任务从自身快照回显。
 
-每条 `CUSTOM_PASSTHROUGH` 行独立生成一个 `CONNECTIVITY` 项。探针对该行完整路径发送使用供应商认证的无请求体 `HEAD`。收到 `2xx` 或 `405` 且 `Allow` 含 `POST` 时通过。连通性项的 `cost=null`，调用计入 `auxiliary_http_calls`。所有适用项均通过后进入待审核。
+每条 `CUSTOM_PASSTHROUGH` 行独立生成一个 `CONNECTIVITY` 项。探针对供应商 base_url 路径前缀追加该行 path 所得地址发送使用供应商认证的无请求体 `HEAD`。收到 `2xx` 或 `405` 且 `Allow` 含 `POST` 时通过。连通性项的 `cost=null`，调用计入 `auxiliary_http_calls`。所有适用项均通过后进入待审核。
 
 | 接口                                                                                | V33 契约和字段                                                                                                |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -46,12 +46,12 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 
 ### 1.1 响应封装
 
-| 字段       | 类型           | 必填 | 可空           | 说明                                                                      |
-| ---------- | -------------- | ---- | -------------- | ------------------------------------------------------------------------- |
-| code       | string         | 是   | 否             | 成功为 OK；失败为稳定本地化错误码                                         |
-| data       | 各接口结果组件 | 是   | 仅指定接口允许 | 完整字段见具体接口；错误时恒为 null；C04/H03 无历史时成功 data=null       |
-| params     | object         | 是   | 否             | 成功通常为 {}；失败按 [ErrorParams](#schema-errorparams) 白名单，不含秘密 |
-| request_id | string UUID    | 是   | 否             | 本次控制面请求跟踪标识                                                    |
+| 字段       | 类型           | 必填 | 可空           | 说明                                                                                                                                     |
+| ---------- | -------------- | ---- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| code       | string         | 是   | 否             | 成功为 OK；失败为稳定业务错误码，不随语言变化                                                                                            |
+| data       | 各接口结果组件 | 是   | 仅指定接口允许 | 完整字段见具体接口；错误时恒为 null；C04/H03 无历史时成功 data=null                                                                      |
+| params     | object         | 是   | 否             | 成功通常为 {}；失败按 [ErrorParams](#schema-errorparams) 白名单，M05 另见 [ModelEditErrorParams](#schema-modelediterrorparams)；不含秘密 |
+| request_id | string UUID    | 是   | 否             | 本次控制面请求跟踪标识                                                                                                                   |
 
 所有写请求的 202 只代表受理，任务结果须 GET；任务上游失败保存在 data.status/result，不伪装成管理会话 401。成功对象的未必填字段表示有条件省略，不表示可随意缺少必填字段。
 
@@ -735,20 +735,38 @@ HTTP 200 代表返回了完整的逐行回执。分别展示 `CREATED`、`SKIPPE
 | ACTIVE、SUSPENDED       | 锁定                         | 锁定                                 | 按权限可改  |
 | RETIRED                 | 锁定                         | 可改，至少保留一行                   | 按权限可改  |
 
-| 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
-| ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
-| path   | `model_id`        | string | 是   | 否   | format="uuid"                          | 当前可见新版物理模型UUID，不接受旧逻辑模型ID                                                 |
-| header | `Accept-Language` | string | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 当前用户偏好的支持语言；省略时按现有会话语言协商。                                           |
-| header | `Idempotency-Key` | string | 是   | 否   | minLength=1；maxLength=128             | 同一次人工操作保持的 1～128 字符唯一键；请求变更必须使用新键；不授权自动重试。               |
-| header | `X-CSRF-Token`    | string | 是   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 共享认证上下文提供的 CSRF 令牌。名称在实施契约中与现认证配置绑定，示例名称不代表新认证系统。 |
+| 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                                                         |
+| ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| path   | `model_id`        | string | 是   | 否   | format="uuid"                          | 当前可见新版物理模型UUID，不接受旧逻辑模型ID                                                                                     |
+| header | `Accept-Language` | string | 否   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 非空优先匹配启用语言，未匹配或语法无效时回退系统默认；省略时按有效会话启用偏好再回退系统默认。错误原因支持 zh-CN/en/fr，见下文。 |
+| header | `Idempotency-Key` | string | 是   | 否   | minLength=1；maxLength=128             | 同一次人工操作保持的 1～128 字符唯一键；请求变更必须使用新键；不授权自动重试。                                                   |
+| header | `X-CSRF-Token`    | string | 是   | 否   | 无额外格式限制；仍遵守所属组件业务规则 | 共享认证上下文提供的 CSRF 令牌。名称在实施契约中与现认证配置绑定，示例名称不代表新认证系统。                                     |
 
 请求体：必填 JSON 对象，完整字段见 [ModelUpdate](#schema-modelupdate)。
 
 成功：HTTP **200**，封装字段见 §1.1；`data` 完整字段见 [Model](#schema-model)。
 
-错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`VERSION_CONFLICT`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`、`NAME_CONFLICT`、`BILLING_CURRENCY_CHANGED`、`PRICE_RULE_INVALID`、`METRIC_UNSUPPORTED`；HTTP与恢复语义见§1.2，完整错误体见[Error](#schema-error)。
+错误：`UNAUTHENTICATED`、`FORBIDDEN`、`OUT_OF_SCOPE`、`NOT_FOUND`、`VALIDATION_FAILED`、`MALFORMED_REQUEST`、`RESOURCE_DISABLED`、`PASSWORD_CHANGE_REQUIRED`、`TERMS_ACCEPTANCE_REQUIRED`、`INTERNAL_ERROR`、`STATE_CONFLICT`、`VERSION_CONFLICT`、`CSRF_INVALID`、`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_IN_PROGRESS`、`OPERATION_RESULT_UNKNOWN`、`CATALOG_CHANGED`、`CATALOG_INCOMPATIBLE`、`CATALOG_UNAVAILABLE`、`NAME_CONFLICT`、`PROVIDER_MODEL_CONFLICT`、`BILLING_CURRENCY_CHANGED`、`PRICE_RULE_INVALID`、`METRIC_UNSUPPORTED`、`CUSTOM_API_UNSUPPORTED`、`ORIGIN_REJECTED`、`AUTHENTICATION_BUSY`、`UNSUPPORTED_MEDIA_TYPE`、`COMMAND_HMAC_KEY_UNAVAILABLE`；HTTP 与恢复语义见 §1.2，错误封套见 [Error](#schema-error)，本操作的 `params` 使用 [ModelEditErrorParams](#schema-modelediterrorparams)。
 
-该接口使用的嵌套组件：[InvocationAPIInput](#schema-invocationapiinput), [GrantDelta](#schema-grantdelta), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelIdentityInput](#schema-modelidentityinput), [ModelMetadataInput](#schema-modelmetadatainput), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput)。
+错误原因与语言：顶层 `params.reason_code=code`，`params.reason` 与 `params.errors[].reason` 使用同一协商语言。非空 `Accept-Language` 按权重匹配已启用语言（包括既有 `en-US` / `en-GB` → `en`、`fr-FR` → `fr` 映射）；未匹配或格式无效时直接使用系统默认，不再采用用户偏好。省略请求头时使用有效会话的启用偏好，否则使用系统默认。无法取得权威语言事实时仅安全回退到内置 `zh-CN`，不以翻译失败覆盖原业务码或 HTTP 状态。支持的原因词条为中文、英文、法文；机器原因码和结构化定位信息不翻译。
+
+| 已匹配 M05 路由的失败响应头 | 类型                          | 说明                                                             |
+| --------------------------- | ----------------------------- | ---------------------------------------------------------------- |
+| `Content-Language`          | string，`zh-CN` / `en` / `fr` | 本次顶层及逐项 `reason` 的实际语言；不可按请求头猜测实际回退结果 |
+| `Vary`                      | string                        | 合并 `Accept-Language` 并保留已有值                              |
+| `Cache-Control`             | string                        | 继续为 `no-store`                                                |
+
+协议校验进入后，`errors[]` 汇总已能确认的输入、归属和适配问题；不跨越认证、权限、状态及版本守卫推测后续错误。前置失败没有 `errors` 不代表配置全部合法；已确认的输入诊断可以随已知目录失败一起返回。参数、目录或数据库错误不能导致部分修改域写入或自动调用供应商。`OPERATION_RESULT_UNKNOWN` 仍按原结果核对规则处理，不能假定未保存。切换界面语言只更新后续请求头或按稳定原因码重绘已有错误，不自动重放写请求。三语言同码示例见[前端指南](07-前端协同对接指南.md#保存失败的原因与协议逐项诊断)。
+
+同一个缺绑定错误在三种语言下保持 `code=params.reason_code=METRIC_UNSUPPORTED`、逐项 `reason_code=PROTOCOL_NOT_BOUND`、字段位置及支持协议不变，只改变下列说明文案。表中以请求语言已启用并成功匹配为前提，实际结果以 `Content-Language` 为准：
+
+| `Accept-Language` / `Content-Language` | `params.reason`                                                                                                                                                                                                | `params.errors[0].reason`                                                                                                                                                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `zh-CN`                                | 所提交的标准协议缺少可用适配绑定，或协议与路径配置不受支持，请查看 errors 中的具体原因。                                                                                                                       | 该标准协议未在当前固定供应商模板或关联目录型号中绑定可用适配器；supported_protocols 列出当前允许的标准协议。                                                                                                                               |
+| `en`                                   | A submitted standard protocol has no usable adapter binding, or the protocol and path configuration is unsupported. See errors for the specific reasons.                                                       | This standard protocol has no usable adapter binding in the current pinned provider template or linked catalog model. The supported_protocols field lists the standard protocols currently allowed.                                        |
+| `fr`                                   | Un protocole standard soumis ne possède aucune liaison d’adaptateur utilisable, ou la configuration du protocole et du chemin n’est pas prise en charge. Consultez errors pour connaître les raisons précises. | Ce protocole standard ne possède aucune liaison d’adaptateur utilisable dans le modèle de fournisseur figé actuel ou le modèle associé du catalogue. Le champ supported_protocols indique les protocoles standards actuellement autorisés. |
+
+该接口使用的嵌套组件：[ModelEditErrorParams](#schema-modelediterrorparams), [ModelEditErrorDetail](#schema-modelediterrordetail), [InvocationAPIInput](#schema-invocationapiinput), [GrantDelta](#schema-grantdelta), [HealthInput](#schema-healthinput), [InvocationAPI](#schema-invocationapi), [ModelIdentityInput](#schema-modelidentityinput), [ModelMetadataInput](#schema-modelmetadatainput), [ModelVersions](#schema-modelversions), [OfficialModelBinding](#schema-officialmodelbinding), [PricingInput](#schema-pricinginput)。
 
 <a id="api-m06"></a>
 
@@ -1915,7 +1933,7 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 | ---------- | ----------- | ---- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`       | string UUID | 否   | 否   | M05、D03 和 C05 可用当前模型已有配置行的 ID，且 `protocol` 必须与该行原协议一致。修改路径或排序保留 ID；切换协议按移除旧行并新增无 ID 行处理。新增行或调用 M03、D02 时省略。 |
 | `protocol` | string      | 是   | 否   | 标准协议标识或 `CUSTOM_PASSTHROUGH`。每个标准协议在同一模型内只允许一行。                                                                                                    |
-| `path`     | string      | 是   | 否   | 标准协议的出站路径，或透传的完整入站及出站路径。透传路径在同一模型内唯一。                                                                                                   |
+| `path`     | string      | 是   | 否   | 标准协议的出站路径，或透传的网关入站路径及相对供应商 base_url 的上游后缀。透传路径在同一模型内唯一。                                                                         |
 
 路径长度为 1 至 2048 字节，以 `/` 开头，不能包含主机、查询串、片段、占位符、空白、控制符、反斜杠、路径段 `.` 或 `..`，也不能通过百分号编码引入分隔符或规避校验。透传使用可原样发送的转义路径，包含供应商 API 地址中的部署前缀，例如供应商地址 `https://upstream.example/deploy` 使用 `/deploy/v1/custom/rerank`。配置不能匹配任何标准入站路由。未声明字段会被拒绝。
 
@@ -1927,15 +1945,15 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 InvocationAPI 字段契约；下列字段含义、必填与空值均是正式设计要求
 
-| 字段                   | 类型/组件     | 必填 | 可空 | 默认/省略                       | 字段说明                                         | 约束                                                |
-| ---------------------- | ------------- | ---- | ---- | ------------------------------- | ------------------------------------------------ | --------------------------------------------------- |
-| `id`                   | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                         | format="uuid"                                       |
-| `protocol`             | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用协议标识                                     | 无额外格式限制；仍遵守所属组件业务规则              |
-| `path`                 | string        | 是   | 否   | 无静态默认                      | 标准协议的出站路径，或透传的完整入站及出站路径。 | 同 [InvocationAPIInput](#schema-invocationapiinput) |
-| `adapter_key`          | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读适配键                                       | 无额外格式限制；仍遵守所属组件业务规则              |
-| `adapter_revision`     | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端适配器规格版本，保证历史可追溯             | 无额外格式限制；仍遵守所属组件业务规则              |
-| `streaming_applicable` | boolean       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此接口是否适用流式检查；须结合模型流式标签       | 无额外格式限制；仍遵守所属组件业务规则              |
-| `applicability_reason` | string / null | 否   | 是   | 无静态默认；省略语义见组件/接口 | 接口不适用原因码；适用时可为空                   | 无额外格式限制；仍遵守所属组件业务规则              |
+| 字段                   | 类型/组件     | 必填 | 可空 | 默认/省略                       | 字段说明                                                                   | 约束                                                |
+| ---------------------- | ------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
+| `id`                   | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 稳定UUID                                                                   | format="uuid"                                       |
+| `protocol`             | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 启用协议标识                                                               | 无额外格式限制；仍遵守所属组件业务规则              |
+| `path`                 | string        | 是   | 否   | 无静态默认                      | 标准协议的出站路径，或透传的网关入站路径及相对供应商 base_url 的上游后缀。 | 同 [InvocationAPIInput](#schema-invocationapiinput) |
+| `adapter_key`          | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 只读适配键                                                                 | 无额外格式限制；仍遵守所属组件业务规则              |
+| `adapter_revision`     | string        | 是   | 否   | 无静态默认；省略语义见组件/接口 | 服务端适配器规格版本，保证历史可追溯                                       | 无额外格式限制；仍遵守所属组件业务规则              |
+| `streaming_applicable` | boolean       | 是   | 否   | 无静态默认；省略语义见组件/接口 | 此接口是否适用流式检查；须结合模型流式标签                                 | 无额外格式限制；仍遵守所属组件业务规则              |
+| `applicability_reason` | string / null | 否   | 是   | 无静态默认；省略语义见组件/接口 | 接口不适用原因码；适用时可为空                                             | 无额外格式限制；仍遵守所属组件业务规则              |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3274,6 +3292,59 @@ Deleted 字段契约；下列字段含义、必填与空值均是正式设计要
 | `details`           | array&lt;[SafeErrorDetail](#schema-safeerrordetail)&gt; | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可安全显示的细分错误列表；无细节时可省略                        | 无额外格式限制；仍遵守所属组件业务规则                                                                  |
 
 未声明字段：拒绝（`additionalProperties=false`）。
+
+<a id="schema-modelediterrorparams"></a>
+
+### ModelEditErrorParams
+
+仅用于 M05 的失败响应。继承 `ErrorParams` 和协议冲突参数，新增受控本地化说明及逐项错误；其他操作仍使用各自契约，不因本组件扩大字段或权限。实际 OpenAPI 保留安全扩展参数，不能把响应中的未知键直接渲染成错误文案。
+
+| 字段              | 类型/组件                                                         | 必填 | 可空 | 省略语义                                       | 字段说明                                                                              |
+| ----------------- | ----------------------------------------------------------------- | ---- | ---- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `reason_code`     | string                                                            | 是   | 否   | 不省略                                         | 与外层 `code` 一致的稳定业务码；不随语言变化                                          |
+| `reason`          | string                                                            | 是   | 否   | 不省略                                         | 当前业务错误的受控本地化说明，实际语言见 `Content-Language`；内部异常只给安全通用提示 |
+| `errors`          | array&lt;[ModelEditErrorDetail](#schema-modelediterrordetail)&gt; | 否   | 否   | 没有可安全返回的逐项诊断时省略；不表示配置合法 | 本次已能判定的接口配置问题；按配置行顺序返回，同一行可有多个原因；下标从 0 开始       |
+| `fields`          | object&lt;string,string&gt;                                       | 否   | 否   | 没有明确定位时省略                             | 字段路径到稳定规则的映射；同一字段有多项原因时仅保留首项，完整原因读取 `errors`       |
+| `version_domain`  | string                                                            | 否   | 否   | 无版本域信息时省略                             | 已确认的版本冲突域，保留原接口语义                                                    |
+| `current_version` | integer                                                           | 否   | 否   | 无当前版本信息时省略                           | 已确认的当前版本，不能代替重新读取其他域事实                                          |
+| `standard_route`  | object                                                            | 否   | 否   | 没有标准入口冲突时省略                         | 首个标准入口冲突的受控 `method` / `path`；多项冲突分别见 `errors[].standard_route`    |
+
+已知目录依赖失败时可以携带已确认的输入诊断；未知内部异常不携带内部原因或推测性的接口范围。语言翻译只改变 `reason` 文案，不改变上述机器字段、业务拒绝分类或事务结果。
+
+<a id="schema-modelediterrordetail"></a>
+
+### ModelEditErrorDetail
+
+M05 单项接口配置诊断。所有字符串原因均来自已审词条；不回显请求中的任意协议字符串、原始路径、外部行 ID、秘密或底层异常。
+
+| 字段                  | 类型/组件           | 必填 | 可空 | 省略语义                         | 字段说明/约束                                                                                |
+| --------------------- | ------------------- | ---- | ---- | -------------------------------- | -------------------------------------------------------------------------------------------- |
+| `field`               | string              | 是   | 否   | 不省略                           | 相对于完整请求体的字段路径，例如 `base.invocation_apis[1].protocol`；配置行下标从 0 开始     |
+| `reason_code`         | string              | 是   | 否   | 不省略                           | 稳定细分原因码，见下表；不随语言变化                                                         |
+| `reason`              | string              | 是   | 否   | 不省略                           | 与顶层 `params.reason` 使用同一实际语言的受控说明，见 `Content-Language`                     |
+| `protocol`            | string              | 否   | 否   | 未确认输入属于已知协议枚举时省略 | 仅回填既有标准协议枚举或 `CUSTOM_PASSTHROUGH`；不翻译                                        |
+| `binding_scope`       | string              | 否   | 否   | 问题不涉及可确认的绑定层级时省略 | `PROVIDER_TEMPLATE` 为供应商固定模板；`CATALOG_MODEL` 为关联可信型号；不翻译                 |
+| `supported_protocols` | array&lt;string&gt; | 否   | 否   | 无可列出的有效标准协议时省略     | 该实际绑定层级允许的标准协议，仅修正提示，不授予权限；不与其他层级求并集，不包含透传，不翻译 |
+| `standard_route`      | object              | 否   | 否   | 不是可确认的标准入口冲突时省略   | 仅 `STANDARD_ROUTE_CONFLICT` 使用；含受控字符串 `method`、`path`，路径可以是标准模板；不翻译 |
+
+| 逐项 `reason_code`               | 含义                                                             |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `REQUIRED`                       | 须显式提供列表，或当前状态不允许空列表；DRAFT 仍可提交空数组     |
+| `VALUE_RANGE`                    | 列表超过 32 行上限                                               |
+| `PROTOCOL_UNSUPPORTED`           | 未知协议枚举                                                     |
+| `PROTOCOL_NOT_BOUND`             | 实际模板或型号未绑定所选标准协议                                 |
+| `DUPLICATE_PROTOCOL`             | 同一标准协议重复配置                                             |
+| `DUPLICATE_PATH`                 | 自定义透传路径重复                                               |
+| `DUPLICATE_ID`                   | 同一配置行 ID 重复提交                                           |
+| `INVALID_PATH`                   | 路径格式、转义或相对基址拼接不合法                               |
+| `INVALID_UUID`                   | 已有配置行 ID 不是有效 UUID                                      |
+| `UNSUPPORTED_FIELD`              | 当前操作不支持该字段；为共享校验保留，M05 正常入参流程通常不触发 |
+| `NOT_MODEL_INVOCATION`           | 行 ID 不属于目标模型，或该 ID 的协议身份不匹配                   |
+| `STANDARD_ROUTE_CONFLICT`        | 透传路径与网关标准入站路由冲突                                   |
+| `CUSTOM_PASSTHROUGH_UNSUPPORTED` | 固定模板未启用自定义透传                                         |
+| `PAIR_COUNT_MISMATCH`            | 协议与路径数量不一致；为共享校验保留，M05 正常入参转换通常不触发 |
+| `CATALOG_TEMPLATE_INCOMPATIBLE`  | 固定模板与已实现适配能力不兼容                                   |
+| `CATALOG_MODEL_INCOMPATIBLE`     | 关联型号与固定模板及已实现适配能力不兼容                         |
 
 <a id="schema-error"></a>
 

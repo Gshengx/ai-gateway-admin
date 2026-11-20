@@ -37,9 +37,18 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button, MessagePlugin, type TreeProps, type TreeSelectProps } from 'tdesign-vue-next'
 import { RefreshIcon } from 'tdesign-icons-vue-next'
-import { getDepartmentListApi, type DepartmentItem } from '@/api/modules/identity'
+import {
+  getDepartmentListApi,
+  type DepartmentItem,
+  type DepartmentQuery,
+} from '@/api/modules/identity'
 import { useDepartmentPopup } from '@/utils/useDepartmentPopup'
 import { useTreeBranches } from '@/utils/useTreeBranches'
+
+type DepartmentOption = Pick<
+  DepartmentItem,
+  'id' | 'name' | 'display_name' | 'parent_id' | 'has_children'
+>
 
 const props = withDefaults(
   defineProps<{
@@ -49,6 +58,10 @@ const props = withDefaults(
     disabled?: boolean
     resolveDescendants?: boolean
     searchable?: boolean
+    loadDepartments?: (
+      params: DepartmentQuery,
+      refresh?: boolean,
+    ) => Promise<{ items: DepartmentOption[] }>
   }>(),
   { clearable: true, resolveDescendants: true, searchable: true },
 )
@@ -79,10 +92,10 @@ let retrySelection: string | undefined
 const departmentLoading = computed(
   () => searchLoading.value || rootLoading.value || resolving.value,
 )
-const departmentItems = new Map<string, DepartmentItem>()
+const departmentItems = new Map<string, DepartmentOption>()
 const nodeVersions = new Map<string, number>()
 const refreshingNodes = reactive(new Set<string>())
-const inFlight = new Map<string, Promise<DepartmentItem[]>>()
+const inFlight = new Map<string, Promise<DepartmentOption[]>>()
 let rootLoaded = false
 let selectionVersion = 0
 const departmentNames = reactive(new Map<string, string>())
@@ -94,7 +107,13 @@ const departmentTree = computed(() =>
 )
 const selectedDepartmentName = computed(() => departmentNames.get(props.modelValue) ?? '')
 
-function departmentNodes(items: DepartmentItem[]): DepartmentNode[] {
+function fetchDepartments(params: DepartmentQuery = {}, refresh = false) {
+  return props.loadDepartments
+    ? props.loadDepartments(params, refresh)
+    : getDepartmentListApi(params)
+}
+
+function departmentNodes(items: DepartmentOption[]): DepartmentNode[] {
   return items.map((item) => {
     departmentItems.set(item.id, item)
     const label = item.display_name || item.name
@@ -181,7 +200,7 @@ function onDepartmentSearch(value: string) {
   if (!keyword) return
   searchTimer = setTimeout(async () => {
     try {
-      const result = await getDepartmentListApi({ search: keyword })
+      const result = await fetchDepartments({ search: keyword })
       if (version !== searchVersion || session !== departmentSession) return
       const nodes = departmentNodes(result.items)
       const byId = new Map(nodes.map((node) => [node.value, node]))
@@ -214,11 +233,11 @@ function findNode(nodes: DepartmentNode[], id: string): DepartmentNode | undefin
   }
 }
 
-function requestChildren(id: string): Promise<DepartmentItem[]> {
+function requestChildren(id: string, refresh = false): Promise<DepartmentOption[]> {
   const pending = inFlight.get(id)
   if (pending) return pending
   const session = departmentSession
-  const request = getDepartmentListApi({ parent_id: id })
+  const request = fetchDepartments({ parent_id: id }, refresh)
     .then((result) => result.items)
     .finally(() => {
       if (session === departmentSession && inFlight.get(id) === request) inFlight.delete(id)
@@ -229,8 +248,8 @@ function requestChildren(id: string): Promise<DepartmentItem[]> {
 
 async function collectDescendants(
   id: string,
-  items: Map<string, DepartmentItem>,
-  request: (id: string) => Promise<DepartmentItem[]>,
+  items: Map<string, DepartmentOption>,
+  request: (id: string) => Promise<DepartmentOption[]>,
   isCurrent: () => boolean,
 ) {
   const visited = new Set([id])
@@ -311,7 +330,7 @@ async function loadRoots() {
   const session = departmentSession
   rootLoading.value = true
   try {
-    const result = await getDepartmentListApi()
+    const result = await fetchDepartments()
     if (session !== departmentSession) return
     lazyDepartments.value = departmentNodes(result.items)
     rootLoaded = true
@@ -370,7 +389,7 @@ async function refreshNode(id: string) {
   inFlight.delete(id)
   const isCurrent = () => session === departmentSession && nodeVersions.get(id) === version
   try {
-    const items = await requestChildren(id)
+    const items = await requestChildren(id, true)
     if (!isCurrent() || findNode(lazyDepartments.value, id) !== parent) return
     const previous = new Map(
       (Array.isArray(parent.children) ? parent.children : []).map((child) => [child.value, child]),
@@ -447,7 +466,7 @@ watch(locale, async () => {
     }
     if (!departmentNames.has(id)) {
       // Supports externally supplied values whose ancestor path is not cached yet.
-      const result = await getDepartmentListApi({ search: selected?.name || id })
+      const result = await fetchDepartments({ search: selected?.name || id })
       if (session !== departmentSession) return
       departmentNodes(result.items)
     }

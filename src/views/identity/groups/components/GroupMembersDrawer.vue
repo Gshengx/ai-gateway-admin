@@ -16,7 +16,7 @@
 
       <div class="members__head">
         <h3 class="members__title">{{ t('groups.membersDrawer.sectionTitle') }}</h3>
-        <t-space :size="8">
+        <t-space :size="8" align="center">
           <span>{{ t('common.selected', { n: selectedKeys.length }) }}</span>
           <t-button v-if="selectedKeys.length" variant="text" size="small" @click="clearSelection">
             {{ t('common.clearSelection') }}
@@ -56,6 +56,8 @@
         </t-input>
         <department-tree-select
           v-model="departmentId"
+          :load-departments="loadMemberDepartments"
+          :resolve-descendants="false"
           class="members__select"
           :placeholder="t('groups.membersDrawer.allDepartments')"
           @change="onDepartmentChange"
@@ -144,6 +146,7 @@ import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DepartmentTreeSelect from '@/components/DepartmentTreeSelect.vue'
+import { useMemberDepartments } from '../useMemberDepartments'
 import { MessagePlugin, type PaginationProps, type PrimaryTableCol } from 'tdesign-vue-next'
 
 import AddMembersDialog from './AddMembersDialog.vue'
@@ -167,6 +170,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const loadMemberDepartments = useMemberDepartments()
 const userStore = useUserStore()
 
 let memberRequest = 0

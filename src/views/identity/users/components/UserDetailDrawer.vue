@@ -117,9 +117,6 @@
                 }}
               </div>
             </dd>
-            <dd v-else-if="termsState === 'notApplicable'" class="terms-banner">
-              <t-alert theme="info" :message="t('users.detail.termsBannerNotApplicable')" />
-            </dd>
             <dd v-else>
               <span class="detail-empty-value">
                 {{ termsState === 'unavailable' ? t('users.detail.termsUnavailable') : '—' }}
@@ -474,22 +471,17 @@ const termsInfo = ref<UserTermsInfo | null>(null)
 const termsState = computed(() => {
   if (termsLoading.value) return 'loading'
   if (!termsInfo.value) return 'unavailable'
-  if (termsInfo.value.visibility !== 'VISIBLE') return 'notApplicable'
   if (termsInfo.value.status === 'ACCEPTED') return 'accepted'
   if (termsInfo.value.status === 'NOT_ACCEPTED') return 'notNone'
   return 'unavailable'
 })
-const currentAcceptance = computed(() =>
-  termsInfo.value?.visibility === 'VISIBLE' ? termsInfo.value.current_acceptance : null,
-)
+const currentAcceptance = computed(() => termsInfo.value?.current_acceptance ?? null)
 const termsVersionIp = computed(() =>
   [currentAcceptance.value?.terms_version, currentAcceptance.value?.client_ip]
     .filter((value) => !!value)
     .join(' / '),
 )
-const lastAcceptance = computed(() =>
-  termsInfo.value?.visibility === 'VISIBLE' ? termsInfo.value.last_acceptance : null,
-)
+const lastAcceptance = computed(() => termsInfo.value?.last_acceptance ?? null)
 
 const canViewKeys = computed(() => hasPermission(userStore.permissions, 'identity.keys'))
 const canWriteKeys = computed(() => canWriteResource(userStore.permissions, 'identity.keys'))

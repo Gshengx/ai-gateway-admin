@@ -1,15 +1,24 @@
 <template>
   <div class="invocation-editor ma-stack">
+    <div class="invocation-editor__header" aria-hidden="true">
+      <span class="invocation-editor__required">{{ t('ma.protocol') }}</span>
+      <span class="invocation-editor__required">{{ t('ma.protocolPath') }}</span>
+    </div>
+    <t-alert v-if="notice" class="model-config-warning" theme="warning" :message="notice" />
     <div v-for="row in rows" :key="row.key" class="invocation-editor__row">
-      <t-form-item :label="t('ma.protocol')">
+      <t-form-item :label-width="0">
         <t-select
+          :aria-label="t('ma.protocol')"
+          aria-required="true"
           :value="row.protocol"
           :disabled="disabled"
           :placeholder="t('ma.chooseProtocol')"
           :status="protocolError(row) ? 'error' : undefined"
-          :tips="protocolError(row)"
           @change="(value: unknown) => selectProtocol(row, String(value))"
         >
+          <template v-if="protocolError(row)" #tips>
+            <t-alert class="model-config-warning" theme="warning" :message="protocolError(row)" />
+          </template>
           <t-option
             v-for="option in options"
             class="invocation-editor__protocol-option"
@@ -31,15 +40,20 @@
           </t-option>
         </t-select>
       </t-form-item>
-      <t-form-item :label="t('ma.protocolPath')">
+      <t-form-item :label-width="0">
         <t-input
+          :aria-label="t('ma.protocolPath')"
+          aria-required="true"
           v-model="row.path"
           :disabled="disabled"
           :placeholder="t('ma.choosePath')"
           :status="pathError(row) ? 'error' : undefined"
-          :tips="pathError(row)"
-          @change="syncEditedConfiguration"
-        />
+          @change="syncEditedConfiguration(row)"
+        >
+          <template v-if="pathError(row)" #tips>
+            <t-alert class="model-config-warning" theme="warning" :message="pathError(row)" />
+          </template>
+        </t-input>
       </t-form-item>
       <t-button
         variant="text"
@@ -50,9 +64,12 @@
         ><template #icon><minus-circle-icon /></template
       ></t-button>
     </div>
-    <p v-if="validateRequired && validationError === 'required'" class="ma-error" role="alert">
-      {{ t('ma.invocationRequired') }}
-    </p>
+    <t-alert
+      v-if="validateRequired && validationError === 'required'"
+      class="model-config-warning"
+      theme="warning"
+      :message="t('ma.invocationRequired')"
+    />
     <div class="invocation-editor__actions">
       <span v-if="rows.length >= maximumRows" class="ma-muted">{{ t('ma.protocolLimit') }}</span>
       <t-button variant="text" :disabled="disabled || rows.length >= maximumRows" @click="addRow()">
@@ -68,11 +85,14 @@ import { AddIcon, MinusCircleIcon } from 'tdesign-icons-vue-next'
 import { accessApi, invocationApis, type Model } from '@/api/modules/modelAccess'
 import { resolveInvocationApiIds, validInvocationPath } from '@/utils/modelInvocation'
 import { useLatestRequest } from '@/utils/useLatestRequest'
-import { invocationFieldErrorMessage, invocationLabel } from './helpers'
+import { invocationFieldErrorMessage, invocationLabel, modelEditDiagnosticMessage } from './helpers'
+import type { ModelEditErrorDetail } from '@/api/modules/modelAccessContract'
 
 const props = defineProps<{
   configuration: Model
   fieldErrors?: Record<string, string>
+  diagnostics?: ModelEditErrorDetail[]
+  notice?: string
   standardRoute?: string
   disabled?: boolean
   hideHelp?: boolean
@@ -84,7 +104,10 @@ const props = defineProps<{
   providedCustomPassthroughSupported?: boolean | null
   providedOptions?: Array<{ protocol: string; default_path: string | null }>
 }>()
-const emit = defineEmits<{ 'update:configuration': [value: Model] }>()
+const emit = defineEmits<{
+  'update:configuration': [value: Model]
+  'edit-diagnostic': [index: number, field: 'protocol' | 'path' | 'remove' | 'add']
+}>()
 const { t, locale } = useI18n()
 const maximumRows = 32
 const protocolOptions = ref<Array<{ protocol: string; default_path: string | null }>>([])
@@ -156,7 +179,8 @@ function syncConfiguration() {
   synchronizedConfiguration = configurationSignature(configuration)
   emit('update:configuration', configuration)
 }
-function syncEditedConfiguration() {
+function syncEditedConfiguration(row: InvocationRow) {
+  emit('edit-diagnostic', rows.value.indexOf(row), 'path')
   edited.value = true
   syncConfiguration()
 }
@@ -248,18 +272,25 @@ watch(
 function addRow() {
   if (rows.value.length >= maximumRows) return
   edited.value = true
+  emit('edit-diagnostic', rows.value.length, 'add')
   rows.value.push(makeRow())
   syncConfiguration()
 }
 function removeRow(key: number) {
   if (rows.value.length <= 1) return
   edited.value = true
+  emit(
+    'edit-diagnostic',
+    rows.value.findIndex((row) => row.key === key),
+    'remove',
+  )
   rows.value = rows.value.filter((row) => row.key !== key)
   syncConfiguration()
 }
 function selectProtocol(row: InvocationRow, protocol: string) {
   if (optionDisabled(protocol, row)) return
   edited.value = true
+  emit('edit-diagnostic', rows.value.indexOf(row), 'protocol')
   row.protocol = protocol
   row.path =
     protocol === 'CUSTOM'
@@ -273,7 +304,21 @@ function optionDisabled(protocol: string, row: InvocationRow) {
   if (protocol === 'CUSTOM') return customSupported.value === false && row.protocol !== 'CUSTOM'
   return rows.value.some((other) => other.key !== row.key && other.protocol === protocol)
 }
+function diagnosticError(row: InvocationRow, field: 'protocol' | 'path') {
+  const index = rows.value.indexOf(row)
+  return (props.diagnostics ?? [])
+    .filter(
+      (error) =>
+        new RegExp(`^(?:base\\.)?invocation_apis\\[${index}\\]\\.${field}$`).test(error.field) ||
+        (field === 'protocol' &&
+          new RegExp(`^(?:base\\.)?invocation_apis\\[${index}\\]\\.id$`).test(error.field)),
+    )
+    .map(modelEditDiagnosticMessage)
+    .join('；')
+}
 function protocolError(row: InvocationRow) {
+  const serverError = diagnosticError(row, 'protocol')
+  if (serverError) return serverError
   if (
     row.protocol &&
     row.protocol !== 'CUSTOM' &&
@@ -284,6 +329,8 @@ function protocolError(row: InvocationRow) {
   return ''
 }
 function pathError(row: InvocationRow) {
+  const diagnostic = diagnosticError(row, 'path')
+  if (diagnostic) return diagnostic
   const index = rows.value.findIndex((item) => item.key === row.key)
   const serverError =
     props.fieldErrors?.[`invocation_apis[${index}].path`] ??
@@ -304,10 +351,27 @@ function pathError(row: InvocationRow) {
 // Both parent flows validate the same ordered configuration they submit.
 const validationError = computed<'required' | 'duplicate' | 'incomplete' | null>(() => {
   if (!rows.value.some((row) => row.protocol)) return 'required'
-  if (rows.value.some((row) => protocolError(row) === t('ma.protocolDuplicate'))) return 'duplicate'
+  if (
+    rows.value.some(
+      (row) =>
+        row.protocol &&
+        row.protocol !== 'CUSTOM' &&
+        rows.value.some((other) => other.key !== row.key && other.protocol === row.protocol),
+    )
+  )
+    return 'duplicate'
   if (
     rows.value.length > maximumRows ||
-    rows.value.some((row) => !row.protocol || !validInvocationPath(row.path) || pathError(row))
+    rows.value.some(
+      (row) =>
+        !row.protocol ||
+        !validInvocationPath(row.path) ||
+        (row.protocol === 'CUSTOM' &&
+          rows.value.some(
+            (other) =>
+              other.key !== row.key && other.protocol === 'CUSTOM' && other.path === row.path,
+          )),
+    )
   )
     return 'incomplete'
   return null

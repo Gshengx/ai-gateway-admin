@@ -1,11 +1,12 @@
 <template>
   <t-tree-select
+    ref="selector"
     v-model="value"
     :data="nodes"
     multiple
     :tree-props="treeProps"
     :placeholder="t('cost.selectDepartmentLabel')"
-    :popup-props="{ overlayClassName: 'cost-user-popup' }"
+    :popup-props="popupProps"
     @popup-visible-change="open"
   />
 </template>
@@ -16,6 +17,10 @@ import { getCostContext, getCostDepartment, type CostDepartment } from '@/api/mo
 import { useCost } from '../useCost'
 import { useTreeBranches } from '@/utils/useTreeBranches'
 import { useLatestRequest } from '@/utils/useLatestRequest'
+import { useDepartmentPopup } from '@/utils/useDepartmentPopup'
+const selector = ref<{ $el: HTMLElement }>()
+const root = computed(() => selector.value?.$el)
+const { popupProps, setVisible } = useDepartmentPopup(root)
 const props = defineProps<{ modelValue: string[]; unrestricted?: boolean; rootId?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
 const { t, english, departments, ensureDepartments, error } = useCost()
@@ -54,6 +59,7 @@ const treeProps = computed<TreeProps>(() => ({
   icon: branches.icon,
 }))
 async function open(visible: boolean) {
+  setVisible(visible)
   requests.invalidate()
   branches.invalidate()
   if (!visible) return

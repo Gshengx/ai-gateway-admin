@@ -26,3 +26,7 @@ pnpm-debug.log*
 .trae-tmp/
 openapi_dump.json
 .playwright-mcp/
+
+# bundle-require 加载 Mock 时生成的临时模块
+mock/**/*.bundled_*.mjs
+mock/**/*.bundled_*.cjs

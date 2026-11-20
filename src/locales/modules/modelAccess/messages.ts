@@ -1,4 +1,67 @@
 const labels: Record<string, [string, string]> = {
+  periodPriceErrors: ['{periods}：{message}', '{periods}: {message}'],
+  invocationError_REQUIRED: [
+    '请提供当前状态要求的协议配置',
+    'Provide the protocol configuration required by the current state.',
+  ],
+  invocationError_VALUE_RANGE: [
+    '最多配置 32 组协议',
+    'A maximum of 32 protocol entries is allowed.',
+  ],
+  invocationError_PROTOCOL_UNSUPPORTED: ['协议不受支持', 'The protocol is unsupported.'],
+  invocationError_PROTOCOL_NOT_BOUND: [
+    '当前固定模板或关联型号未绑定该标准协议的适配器',
+    'This standard protocol has no adapter binding in the pinned template or linked catalog model.',
+  ],
+  invocationError_DUPLICATE_PROTOCOL: [
+    '所选标准协议不能重复',
+    'Standard protocols cannot be duplicated.',
+  ],
+  invocationError_DUPLICATE_PATH: [
+    '自定义透传路径不可重复',
+    'Custom passthrough paths must be unique.',
+  ],
+  invocationError_DUPLICATE_ID: ['配置行 ID 不可重复', 'Configuration row IDs must be unique.'],
+  invocationError_INVALID_PATH: [
+    '路径格式、转义或相对基址拼接不合法',
+    'The path format, escaping, or composition with the base URL is invalid.',
+  ],
+  invocationError_INVALID_UUID: [
+    '配置行 ID 不是有效 UUID',
+    'The configuration row ID is not a valid UUID.',
+  ],
+  invocationError_UNSUPPORTED_FIELD: [
+    '当前操作不支持该配置字段',
+    'This configuration field is unsupported for the operation.',
+  ],
+  invocationError_NOT_MODEL_INVOCATION: [
+    '配置行不属于当前模型，或其协议身份不匹配',
+    'The row does not belong to this model or its protocol identity does not match.',
+  ],
+  invocationError_CUSTOM_PASSTHROUGH_UNSUPPORTED: [
+    '当前固定模板未启用自定义透传',
+    'The pinned template does not support custom passthrough.',
+  ],
+  invocationError_PAIR_COUNT_MISMATCH: [
+    '协议与路径数量不一致',
+    'Protocol and path counts do not match.',
+  ],
+  invocationError_CATALOG_TEMPLATE_INCOMPATIBLE: [
+    '固定模板与已实现适配能力不兼容',
+    'The pinned template is incompatible with the available adapters.',
+  ],
+  invocationError_CATALOG_MODEL_INCOMPATIBLE: [
+    '关联型号与固定模板及适配能力不兼容',
+    'The linked catalog model is incompatible with the pinned template and adapters.',
+  ],
+  invocationSupportedProtocols: [
+    '当前支持的标准协议：{protocols}',
+    'Supported standard protocols: {protocols}',
+  ],
+  billingItemsChanged: [
+    '供应商或协议变更后，计费项已发生变化，请检查并确认价格配置。',
+    'Billing items have changed after updating the provider or protocols. Review and confirm the pricing configuration.',
+  ],
   admissionProtocolRequired: [
     '请先在编辑中配置协议和路径，再发起准入检测。',
     'Configure protocols and paths in Edit before starting an admission test.',
@@ -118,8 +181,8 @@ const labels: Record<string, [string, string]> = {
     'Internal pricing is incomplete or periods overlap. Check the rules.',
   ],
   error_METRIC_UNSUPPORTED: [
-    '计量指标或单位与当前适配规格不一致',
-    'Metrics or units differ from the current adapter specification.',
+    '协议、路径或计量配置不受当前适配规格支持',
+    'The protocol, path, or metering configuration is unsupported by the current adapter specification.',
   ],
   error_CATALOG_CHANGED: [
     '目录批次已更新，请保留草稿并重新读取',
@@ -537,8 +600,8 @@ const labels: Record<string, [string, string]> = {
     'Invalid path: enter an actual path starting with /. Placeholders, query strings, fragments, whitespace, and relative path segments are not allowed.',
   ],
   protocolHelp: [
-    '标准协议预填默认出站路径；自定义透传的完整路径同时用于网关入站和供应商出站，同一模型内路径不可重复。',
-    'Standard protocols prefill the outbound path. Each custom passthrough path is used for both gateway ingress and upstream egress and must be unique within the model.',
+    '标准协议预填默认出站路径；自定义透传路径用于网关入站，不包含供应商部署前缀，上游由服务端追加到供应商 base_url 路径后，同一模型内路径不可重复。',
+    'Standard protocols prefill the outbound path. Custom passthrough paths match gateway ingress and exclude the provider deployment prefix. The server appends them to the provider base_url path. Paths must be unique within the model.',
   ],
   supportedApis: ['支持的调用接口', 'Supported invocation APIs'],
   loadingRecipient: ['加载接收人…', 'Loading recipient…'],

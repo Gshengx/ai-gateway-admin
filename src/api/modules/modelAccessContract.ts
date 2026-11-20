@@ -677,6 +677,24 @@ export interface ErrorParams {
   details?: Array<SafeErrorDetail>
 }
 
+/** M05 only: safe, localized diagnostics relative to the complete request body. */
+export interface ModelEditErrorDetail {
+  field: string
+  reason_code: string
+  reason: string
+  protocol?: string
+  binding_scope?: 'PROVIDER_TEMPLATE' | 'CATALOG_MODEL'
+  supported_protocols?: string[]
+  standard_route?: { method: string; path: string }
+}
+
+export interface ModelEditErrorParams extends ErrorParams {
+  reason_code: string
+  reason: string
+  errors?: ModelEditErrorDetail[]
+  standard_route?: { method: string; path: string }
+}
+
 export interface Error {
   code: string
   data: null

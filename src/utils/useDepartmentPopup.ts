@@ -25,7 +25,6 @@ export function useDepartmentPopup(root: Ref<HTMLElement | undefined>) {
     if (!trigger?.getClientRects().length || !measure) return reset()
     const rect = trigger.getBoundingClientRect()
     const style = getComputedStyle(trigger)
-    const maximum = Number.parseFloat(style.getPropertyValue('--department-tree-popup-max-width'))
     const margin = measure.getBoundingClientRect().width
     const boundary = trigger.closest<HTMLElement>('.t-dialog__body, .t-drawer__body') ?? undefined
     const bounds = boundary?.getBoundingClientRect()
@@ -34,16 +33,15 @@ export function useDepartmentPopup(root: Ref<HTMLElement | undefined>) {
     if (
       style.visibility !== 'visible' ||
       (boundary && (!bounds?.width || !bounds.height)) ||
-      ![rect.left, rect.right, rect.width, maximum, margin, left, right].every(Number.isFinite) ||
+      ![rect.left, rect.right, rect.width, margin, left, right].every(Number.isFinite) ||
       rect.width <= 0 ||
       Math.abs(rect.width - trigger.offsetWidth) > 1 ||
-      maximum <= 0 ||
       right - left < rect.width ||
       rect.left < left ||
       rect.right > right
     )
       return reset()
-    const target = Math.max(rect.width, Math.min(maximum, right - left))
+    const target = rect.width
     const alignRight = Boolean(boundary) && rect.left + target > right
     geometry.value = {
       width: Math.max(

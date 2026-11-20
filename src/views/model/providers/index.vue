@@ -181,13 +181,7 @@
                         detail.alert_state === 'LOW',
                     },
                   ]"
-                  >{{
-                    detail.last_balance_value === null
-                      ? '—'
-                      : formatDecimal(detail.last_balance_value) +
-                        ' ' +
-                        (detail.last_balance_unit ?? t('ma.UNKNOWN'))
-                  }}</strong
+                  >{{ balanceText(detail) }}</strong
                 ><t-tag
                   v-if="detail.balance_alert_enabled && detail.last_balance_value !== null"
                   variant="light"

@@ -7,6 +7,7 @@ import { getPasswordRules } from './settings'
 import { termsAcceptances, userTermsInfo } from './terms'
 import { removeModelSubject } from './_modelAccessState'
 import { createHash } from 'node:crypto'
+import type { RespThisType } from 'vite-plugin-mock'
 import {
   checkToken,
   auditedMock,
@@ -1486,6 +1487,59 @@ export default auditedMock([
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .map((group) => toApiGroup(group, locale))
       return success(groupOffsetPage(items, req))
+    },
+  },
+  {
+    url: '/api/v1/groups/member-department-options',
+    method: 'get',
+    response(this: RespThisType, req: MockRequest) {
+      if (!checkToken(req)) {
+        this.res.statusCode = 401
+        return unauthorized()
+      }
+      const account = mockAccounts.get(usernameFromToken(req) ?? '')
+      const capabilities =
+        account?.role === 'super_admin' ? CAPABILITIES : (mockRoles.get(account?.role ?? '') ?? [])
+      if (!capabilities.some((item) => item.resource_code === 'identity.groups' && item.can_read)) {
+        this.res.statusCode = 403
+        return fail('FORBIDDEN', '')
+      }
+      const locale = requestLocale(req)
+      const scope = new Set(descendantDepartmentIds('d-root'))
+      const mode = firstOf(req.query?.mode) || 'FULL'
+      const parentId = firstOf(req.query?.parent_id)
+      if (!['FULL', 'CHILDREN'].includes(mode) || (mode === 'FULL' && parentId)) {
+        this.res.statusCode = 400
+        return fail('MALFORMED_REQUEST', '')
+      }
+      const directory = DEPARTMENTS.filter((item) => scope.has(item.id)).map((item) => ({
+        id: item.id,
+        display_name: localized(item.translations, item.name, locale),
+        parent_id: item.parent_id && scope.has(item.parent_id) ? item.parent_id : null,
+        has_children: DEPARTMENTS.some(
+          (child) => scope.has(child.id) && child.parent_id === item.id,
+        ),
+      }))
+      const search = firstOf(req.query?.search).trim().toLowerCase()
+      const included = new Set<string>()
+      if (search) {
+        const byId = new Map(directory.map((item) => [item.id, item]))
+        for (const item of directory) {
+          if (!item.display_name.toLowerCase().includes(search)) continue
+          let node: (typeof directory)[number] | undefined = item
+          while (node && !included.has(node.id)) {
+            included.add(node.id)
+            node = node.parent_id ? byId.get(node.parent_id) : undefined
+          }
+        }
+      }
+      return success({
+        items: search
+          ? directory.filter((item) => included.has(item.id))
+          : mode === 'FULL'
+            ? directory
+            : directory.filter((item) => item.parent_id === (parentId || null)),
+      })
     },
   },
   {

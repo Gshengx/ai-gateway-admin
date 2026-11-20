@@ -19,8 +19,8 @@
     @confirm="save"
   >
     <DrawerSaving :loading="saving" />
-    <div v-if="error || preparationError" ref="errorNotice" class="model-form-error">
-      <t-alert theme="error" :message="preparationError || error" />
+    <div v-if="formError" ref="errorNotice" class="model-form-error">
+      <t-alert theme="error" :message="formError" />
     </div>
     <LoadingState :loading="loading" :failed="loadFailed" retryable @retry="loadModel"
       ><t-tabs ref="tabsRef" v-model="tab" class="drawer-tabs">
@@ -65,13 +65,15 @@
                 <span class="ma-muted">{{ t('ma.nameHelp') }}</span
                 ><t-alert
                   v-if="isEditing && !basicLocked"
+                  class="model-config-warning"
                   theme="warning"
                   :message="t('ma.renameHelp')"
                 /></div
             ></t-form-item>
             <InvocationEditor
-              :field-errors="invocationFieldErrors"
-              :standard-route="invocationStandardRoute"
+              :diagnostics="invocationDiagnostics"
+              :notice="invocationNotice"
+              @edit-diagnostic="editInvocationDiagnostic"
               :initialize-from-options="!isEditing"
               :provided-options="editProtocolOptions"
               :provided-custom-passthrough-supported="editCustomPassthroughSupported"
@@ -81,6 +83,12 @@
               :validate-required="basicValidationAttempted && !basicLocked"
               v-model:configuration="model"
               :disabled="basicLocked"
+            />
+            <t-alert
+              v-if="billingItemsChanged"
+              class="model-config-warning model-billing-notice"
+              theme="warning"
+              :message="t('ma.billingItemsChanged')"
             />
             <div class="ma-grid">
               <t-form-item :label="t('ma.input')"
@@ -259,7 +267,7 @@
 <script setup lang="ts">
 import DrawerSaving from '@/components/DrawerSaving.vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import LoadingState from '@/components/LoadingState.vue'
@@ -274,7 +282,8 @@ import {
   type Pricing,
   type Model,
 } from '@/api/modules/modelAccess'
-import { invocationErrorsMessage, statusTheme, tagLabel } from './helpers'
+import { modelEditDiagnostics, modelEditErrorsMessage, statusTheme, tagLabel } from './helpers'
+import type { ModelEditErrorDetail } from '@/api/modules/modelAccessContract'
 import PricingEditor from './PricingEditor.vue'
 import PricingSummary from './PricingSummary.vue'
 import InvocationEditor from './InvocationEditor.vue'
@@ -300,30 +309,46 @@ const canReadPrice = computed(() => user.permissions.includes('model.pricing'))
 const canWritePrice = computed(() => user.permissions.includes('model.pricing:write'))
 const configurePricing = computed(() => canReadPrice.value && canWritePrice.value)
 const officialPrice = ref<Pricing>()
+const billingItemsChanged = ref(false)
+let lastMetricSignature: string | undefined
+function metricSignature(value: Pricing) {
+  return JSON.stringify(value.metric_rates.map((rate) => [rate.metric_key, rate.unit]).sort())
+}
 const priceComparison = ref<{ current: Pricing; draft: Pricing }>()
 const model = ref({ ...blankModel(), provider_id: props.providerId ?? '' }),
   price = ref(blankPricing()),
   defaultPrice = ref<Pricing>()
 const providerOptions = ref<Provider[]>([])
-const invocationFieldErrors = ref<Record<string, string>>({})
-const invocationStandardRoute = ref('')
-let invocationSaveError = ''
-watch(
-  () => JSON.stringify(model.value.custom_invocation_apis),
-  () => {
-    const previousMessage = invocationErrorsMessage(
-      invocationFieldErrors.value,
-      invocationStandardRoute.value,
-    )
-    if (
-      (previousMessage && error.value === previousMessage) ||
-      (invocationSaveError && error.value === invocationSaveError)
-    )
-      error.value = ''
-    invocationSaveError = ''
-    invocationFieldErrors.value = {}
-  },
-)
+const invocationDiagnostics = ref<ModelEditErrorDetail[]>([])
+const invocationSaveError = ref('')
+function editInvocationDiagnostic(index: number, field: 'protocol' | 'path' | 'remove' | 'add') {
+  const hadDiagnostics = invocationDiagnostics.value.length > 0
+  invocationDiagnostics.value = invocationDiagnostics.value.flatMap((error) => {
+    const match = /^(base\.)?invocation_apis\[(\d+)\]\.(protocol|path|id)$/.exec(error.field)
+    if (!match)
+      return field !== 'add' && /^(?:base\.)?invocation_apis$/.test(error.field) ? [] : [error]
+    const row = Number(match[2])
+    if (row === index && (field === 'remove' || field === 'protocol' || match[3] === field))
+      return []
+    if (field === 'remove' && row > index)
+      return [{ ...error, field: `${match[1] ?? ''}invocation_apis[${row - 1}].${match[3]}` }]
+    return [error]
+  })
+  if (hadDiagnostics && invocationSaveError.value && error.value === invocationSaveError.value) {
+    invocationSaveError.value = modelEditErrorsMessage(invocationDiagnostics.value)
+    error.value = invocationSaveError.value
+  }
+}
+watch(locale, () => {
+  if (
+    invocationDiagnostics.value.length &&
+    invocationSaveError.value &&
+    error.value === invocationSaveError.value
+  ) {
+    invocationSaveError.value = modelEditErrorsMessage(invocationDiagnostics.value)
+    error.value = invocationSaveError.value
+  }
+})
 const editCustomPassthroughSupported = ref<boolean | null>(null)
 const editProtocolOptions = ref<Array<{ protocol: string; default_path: string | null }>>([])
 const templateRequest = useLatestRequest()
@@ -417,6 +442,34 @@ const tab = ref('basic'),
   saving = ref(false),
   error = ref('')
 const preparationError = ref('')
+const preparationInvocationError = ref(false)
+const formError = computed(
+  () =>
+    (preparationInvocationError.value ? '' : preparationError.value) ||
+    (error.value === invocationSaveError.value ? '' : error.value),
+)
+const invocationNotice = computed(() => {
+  if (preparationInvocationError.value && preparationError.value) return preparationError.value
+  const listErrors = invocationDiagnostics.value.filter(
+    (item) => !/^(?:base\.)?invocation_apis\[\d+\]\.(protocol|path|id)$/.test(item.field),
+  )
+  return (
+    modelEditErrorsMessage(listErrors) ||
+    (!invocationDiagnostics.value.length && error.value === invocationSaveError.value
+      ? error.value
+      : '')
+  )
+})
+watch(
+  () => [model.value.provider_id, model.value.model_id_at_provider],
+  () => {
+    if (error.value === invocationSaveError.value) error.value = ''
+    invocationSaveError.value = ''
+    invocationDiagnostics.value = []
+    preparationError.value = ''
+    preparationInvocationError.value = false
+  },
+)
 const loadFailed = ref(false)
 const nameError = ref('')
 const nameRequest = useLatestRequest()
@@ -519,7 +572,7 @@ const configurationKey = computed(() =>
     model.value.provider_id,
     model.value.model_id_at_provider,
     model.value.supported_invocation_apis,
-    model.value.custom_invocation_apis.map((a) => [a.invocation_api, a.path]),
+    model.value.custom_invocation_apis.map((a) => a.invocation_api),
     configurePricing.value,
   ]),
 )
@@ -570,7 +623,7 @@ let loadedMetadataKey = ''
 async function loadMetadata() {
   const key = configurationKey.value
   const state = preparation.value
-  if (model.value.id || (state.key === key && state.phase === 'ready')) return
+  if (state.key === key && state.phase === 'ready') return
   if (state.key === key && state.phase === 'loading' && state.promise) return state.promise
   const current = metadataRequest.begin()
   preparation.value = { key, phase: 'loading' }
@@ -584,7 +637,6 @@ async function fetchMetadata(current: ReturnType<typeof metadataRequest.begin>) 
     preparation.value.phase = 'idle'
     return
   }
-  preparationError.value = ''
   try {
     const config = {
       signal: current.signal,
@@ -599,7 +651,7 @@ async function fetchMetadata(current: ReturnType<typeof metadataRequest.begin>) 
       ],
     }
     const key = JSON.stringify([model.value.provider_id, name])
-    if (loadedMetadataKey !== key) {
+    if (!isEditing && loadedMetadataKey !== key) {
       const { metadata } = await loadTemplate(model.value.provider_id, name)
       if (!current.isCurrent()) return
       const { supported_invocation_apis, custom_invocation_apis, ...otherMetadata } = metadata
@@ -617,6 +669,8 @@ async function fetchMetadata(current: ReturnType<typeof metadataRequest.begin>) 
     preparation.value.key = configurationKey.value
     if (invocationConfigurationError(model.value)) return
     if (!configurePricing.value) {
+      preparationError.value = ''
+      preparationInvocationError.value = false
       preparation.value.phase = 'ready'
       return
     }
@@ -625,17 +679,40 @@ async function fetchMetadata(current: ReturnType<typeof metadataRequest.begin>) 
     const pricing = await accessApi.catalog(name, model.value.provider_id)
     if (!current.isCurrent()) return
     const prefill = pricing
+    const signature = metricSignature(prefill)
+    if (lastMetricSignature !== undefined && lastMetricSignature !== signature)
+      billingItemsChanged.value = true
+    lastMetricSignature = signature
     officialPrice.value = accessApi.officialPricing(model.value.provider_id, name)
-    price.value = prefill
+    price.value = isEditing
+      ? {
+          ...price.value,
+          metric_rates: prefill.metric_rates.map((rate) => {
+            const previous = price.value.metric_rates.find(
+              (item) => item.metric_key === rate.metric_key && item.unit === rate.unit,
+            )
+            return previous ? { ...rate, ...previous } : rate
+          }),
+        }
+      : prefill
     defaultPrice.value = prefill.catalog_default_price_version_id
       ? structuredClone(prefill)
       : undefined
-    originalPrice = JSON.stringify(prefill)
+    if (!isEditing) originalPrice = JSON.stringify(prefill)
+    preparationError.value = ''
+    preparationInvocationError.value = false
     preparation.value.phase = 'ready'
   } catch (e) {
     if (current.isCurrent()) {
       preparation.value.phase = 'failed'
-      preparationError.value = (e as Error).message || t('common.loadFailed')
+      const failure = e as NotifiedError
+      preparationInvocationError.value = ['METRIC_UNSUPPORTED', 'CUSTOM_API_UNSUPPORTED'].includes(
+        failure.code ?? '',
+      )
+      preparationError.value =
+        (typeof failure.params?.reason === 'string' ? failure.params.reason : '') ||
+        failure.message ||
+        t('common.loadFailed')
     }
   } finally {
     if (current.isCurrent() && preparation.value.phase === 'loading')
@@ -644,12 +721,11 @@ async function fetchMetadata(current: ReturnType<typeof metadataRequest.begin>) 
 }
 watch(configurationKey, (key) => {
   // Metadata application records its resulting key before this queued watcher runs.
-  if (model.value.id || key === preparation.value.key) return
+  if (loading.value || key === preparation.value.key) return
   metadataRequest.invalidate()
   preparation.value = { key, phase: 'loading' }
-  preparationError.value = ''
   if (error.value === t('ma.required')) error.value = ''
-  price.value = blankPricing()
+  if (!isEditing) price.value = blankPricing()
   defaultPrice.value = undefined
   officialPrice.value = undefined
   metadataRequest.schedule(() => void loadMetadata(), 800)
@@ -752,7 +828,7 @@ async function save() {
     if (invocationError) {
       tab.value = 'basic'
       error.value =
-        invocationErrorsMessage(invocationFieldErrors.value, invocationStandardRoute.value) ||
+        modelEditErrorsMessage(invocationDiagnostics.value) ||
         t(
           invocationError === 'required'
             ? 'ma.invocationRequired'
@@ -783,9 +859,15 @@ async function save() {
   const changedPrice = JSON.stringify(price.value) !== originalPrice
   const shouldSavePrice =
     price.value.metric_rates.length > 0 && (!m.id ? configurePricing.value : changedPrice)
-  if (shouldSavePrice && priceEditor.value && !priceEditor.value.validate()) {
-    tab.value = 'price'
-    return
+  if (price.value.metric_rates.length > 0) {
+    if (!priceEditor.value) {
+      tab.value = 'price'
+      await nextTick()
+    }
+    if (!priceEditor.value?.validate()) {
+      tab.value = 'price'
+      return
+    }
   }
   nameRequest.invalidate()
   saving.value = true
@@ -833,13 +915,8 @@ async function save() {
       return
     }
     const detail = (e as NotifiedError).params?.fields as Record<string, string> | undefined
-    invocationFieldErrors.value = detail ?? {}
-    const standardRoute = (e as NotifiedError).params?.standard_route as
-      { method?: string; path?: string } | undefined
-    invocationStandardRoute.value = standardRoute
-      ? `${standardRoute.method ?? ''} ${standardRoute.path ?? ''}`.trim()
-      : ''
-    if (detail && Object.keys(detail).some((key) => key.startsWith('base.invocation_apis')))
+    invocationDiagnostics.value = modelEditDiagnostics(failure.params)
+    if (invocationDiagnostics.value.some((item) => /^(?:base\.)?invocation_apis/.test(item.field)))
       tab.value = 'basic'
     if (detail?.model_access === 'NAME_CONFLICT' || (e as NotifiedError).code === 'NAME_CONFLICT') {
       nameError.value = t('ma.nameConflict')
@@ -847,7 +924,8 @@ async function save() {
       return
     }
     error.value =
-      invocationErrorsMessage(invocationFieldErrors.value, invocationStandardRoute.value) ||
+      modelEditErrorsMessage(invocationDiagnostics.value) ||
+      (typeof failure.params?.reason === 'string' ? failure.params.reason : '') ||
       (e as Error).message ||
       t(
         detail?.model_access === 'NAME_CONFLICT'
@@ -856,7 +934,11 @@ async function save() {
             ? 'ma.invalidApiPath'
             : 'ma.modelSaveFailed',
       )
-    invocationSaveError = failure.code === 'METRIC_UNSUPPORTED' ? error.value : ''
+    invocationSaveError.value =
+      invocationDiagnostics.value.length ||
+      ['METRIC_UNSUPPORTED', 'CUSTOM_API_UNSUPPORTED'].includes(failure.code ?? '')
+        ? error.value
+        : ''
   } finally {
     saving.value = false
   }
@@ -885,7 +967,9 @@ async function loadModel() {
       editProtocolOptions.value = options
       editCustomPassthroughSupported.value = customPassthroughSupported
       price.value = loadedPrice
+      lastMetricSignature = metricSignature(loadedPrice)
       originalPrice = JSON.stringify(price.value)
+      preparation.value = { key: configurationKey.value, phase: 'ready' }
     }
   } catch {
     if (current.isCurrent()) loadFailed.value = true

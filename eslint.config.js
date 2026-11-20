@@ -11,7 +11,14 @@ export default defineConfigWithVueTs(
   },
   {
     name: 'app/files-to-ignore',
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.trae-tmp/**'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/.trae-tmp/**',
+      // bundle-require 临时编译产物，与 Vite Mock 的 ignore 规则保持一致。
+      'mock/**/*.bundled_*.{mjs,cjs}',
+    ],
   },
   pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,

@@ -31,6 +31,8 @@
       </t-input>
       <department-tree-select
         v-model="departmentId"
+        :load-departments="loadMemberDepartments"
+        :resolve-descendants="false"
         class="add-filter__select"
         :placeholder="t('groups.addMembers.allDepartments')"
         @change="onDepartmentChange"
@@ -43,7 +45,8 @@
 
     <t-alert v-if="failed && candidates.length" theme="error" :message="t('common.loadFailed')" />
     <t-table
-      height="var(--stable-detail-table-height)"
+      class="add-members-table"
+      :height="loading || !optionsReady ? 'var(--stable-detail-table-height)' : undefined"
       row-key="id"
       :data="candidates"
       :columns="columns"
@@ -83,6 +86,7 @@ import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DepartmentTreeSelect from '@/components/DepartmentTreeSelect.vue'
+import { useMemberDepartments } from '../useMemberDepartments'
 import { MessagePlugin, type PaginationProps, type PrimaryTableCol } from 'tdesign-vue-next'
 
 import {
@@ -102,6 +106,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const loadMemberDepartments = useMemberDepartments()
 
 const loading = ref(false)
 const failed = ref(false)
@@ -299,7 +305,12 @@ async function handleSubmit() {
 .add-pagination {
   display: flex;
   justify-content: flex-end;
-  margin-top: var(--td-comp-margin-s, 12px);
+  margin-top: var(--td-comp-margin-l);
+}
+
+.add-members-table :deep(.t-table__body .t-table__empty-row),
+.add-members-table :deep(.t-table__body .t-table__empty-row > td) {
+  background-color: var(--td-bg-color-container);
 }
 
 .cell-empty {

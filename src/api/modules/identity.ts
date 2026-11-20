@@ -522,15 +522,13 @@ export interface UserTermsAcceptance {
   client_ip: string | null
 }
 
-export type UserTermsInfo =
-  | {
-      visibility: 'VISIBLE'
-      current_terms: UserTermsCurrent
-      status: 'ACCEPTED' | 'NOT_ACCEPTED'
-      current_acceptance: UserTermsAcceptance | null
-      last_acceptance: UserTermsAcceptance | null
-    }
-  | { visibility: 'FORBIDDEN' }
+/** Visible with identity.users READ and the target user's current management scope. */
+export interface UserTermsInfo {
+  current_terms: UserTermsCurrent
+  status: 'ACCEPTED' | 'NOT_ACCEPTED'
+  current_acceptance: UserTermsAcceptance | null
+  last_acceptance: UserTermsAcceptance | null
+}
 
 /** 用户详情（GET /users/{id}） */
 export function getUserDetailApi(id: string, config?: RequestConfig) {
@@ -1068,6 +1066,28 @@ export function getUserGroupModelGrantsApi(
 
 export function getUserGroupMembersApi(id: string, params: UserGroupMemberQuery) {
   return request.get<UserGroupMemberPage>(`/groups/${id}/members`, { params })
+}
+
+/** 用户组成员筛选专用最小部门目录，不依赖部门管理权限。 */
+export interface UserGroupMemberDepartmentOption {
+  id: string
+  display_name: string
+  parent_id: string | null
+  has_children: boolean
+}
+
+export type UserGroupMemberDepartmentOptionsQuery =
+  | { mode?: 'FULL'; parent_id?: never; search?: string }
+  | { mode: 'CHILDREN'; parent_id?: string; search?: string }
+
+export function getUserGroupMemberDepartmentOptionsApi(
+  params: UserGroupMemberDepartmentOptionsQuery = {},
+  config?: RequestConfig,
+) {
+  return request.get<{ items: UserGroupMemberDepartmentOption[] }>(
+    '/groups/member-department-options',
+    { ...config, params },
+  )
 }
 
 /** 组内可添加的候选成员（已在组内的用户不会返回） */

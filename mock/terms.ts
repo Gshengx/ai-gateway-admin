@@ -62,7 +62,6 @@ export function userTermsInfo(username: string): UserTermsInfo {
       : null
   const current = records.find((record) => record.version === state.config.version)
   return {
-    visibility: 'VISIBLE',
     current_terms: {
       id: state.config.terms_id,
       version: state.config.version,

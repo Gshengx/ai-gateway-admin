@@ -1,3 +1,4 @@
+import { accessZh, accessEn } from '../src/locales/modules/modelAccess/messages'
 import { providerFixtures, modelFixtures } from './_modelAccessFixtures'
 import { modelCatalog } from './_modelAccessCatalog'
 import { normalizeHistoryTimes, seedModelHistories } from './_modelAccessHistory'
@@ -654,6 +655,111 @@ function grantDelta(m: D.Model, input: D.GrantDelta) {
     added,
     removed_grant_ids: input.remove_grant_ids,
     unchanged_count,
+  }
+}
+// M05 alone returns all safely determined row diagnostics before any mutation.
+function validateModelEditInvocation(
+  rows: D.InvocationAPIInput[],
+  model: D.Model,
+  base: D.ModelIdentityInput,
+) {
+  const provider = store.providers.find((item) => item.id === base.provider_id)
+  const sample =
+    model.catalog_model_version_id &&
+    modelCatalog.find(
+      (item) =>
+        uuid(`fixture-model-${item.template_key}-${item.model_id_at_provider}`) ===
+        model.catalog_model_version_id,
+    )
+  const supported = sample
+    ? sample.supported_invocation_apis
+    : provider?.template_key === 'openai'
+      ? ['CHAT_COMPLETIONS', 'RESPONSES', 'EMBEDDINGS', 'IMAGE_GENERATIONS', 'AUDIO', 'VIDEO']
+      : provider?.template_key === 'anthropic'
+        ? ['MESSAGES']
+        : provider
+          ? templateFor(provider).suggested_invocation_apis
+          : []
+  const errors: D.ModelEditErrorDetail[] = []
+  const add = (field: string, reason_code: string, extra: Partial<D.ModelEditErrorDetail> = {}) => {
+    errors.push({
+      field,
+      reason_code,
+      reason: accessZh[`invocationError_${reason_code}`] ?? accessZh.error_VALIDATION_FAILED!,
+      ...extra,
+    })
+  }
+  if (!Array.isArray(rows)) add('base.invocation_apis', 'REQUIRED')
+  else {
+    if (rows.length > 32) add('base.invocation_apis', 'VALUE_RANGE')
+    if (!rows.length && model.status !== 'DRAFT') add('base.invocation_apis', 'REQUIRED')
+    const protocols = new Set<string>(),
+      paths = new Set<string>(),
+      ids = new Set<string>()
+    for (const [index, row] of rows.entries()) {
+      const field = `base.invocation_apis[${index}]`
+      const known =
+        row.protocol === 'CUSTOM_PASSTHROUGH' ||
+        Object.prototype.hasOwnProperty.call(protocolPaths, row.protocol)
+      if (!known) add(`${field}.protocol`, 'PROTOCOL_UNSUPPORTED')
+      if (row.protocol !== 'CUSTOM_PASSTHROUGH' && known) {
+        if (protocols.has(row.protocol))
+          add(`${field}.protocol`, 'DUPLICATE_PROTOCOL', { protocol: row.protocol })
+        protocols.add(row.protocol)
+        if (provider && !supported.includes(row.protocol))
+          add(`${field}.protocol`, 'PROTOCOL_NOT_BOUND', {
+            protocol: row.protocol,
+            binding_scope: sample ? 'CATALOG_MODEL' : 'PROVIDER_TEMPLATE',
+            supported_protocols: [...supported],
+          })
+      }
+      if (row.id) {
+        if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(row.id))
+          add(`${field}.id`, 'INVALID_UUID')
+        else if (
+          !model.invocation_apis.some(
+            (saved) => saved.id === row.id && saved.protocol === row.protocol,
+          )
+        )
+          add(`${field}.id`, 'NOT_MODEL_INVOCATION')
+        if (ids.has(row.id)) add(`${field}.id`, 'DUPLICATE_ID')
+        ids.add(row.id)
+      }
+      if (row.protocol === 'CUSTOM_PASSTHROUGH' && paths.has(row.path))
+        add(`${field}.path`, 'DUPLICATE_PATH', { protocol: row.protocol })
+      paths.add(row.protocol === 'CUSTOM_PASSTHROUGH' ? row.path : `standard:${index}`)
+      try {
+        // Reuse the existing path and standard ingress rules without leaking submitted values.
+        validateInvocation([
+          { protocol: known ? row.protocol : 'CHAT_COMPLETIONS', path: row.path },
+        ])
+      } catch (failure) {
+        const params = (
+          failure as { params?: { standard_route?: D.ModelEditErrorDetail['standard_route'] } }
+        ).params
+        add(`${field}.path`, params?.standard_route ? 'STANDARD_ROUTE_CONFLICT' : 'INVALID_PATH', {
+          ...(known ? { protocol: row.protocol } : {}),
+          ...(params?.standard_route ? { standard_route: params.standard_route } : {}),
+        })
+      }
+    }
+  }
+  if (errors.length) {
+    const fields = Object.fromEntries(
+      [...errors].reverse().map((error) => [error.field, error.reason_code]),
+    )
+    const standard_route = errors.find((error) => error.standard_route)?.standard_route
+    throw issue(
+      errors.every((error) => error.reason_code === 'PROTOCOL_NOT_BOUND')
+        ? 'METRIC_UNSUPPORTED'
+        : 'VALIDATION_FAILED',
+      422,
+      {
+        errors,
+        fields,
+        ...(standard_route ? { standard_route } : {}),
+      },
+    )
   }
 }
 function validateInvocation(rows: D.InvocationAPIInput[], model?: D.Model, prefix = '') {
@@ -1375,8 +1481,7 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     if (input.base) {
       version(input.expected_base_version, m!.versions.base)
       if (!['DRAFT', 'RETIRED'].includes(m!.status)) throw issue('STATE_CONFLICT')
-      validateInvocation(input.base.invocation_apis, m!, 'base.')
-      if (!input.base.invocation_apis.length) throw issue('VALIDATION_FAILED', 422)
+      validateModelEditInvocation(input.base.invocation_apis, m!, input.base)
       if (
         m!.status === 'RETIRED' &&
         (input.base.provider_id !== m!.provider_id ||
@@ -2969,8 +3074,31 @@ export default operations
         } catch (e) {
           const err = e as Error & { status?: number; params?: Record<string, unknown> }
           this.res.statusCode = err.status ?? 500
+          const code = err.status ? err.message : 'INTERNAL_ERROR'
+          let params = err.params ?? {}
+          if (op.id === 'M05') {
+            const language = String(req.headers?.['accept-language'] ?? 'zh-CN').startsWith('en')
+              ? 'en'
+              : 'zh-CN'
+            const labels = language === 'en' ? accessEn : accessZh
+            const errors = (params.errors as D.ModelEditErrorDetail[] | undefined)?.map(
+              (error) => ({
+                ...error,
+                reason:
+                  labels[`invocationError_${error.reason_code}`] ?? labels.error_VALIDATION_FAILED!,
+              }),
+            )
+            params = {
+              ...params,
+              reason_code: code,
+              reason: labels[`error_${code}`] ?? labels.error_fallback!,
+              ...(errors ? { errors } : {}),
+            }
+            this.res.setHeader('Content-Language', language)
+            this.res.setHeader('Vary', 'Accept-Language')
+          }
           return {
-            ...fail(err.status ? err.message : 'INTERNAL_ERROR', '', err.params ?? {}),
+            ...fail(code, '', params),
             request_id: uuid(`request-${nextSequence('ma-request')}`),
           }
         }

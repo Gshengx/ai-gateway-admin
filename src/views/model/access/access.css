@@ -232,6 +232,12 @@
 .ma-form :deep(.t-form__item) {
   margin-bottom: var(--td-comp-margin-l);
 }
+.model-config-warning {
+  background-color: var(--td-warning-color-1);
+}
+.model-billing-notice {
+  margin-bottom: var(--td-comp-margin-l);
+}
 .ma-tabs {
   display: flex;
   gap: var(--td-comp-margin-s);
@@ -469,9 +475,6 @@
   flex: 1;
   overflow-wrap: anywhere;
 }
-.pricing-cell__error {
-  flex-basis: 100%;
-}
 .pricing-cell > :deep(.t-input-number) {
   flex: 2;
   min-width: 0;
@@ -614,6 +617,9 @@
   align-items: start;
   gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
 }
+.onboarding-model-card > .t-alert {
+  grid-column: 1 / -1;
+}
 .onboarding-model-card__configuration {
   grid-column: 1 / -1;
   display: grid;
@@ -674,7 +680,8 @@
   font-size: var(--td-font-size-body-medium);
   line-height: var(--td-line-height-body-medium);
 }
-.invocation-editor__required::after {
+.invocation-editor__required::after,
+.pricing-required::after {
   content: '*';
   margin-left: var(--td-comp-margin-xs);
   color: var(--td-error-color);
@@ -687,8 +694,6 @@
 }
 .invocation-editor__row > .t-button {
   width: var(--td-comp-size-m);
-  /* Match the TDesign top-label height without following validation tips. */
-  margin-top: var(--td-comp-margin-xxxl);
   padding: 0;
 }
 .invocation-editor__row :deep(.t-input__wrap) {

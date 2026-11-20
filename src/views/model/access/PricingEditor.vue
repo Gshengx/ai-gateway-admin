@@ -27,7 +27,7 @@
         class="pricing-periods ma-box ma-stack"
       >
         <div class="ma-row ma-between">
-          <h3>{{ t('ma.periods') }}</h3>
+          <h3 class="pricing-required">{{ t('ma.periods') }}</h3>
           <t-button theme="primary" variant="outline" @click="addPeriod">{{
             t('ma.addPeriod')
           }}</t-button>
@@ -36,7 +36,13 @@
         <p v-if="!namedPeriods.length" class="ma-muted">{{ t('ma.emptyNamedPeriodsHelp') }}</p>
         <div v-for="period in namedPeriods" :key="period.id" class="ma-box ma-stack pricing-period">
           <div class="pricing-period__heading">
-            <t-input v-model="period.name" @change="markCustom" :placeholder="t('ma.periodName')" />
+            <t-input
+              aria-required="true"
+              :aria-label="t('ma.periodName')"
+              v-model="period.name"
+              @change="markCustom"
+              :placeholder="t('ma.periodName')"
+            />
             <t-button theme="default" variant="outline" @click="addCondition(period)">{{
               t('ma.addCondition')
             }}</t-button>
@@ -64,26 +70,30 @@
           >
             <div class="pricing-condition__fields">
               <div class="pricing-condition__weekdays">
-                <span>{{ t('ma.weekdays') }}</span
+                <span class="pricing-required">{{ t('ma.weekdays') }}</span
                 ><t-checkbox-group
                   v-model="condition.weekdays"
+                  aria-required="true"
+                  :aria-label="t('ma.weekdays')"
                   @change="markCustom"
                   :options="dayOptions"
                 />
               </div>
               <div class="pricing-condition__clock">
-                <span>{{ t('ma.start') }}</span>
+                <span class="pricing-required">{{ t('ma.start') }}</span>
                 <t-time-picker
                   v-model="condition.start"
+                  aria-required="true"
                   @change="markCustom"
                   format="HH:mm"
                   :placeholder="t('ma.start')"
                 />
               </div>
               <div class="pricing-condition__clock">
-                <span>{{ t('ma.end') }}</span
+                <span class="pricing-required">{{ t('ma.end') }}</span
                 ><t-time-picker
                   v-model="condition.end"
+                  aria-required="true"
                   @change="markCustom"
                   format="HH:mm"
                   :placeholder="t('ma.end')"
@@ -138,7 +148,9 @@
         class="ma-box pricing-rate"
       >
         <div class="ma-row">
-          <strong>{{ rate.display_name || metricLabel(rate.metric_key) }}</strong
+          <strong :class="{ 'pricing-required': value.pricing_mode === 'TIME_BASED' }">{{
+            rate.display_name || metricLabel(rate.metric_key)
+          }}</strong
           ><span class="ma-muted"
             >{{ t('ma.price') }}（{{ value.currency }} /
             {{ rate.unit_label || t('ma.' + unitLabel(rate.unit)) }}）</span
@@ -161,8 +173,8 @@
             :status="priceInvalid(rate.unit_price) ? 'error' : undefined"
             inputmode="decimal"
             @change="
-              (value: string | number) => {
-                rate.unit_price = String(value)
+              (value: string | number | undefined) => {
+                rate.unit_price = value == null || value === '' ? null : String(value)
                 markCustom()
               }
             "
@@ -181,23 +193,25 @@
                 theme="row"
                 :min="'0'"
                 :value="rate.period_prices[period.id] ?? undefined"
+                aria-required="true"
+                :aria-label="
+                  period.is_fallback ? t('ma.fallback') : period.name || t('ma.periodName')
+                "
                 :status="priceInvalid(rate.period_prices[period.id]) ? 'error' : undefined"
                 inputmode="decimal"
                 @change="
-                  (value: string | number) => {
-                    rate.period_prices[period.id] = String(value)
+                  (value: string | number | undefined) => {
+                    rate.period_prices[period.id] =
+                      value == null || value === '' ? null : String(value)
                     markCustom()
                   }
                 "
               />
-              <p
-                v-if="priceInvalid(rate.period_prices[period.id])"
-                class="ma-error pricing-cell__error"
-              >
-                {{ t('ma.priceDecimalFormat') }}
-              </p>
             </div>
           </div>
+          <p v-if="periodPriceError(rate)" class="ma-error" role="alert">
+            {{ periodPriceError(rate) }}
+          </p>
         </template>
       </section>
     </t-form>
@@ -221,6 +235,21 @@ const value = defineModel<Pricing>({ required: true })
 function priceInvalid(price: string | number | null | undefined) {
   if (price === null || price === undefined || price === '') return validationAttempted.value
   return !isDecimal(String(price))
+}
+function periodPriceError(rate: Pricing['metric_rates'][number]) {
+  const periods = orderedPeriods.value.filter((period) =>
+    priceInvalid(rate.period_prices[period.id]),
+  )
+  return periods.length
+    ? t('ma.periodPriceErrors', {
+        periods: periods
+          .map((period) =>
+            period.is_fallback ? t('ma.fallback') : period.name || t('ma.periodName'),
+          )
+          .join(locale.value.startsWith('zh') ? '、' : ', '),
+        message: t('ma.priceDecimalFormat'),
+      })
+    : ''
 }
 // Local confirmation only; the write DTO has no such field.
 const exclusiveUsageConfirmed = ref(false)
@@ -277,7 +306,7 @@ function initializePeriodPrices() {
   for (const rate of value.value.metric_rates) {
     for (const period of value.value.time_periods) {
       if (!(period.id in rate.period_prices)) {
-        rate.period_prices[period.id] = '0'
+        rate.period_prices[period.id] = null
       }
     }
   }
@@ -287,8 +316,6 @@ function modeChanged() {
   if (value.value.pricing_mode === 'TIME_BASED') {
     if (!namedPeriods.value.length) addPeriod()
     initializePeriodPrices()
-  } else {
-    for (const rate of value.value.metric_rates) rate.unit_price ??= '0'
   }
 }
 function addCondition(period: Period) {
@@ -329,9 +356,13 @@ function validate() {
   error.value =
     needsExclusiveUsage.value && !exclusiveUsageConfirmed.value
       ? t('ma.exclusiveUsageRequired')
-      : problem && problem !== 'invalidPeriods'
-        ? t('ma.' + problem)
-        : ''
+      : problem === 'invalidPrice' &&
+          value.value.pricing_mode === 'TIME_BASED' &&
+          value.value.metric_rates.some((rate) => periodPriceError(rate))
+        ? ''
+        : problem && problem !== 'invalidPeriods'
+          ? t('ma.' + problem)
+          : ''
   return !problem
 }
 watch(

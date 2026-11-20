@@ -106,12 +106,13 @@
           theme="primary"
           :aria-expanded="manualVisible"
           aria-controls="onboarding-manual-form"
-          @click="manualVisible = true"
+          @click="showManual"
           >{{ t('ma.manual') }}</t-link
         >
         <div
           v-if="manualVisible"
           id="onboarding-manual-form"
+          ref="manualForm"
           class="ma-box ma-stack onboarding-manual"
         >
           <span>{{ t('ma.manualModel') }}</span>
@@ -277,7 +278,7 @@
   </t-dialog>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { type PrimaryTableCol } from 'tdesign-vue-next'
@@ -318,6 +319,13 @@ const empty = (): Candidate => ({
 })
 const manual = ref(empty())
 const manualVisible = ref(false)
+const manualForm = ref<HTMLElement>()
+async function showManual() {
+  manualVisible.value = true
+  await nextTick()
+  manualForm.value?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  manualForm.value?.querySelector('input')?.focus({ preventScroll: true })
+}
 const manualAttempted = ref(false)
 const manualErrors = computed(() => ({
   upstream: !manual.value.model_id_at_provider.trim()
@@ -497,15 +505,11 @@ async function testAll() {
             ) ||
             pricingFailures.value[m.id] ||
             ''
-          failures.push({ name: m.model_id_at_gateway, code: failure.code ?? '' })
-          notice.value = failureNotice('test', failures)
           continue
         }
         if (closed) break
         if (!check.pricing_check_passed) {
           pricingFailures.value[m.id] = t('ma.error_' + check.reason)
-          failures.push({ name: m.model_id_at_gateway, code: check.reason })
-          notice.value = failureNotice('test', failures)
           continue
         }
         const batch = await accessApi.onboardingTests(props.provider.id, [m], testKey(m))

@@ -24,7 +24,7 @@
         <div v-if="loading" class="loading-state" role="status" :aria-label="t('common.loading')">
           <t-loading :text="t('common.loading')" />
         </div>
-        <t-alert v-else theme="error" :message="t('common.loadFailed')">
+        <t-alert v-else class="loading-error" theme="error" :message="t('common.loadFailed')">
           <template v-if="retryable" #operation>
             <t-button variant="text" @click="emit('retry')">{{ t('common.retry') }}</t-button>
           </template>
@@ -34,7 +34,12 @@
     <div v-else-if="loading" class="loading-state" role="status" :aria-label="t('common.loading')">
       <t-loading :text="t('common.loading')" />
     </div>
-    <t-alert v-else-if="failed" theme="error" :message="t('common.loadFailed')">
+    <t-alert
+      v-else-if="failed"
+      class="loading-error"
+      theme="error"
+      :message="t('common.loadFailed')"
+    >
       <template v-if="retryable" #operation>
         <t-button variant="text" @click="emit('retry')">{{ t('common.retry') }}</t-button>
       </template>
@@ -58,6 +63,11 @@ const { t } = useI18n()
 </script>
 
 <style scoped>
+.loading-error,
+.loading-error :deep(.t-alert__message) {
+  align-items: center;
+}
+
 .loading-boundary {
   display: contents;
 }
