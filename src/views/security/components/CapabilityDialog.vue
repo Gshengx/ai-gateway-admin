@@ -2,14 +2,14 @@
   <t-dialog
     :visible="true"
     :header="label('configure')"
-    width="var(--security-confirm-width)"
+    width="var(--notice-dialog-width)"
     :cancel-btn="null"
     :confirm-btn="label('confirm')"
     @close="emit('close')"
     @confirm="emit('close')"
   >
     <div class="security-stack">
-      <t-alert theme="warning" :message="label('capabilityHelp')" />
+      <DialogNotice theme="warning" :message="label('capabilityHelp')" />
       <div
         v-for="method in ['KEYWORD', 'REGEX', 'CLASSIFIER', 'LLM_JUDGE', 'THREAT_INTELLIGENCE']"
         :key="method"
@@ -26,6 +26,7 @@
 </template>
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import DialogNotice from '@/components/DialogNotice.vue'
 import type { Method } from '@/api/modules/security'
 import { useSecurity } from '../useSecurity'
 const emit = defineEmits<{ close: [] }>()

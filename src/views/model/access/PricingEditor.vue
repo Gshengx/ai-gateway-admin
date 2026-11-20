@@ -120,7 +120,11 @@
         </p>
       </section>
       <p class="ma-muted">{{ t('ma.metricHelp') }}</p>
-      <p v-if="!value.metric_rates.length" class="ma-muted">{{ t('pricingFlow.noMetrics') }}</p>
+      <t-alert
+        v-if="!value.metric_rates.length"
+        theme="warning"
+        :message="t('pricingFlow.noMetrics')"
+      />
       <template v-if="needsExclusiveUsage">
         <t-checkbox v-model="exclusiveUsageConfirmed">{{ t('ma.exclusiveUsage') }}</t-checkbox>
         <p class="ma-muted">{{ t('ma.exclusiveHelp') }}</p>

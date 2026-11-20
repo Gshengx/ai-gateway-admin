@@ -15,16 +15,27 @@
       )
     "
     :width="
-      !run && purpose === 'ADMISSION'
-        ? 'var(--admission-start-dialog-width)'
-        : 'var(--physical-model-dialog-width)'
+      protocolConfigurationRequired || pricingReason
+        ? 'var(--notice-dialog-width)'
+        : !run && purpose === 'ADMISSION'
+          ? 'var(--admission-start-dialog-width)'
+          : 'var(--physical-model-dialog-width)'
     "
     :close-on-overlay-click="false"
     :close-on-esc-keydown="!locked"
     @close="close"
   >
     <div class="ma-stack">
-      <t-alert v-if="pricingReason" theme="warning" :message="t('ma.error_' + pricingReason)" />
+      <DialogNotice
+        v-if="protocolConfigurationRequired"
+        theme="warning"
+        :message="t('ma.admissionProtocolRequired')"
+      />
+      <DialogNotice
+        v-else-if="pricingReason"
+        theme="warning"
+        :message="t('ma.error_' + pricingReason)"
+      />
       <template v-else>
         <p v-if="!run" class="ma-muted">
           {{
@@ -74,11 +85,16 @@
     </div>
     <template #footer
       ><div class="ma-footer">
-        <t-button theme="default" :disabled="locked" @click="close">{{
-          t(run || pricingReason ? 'ma.close' : 'ma.cancel')
-        }}</t-button>
         <t-button
-          v-if="!run && !pricingReason"
+          :theme="protocolConfigurationRequired || pricingReason ? 'primary' : 'default'"
+          :disabled="locked"
+          @click="close"
+          >{{
+            t(run || pricingReason || protocolConfigurationRequired ? 'ma.close' : 'ma.cancel')
+          }}</t-button
+        >
+        <t-button
+          v-if="!run && !pricingReason && !protocolConfigurationRequired"
           theme="primary"
           :disabled="locked || !selected.length"
           :loading="busy"
@@ -143,6 +159,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import TestResultGroups from './TestResultGroups.vue'
+import DialogNotice from '@/components/DialogNotice.vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { createIdempotencyKey } from '@/api/request'
@@ -157,6 +174,13 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: []; changed: [run: TestRun | undefined] }>()
 const { t } = useI18n()
+const protocolConfigurationRequired = computed(
+  () =>
+    props.purpose === 'ADMISSION' &&
+    !props.historyRun &&
+    !run.value &&
+    !invocationTargets(props.model).length,
+)
 const hasStandardProtocol = computed(() =>
   props.model.custom_invocation_apis.some((row) => row.invocation_api !== 'CUSTOM_PASSTHROUGH'),
 )
@@ -245,7 +269,13 @@ async function retryPoll() {
   await poll()
 }
 async function start() {
-  if (locked.value || pricingReason.value || !selected.value.length) return
+  if (
+    locked.value ||
+    protocolConfigurationRequired.value ||
+    pricingReason.value ||
+    !selected.value.length
+  )
+    return
   const version = ++pollVersion
   pollController?.abort()
   clearTimeout(timer)

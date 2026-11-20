@@ -22,6 +22,8 @@
   --list-filter-width: 144px;
   --list-department-width: 280px;
   --confirm-dialog-top: 20dvh;
+  /* 用户要求统一紧凑提示弹窗；480px 为短提示及单行操作预留阅读宽度，无对应 TDesign 宽度 token。 */
+  --notice-dialog-width: 480px;
 }
 
 .list-toolbar {

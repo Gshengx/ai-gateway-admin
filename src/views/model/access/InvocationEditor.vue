@@ -12,11 +12,23 @@
         >
           <t-option
             v-for="option in options"
+            class="invocation-editor__protocol-option"
             :key="option.value"
             :value="option.value"
             :label="option.label"
             :disabled="optionDisabled(option.value, row)"
-          />
+          >
+            <span class="invocation-editor__option">
+              <span>{{ option.label }}</span>
+              <t-tag
+                v-if="adaptedProtocols.has(option.value)"
+                theme="success"
+                variant="light"
+                size="small"
+                >{{ t('ma.adapted') }}</t-tag
+              >
+            </span>
+          </t-option>
         </t-select>
       </t-form-item>
       <t-form-item :label="t('ma.protocolPath')">
@@ -76,6 +88,9 @@ const emit = defineEmits<{ 'update:configuration': [value: Model] }>()
 const { t, locale } = useI18n()
 const maximumRows = 32
 const protocolOptions = ref<Array<{ protocol: string; default_path: string | null }>>([])
+const adaptedProtocols = computed(
+  () => new Set(protocolOptions.value.map((option) => option.protocol)),
+)
 const customSupported = ref<boolean | null>(null)
 const optionsRequest = useLatestRequest()
 const edited = ref(false)

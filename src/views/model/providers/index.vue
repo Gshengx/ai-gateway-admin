@@ -46,23 +46,22 @@
       <template #template_key="{ row }">{{ templateName(row) }}</template>
       <template #security_level="{ row }">{{ t('ma.' + row.security_level) }}</template>
       <template #balance="{ row }"
-        ><div v-if="row.last_balance_value !== null" class="ma-balance">
-          <span
-            :class="{
-              'ma-low-balance': row.balance_alert_enabled && row.alert_state === 'LOW',
-            }"
-            >{{ formatDecimal(row.last_balance_value) }} {{ row.balance_alert_unit }}</span
-          ><t-tag
-            variant="light"
-            v-if="row.balance_alert_enabled"
-            :theme="row.alert_state === 'LOW' ? 'warning' : 'success'"
-            >{{ t(row.alert_state === 'LOW' ? 'ma.lowBalance' : 'ma.balanceNormal') }}</t-tag
-          ><span class="ma-muted">{{ formatDateTime(row.last_balance_success_at) }}</span>
-        </div>
-        <span v-else>—</span
-        ><t-tooltip v-if="row.balance_query_status === 'FAILED'" :content="t('ma.balanceFailure')"
-          ><t-tag variant="light" theme="danger">{{ t('ma.FAILED') }}</t-tag></t-tooltip
-        ></template
+        ><t-tooltip v-if="row.balance_query_mode !== 'NONE'" :content="balanceTooltip(row)">
+          <div class="ma-balance">
+            <span
+              :class="{
+                'ma-low-balance':
+                  row.last_balance_value !== null &&
+                  row.balance_alert_enabled &&
+                  row.alert_state === 'LOW',
+              }"
+              >{{ balanceText(row) }}</span
+            ><t-tag size="small" variant="light" :theme="balanceAlertTheme(row)">{{
+              balanceAlertLabel(row)
+            }}</t-tag>
+          </div>
+        </t-tooltip>
+        <span v-else class="ma-muted">—</span></template
       >
       <template #action="{ row }"><RowActions :actions="rowActions(row)" expanded /></template>
     </t-table>
@@ -98,11 +97,13 @@
             ><t-button
               theme="default"
               v-permission.write="'model.providers'"
+              :disabled="queryingProviderId === detail.id"
               @click="guide = detail"
               >{{ t('ma.getModels') }}</t-button
             ><t-button
               theme="primary"
               v-permission.write="'model.providers'"
+              :disabled="queryingProviderId === detail.id"
               @click="edit(detail)"
               >{{ t('ma.edit') }}</t-button
             >
@@ -157,9 +158,12 @@
                 v-permission.write="'model.providers'"
                 theme="primary"
                 variant="outline"
-                :loading="querying"
+                :loading="queryingProviderId === detail.id"
+                :disabled="querying"
                 @click="balance(detail)"
-                >{{ t('ma.queryBalance') }}</t-button
+                >{{
+                  t(queryingProviderId === detail.id ? 'ma.queryingBalance' : 'ma.queryBalance')
+                }}</t-button
               >
             </div>
             <p v-if="detail.balance_query_mode === 'NONE'" class="ma-muted">
@@ -295,7 +299,11 @@
       :close-on-esc-keydown="!mutating"
       :close-on-overlay-click="false"
       :header="t('ma.remove')"
-      :confirm-btn="{ content: t('ma.confirm'), loading: mutating }"
+      :confirm-btn="{
+        content: t('ma.confirm'),
+        loading: mutating,
+        disabled: !!removing && queryingProviderId === removing.id,
+      }"
       :cancel-btn="{ content: t('ma.cancel'), disabled: mutating }"
       @close="!mutating && (removing = undefined)"
       @confirm="remove"
@@ -339,7 +347,8 @@ const search = ref(''),
   removing = ref<Provider>(),
   reason = ref(''),
   mutating = ref(false),
-  querying = ref(false)
+  queryingProviderId = ref('')
+const querying = computed(() => !!queryingProviderId.value)
 const detailTitle = ref('')
 const detailVisible = ref(false),
   detailLoading = ref(false),
@@ -372,7 +381,7 @@ const columns = computed<PrimaryTableCol[]>(() => [
   { colKey: 'base_url', width: 'auto', title: t('ma.baseUrl'), ellipsis: true },
   { colKey: 'security_level', title: t('ma.security'), width: 100 },
   { colKey: 'model_count', title: t('ma.count'), width: 90 },
-  { colKey: 'balance', title: t('ma.balance'), width: 180 },
+  { colKey: 'balance', title: t('ma.balance'), width: locale.value.startsWith('en') ? 240 : 180 },
   { colKey: 'notes', width: 'auto', title: t('ma.notes'), ellipsis: true },
   {
     colKey: 'action',
@@ -397,6 +406,39 @@ let generation = 0,
   timer: ReturnType<typeof setTimeout> | undefined
 let listController: AbortController | undefined
 const balanceController = new AbortController()
+function balanceText(row: Provider) {
+  if (row.last_balance_value === null)
+    return t(
+      row.balance_query_status === 'NEVER_QUERIED' ? 'ma.balanceNeverQueried' : 'ma.balanceUnknown',
+    )
+  return [formatDecimal(row.last_balance_value), row.last_balance_unit].filter(Boolean).join(' ')
+}
+function balanceAlertTheme(row: Provider): 'default' | 'primary' | 'warning' | 'success' {
+  if (!row.balance_alert_enabled) return 'default'
+  if (row.last_balance_value !== null && row.alert_state === 'LOW') return 'warning'
+  if (row.last_balance_value !== null && row.alert_state === 'NORMAL') return 'success'
+  return 'primary'
+}
+function balanceAlertLabel(row: Provider) {
+  const theme = balanceAlertTheme(row)
+  return t(
+    theme === 'default'
+      ? 'ma.balanceAlertsDisabled'
+      : theme === 'warning'
+        ? 'ma.lowBalance'
+        : theme === 'success'
+          ? 'ma.balanceNormal'
+          : 'ma.balanceAlertsEnabled',
+  )
+}
+function balanceTooltip(row: Provider) {
+  const summary = t('ma.balanceSummaryTooltip', {
+    balance: balanceText(row),
+    alert: balanceAlertLabel(row),
+    time: formatDateTime(row.last_balance_success_at) || t('ma.balanceNoSuccessfulQuery'),
+  })
+  return row.balance_query_status === 'FAILED' ? `${summary}\n${t('ma.balanceFailure')}` : summary
+}
 function rowActions(row: Provider): RowAction[] {
   const actions: RowAction[] = [
     { label: t('ma.getModels'), permission: 'model.providers', run: () => (guide.value = row) },
@@ -412,12 +454,17 @@ function rowActions(row: Provider): RowAction[] {
     },
   ]
   if (row.balance_query_mode !== 'NONE')
-    actions.push({
-      label: t('ma.queryBalance'),
+    actions.splice(1, 0, {
+      label: t(queryingProviderId.value === row.id ? 'ma.queryingBalance' : 'ma.queryBalance'),
       permission: 'model.providers',
+      loading: queryingProviderId.value === row.id,
+      disabled: querying.value,
       run: () => balance(row),
     })
-  return actions
+  return actions.map((action) => ({
+    ...action,
+    disabled: action.disabled || queryingProviderId.value === row.id,
+  }))
 }
 function templateName(provider: Provider) {
   return provider.template_name || provider.template_key
@@ -464,7 +511,7 @@ async function load() {
 }
 const editRequest = useLatestRequest()
 async function edit(row: Provider) {
-  if (editingLoading.value) return
+  if (editingLoading.value || queryingProviderId.value === row.id) return
   const current = editRequest.begin()
   editingLoading.value = true
   try {
@@ -563,20 +610,25 @@ async function loadRelated() {
 }
 async function balance(row: Provider) {
   if (querying.value) return
-  querying.value = true
+  queryingProviderId.value = row.id
   try {
     const data = await accessApi.balance(row.id, balanceController.signal)
     if (detail.value?.id === row.id) Object.assign(detail.value, data)
     await load()
+    if (data.balance_query_status === 'SUCCESS')
+      MessagePlugin.success(t('ma.balanceQueryCompleted'))
+    else if (data.balance_query_status === 'FAILED') MessagePlugin.error(t('ma.balanceFailure'))
   } catch (error) {
-    if (!balanceController.signal.aborted) throw error
+    if (!balanceController.signal.aborted && !(error as { notified?: boolean }).notified)
+      MessagePlugin.error(t('ma.balanceFailure'))
   } finally {
-    querying.value = false
+    queryingProviderId.value = ''
   }
 }
 async function remove() {
   if (mutating.value) return
   if (!removing.value) return
+  if (queryingProviderId.value === removing.value.id) return
   mutating.value = true
   try {
     const active = await accessApi.models({

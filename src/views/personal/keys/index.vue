@@ -109,6 +109,7 @@
   </t-dialog>
   <t-dialog
     :visible="secretVisible"
+    width="var(--notice-dialog-width)"
     :header="t('myKeys.created')"
     :close-on-overlay-click="false"
     :confirm-btn="t('myKeys.done')"
@@ -116,7 +117,7 @@
     @confirm="closeSecret"
     @close="closeSecret"
   >
-    <t-alert
+    <DialogNotice
       theme="warning"
       :message="t(plaintext ? 'myKeys.secretWarning' : 'myKeys.secretUnavailable')"
     />
@@ -144,6 +145,7 @@
 <script setup lang="ts">
 import { copyText } from '@/utils/clipboard'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import DialogNotice from '@/components/DialogNotice.vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
 import {

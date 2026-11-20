@@ -1032,6 +1032,7 @@ function onClose() {
   display: flex;
   align-items: center;
   gap: var(--td-comp-margin-l);
+  padding-top: var(--td-comp-paddingTB-l);
   margin-bottom: var(--td-comp-margin-l);
 }
 

@@ -1,4 +1,8 @@
 const labels: Record<string, [string, string]> = {
+  admissionProtocolRequired: [
+    '请先在编辑中配置协议和路径，再发起准入检测。',
+    'Configure protocols and paths in Edit before starting an admission test.',
+  ],
   passthroughPathDuplicate: ['自定义透传路径不可重复', 'Custom passthrough paths must be unique'],
   error_PRICE_NOT_CONFIGURED: [
     '请先在编辑中配置有效价格，再发起准入检测。',
@@ -839,6 +843,17 @@ const labels: Record<string, [string, string]> = {
     'Queries run every 30 minutes; manual queries are available in the list and details.',
   ],
   queryBalance: ['查询余额', 'Query Balance'],
+  balanceNeverQueried: ['未查询', 'Not queried'],
+  balanceUnknown: ['未知', 'Unknown'],
+  balanceAlertsDisabled: ['预警未启用', 'Alerts disabled'],
+  balanceAlertsEnabled: ['预警开启', 'Alerts enabled'],
+  balanceNoSuccessfulQuery: ['暂无成功查询记录', 'No successful queries yet'],
+  balanceSummaryTooltip: [
+    '可用余额：{balance}；预警状态：{alert}；更新时间：{time}',
+    'Available balance: {balance}; Alert status: {alert}; Updated at: {time}',
+  ],
+  queryingBalance: ['查询中…', 'Querying…'],
+  balanceQueryCompleted: ['余额查询完成', 'Balance query completed'],
   lowBalance: ['余额偏低', 'Low balance'],
   balanceNormal: ['余额正常', 'Balance normal'],
   balanceFailure: [

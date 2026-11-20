@@ -1,7 +1,13 @@
 <template>
   <div class="ma-actions">
     <template v-for="item in inline" :key="item.label">
-      <t-link :theme="item.danger ? 'danger' : 'primary'" @click="item.run">
+      <t-link
+        :theme="item.danger ? 'danger' : 'primary'"
+        :disabled="item.disabled || item.loading"
+        :aria-busy="item.loading || undefined"
+        @click="runAction(item)"
+      >
+        <template v-if="item.loading" #prefix-icon><t-loading size="small" /></template>
         {{ item.label }}
       </t-link>
     </template>
@@ -12,8 +18,9 @@
           v-for="item in overflow"
           :key="item.label"
           :theme="item.danger ? 'error' : 'default'"
-          @click="item.run"
-          >{{ item.label }}</t-dropdown-item
+          :disabled="item.disabled || item.loading"
+          @click="runAction(item)"
+          ><t-loading v-if="item.loading" size="small" />{{ item.label }}</t-dropdown-item
         ></t-dropdown-menu
       ></t-dropdown
     >
@@ -28,9 +35,14 @@ export interface RowAction {
   permission?: string
   overflow?: boolean
   danger?: boolean
+  loading?: boolean
+  disabled?: boolean
   run: () => unknown
 }
 const props = defineProps<{ actions: RowAction[]; expanded?: boolean; grouped?: boolean }>()
+function runAction(item: RowAction) {
+  if (!item.disabled && !item.loading) return item.run()
+}
 const user = useUserStore(),
   { t } = useI18n()
 const available = computed(() =>
