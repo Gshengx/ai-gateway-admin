@@ -14,46 +14,51 @@
         clearable
       />
     </div>
-    <t-table
-      height="var(--stable-table-height)"
-      row-key="id"
-      :data="items"
-      :columns="columns"
-      :loading="loading"
-      hover
-    >
-      <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
-      <template #name="{ row }">{{ row.display_name || row.name }}</template>
-      <template #type="{ row }"
-        ><t-tag :theme="row.is_builtin ? 'primary' : 'default'">{{
-          t(row.is_builtin ? 'roles.builtin' : 'roles.custom')
-        }}</t-tag></template
+    <div ref="actionTableRoot">
+      <t-table
+        class="identity-action-table"
+        height="var(--stable-table-height)"
+        row-key="id"
+        table-layout="fixed"
+        :table-content-width="tableContentWidth"
+        :data="items"
+        :columns="columns"
+        :loading="loading"
+        hover
       >
-      <template #description="{ row }">{{
-        row.display_description || row.description || '—'
-      }}</template>
-      <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
-      <template #action="{ row }">
-        <t-space>
-          <t-link theme="primary" @click="open(row.is_builtin ? 'view' : 'edit', row)">{{
-            t(row.is_builtin ? 'roles.view' : 'roles.edit')
-          }}</t-link>
-          <t-link
-            v-permission.write="'identity.roles'"
-            theme="primary"
-            @click="open('copy', row)"
-            >{{ t('roles.copy') }}</t-link
-          >
-          <t-link
-            v-if="!row.is_builtin"
-            v-permission="'identity.roles:write'"
-            theme="danger"
-            @click="prepareDelete(row)"
-            >{{ t('roles.delete') }}</t-link
-          >
-        </t-space>
-      </template>
-    </t-table>
+        <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
+        <template #name="{ row }">{{ row.display_name || row.name }}</template>
+        <template #type="{ row }"
+          ><t-tag :theme="row.is_builtin ? 'primary' : 'default'">{{
+            t(row.is_builtin ? 'roles.builtin' : 'roles.custom')
+          }}</t-tag></template
+        >
+        <template #description="{ row }">{{
+          row.display_description || row.description || '—'
+        }}</template>
+        <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        <template #action="{ row }">
+          <t-space class="identity-table-actions">
+            <t-link theme="primary" @click="open(row.is_builtin ? 'view' : 'edit', row)">{{
+              t(row.is_builtin ? 'roles.view' : 'roles.edit')
+            }}</t-link>
+            <t-link
+              v-permission.write="'identity.roles'"
+              theme="primary"
+              @click="open('copy', row)"
+              >{{ t('roles.copy') }}</t-link
+            >
+            <t-link
+              v-if="!row.is_builtin"
+              v-permission="'identity.roles:write'"
+              theme="danger"
+              @click="prepareDelete(row)"
+              >{{ t('roles.delete') }}</t-link
+            >
+          </t-space>
+        </template>
+      </t-table>
+    </div>
     <t-pagination
       :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
       class="role-pagination"
@@ -188,6 +193,11 @@
 </template>
 
 <script setup lang="ts">
+import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
+  cellSelector: '.identity-action-table .identity-action-cell',
+  actionsSelector: '.identity-table-actions',
+})
 import DrawerSaving from '@/components/DrawerSaving.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -225,13 +235,24 @@ const pageSize = ref(20)
 const paginationTotal = ref(0)
 const listRequest = useLatestRequest()
 const columns = computed<PrimaryTableCol<RoleItem>[]>(() => [
-  { colKey: 'name', title: t('roles.name') },
-  { colKey: 'type', title: t('roles.type') },
-  { colKey: 'description', title: t('roles.description'), ellipsis: true },
-  { colKey: 'user_count', title: t('roles.users') },
-  { colKey: 'created_at', title: t('roles.created') },
-  { colKey: 'action', title: t('roles.action'), fixed: 'right' },
+  { colKey: 'name', title: t('roles.name'), width: 160, ellipsis: true },
+  { colKey: 'type', title: t('roles.type'), width: 100 },
+  { colKey: 'description', title: t('roles.description'), minWidth: 240, ellipsis: true },
+  { colKey: 'user_count', title: t('roles.users'), width: 100 },
+  { colKey: 'created_at', title: t('roles.created'), width: 180 },
+  {
+    colKey: 'action',
+    title: t('roles.action'),
+    width: actionColumnWidth.value,
+    className: 'identity-action-cell',
+    fixed: 'right',
+  },
 ])
+const tableContentWidth = computed(
+  () =>
+    `max(100%, ${columns.value.reduce((width, column) => width + Number(column.width ?? column.minWidth ?? 0), 0)}px)`,
+)
+
 function resetPage() {
   page.value = 1
 }

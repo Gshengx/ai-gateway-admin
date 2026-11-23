@@ -103,7 +103,6 @@
   border-radius: var(--td-radius-medium);
   background: var(--td-bg-color-secondarycontainer);
 }
-.invocation-editor :deep(.t-input__tips),
 .onboarding-manual :deep(.t-input__tips) {
   position: static;
   margin-top: var(--td-comp-margin-xs);
@@ -365,11 +364,20 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--td-comp-margin-l);
 }
+:global(.provider-form-dialog > .t-dialog__body) {
+  padding-right: var(--td-comp-paddingLR-s);
+}
 .provider-validation-summary {
   margin-top: var(--td-comp-margin-l);
 }
 .provider-form-grid :deep(.t-form__item) {
   margin-bottom: 0;
+}
+.provider-form-grid :deep(.t-form__label--top) {
+  height: auto;
+  min-height: 0;
+  line-height: var(--td-line-height-body-medium);
+  padding-bottom: var(--td-comp-margin-xs);
 }
 .provider-auth,
 .provider-balance {
@@ -381,8 +389,6 @@
   border-radius: var(--td-radius-medium);
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
 }
-.provider-auth > h3,
-.provider-auth > p,
 .provider-balance > h3,
 .provider-balance > p,
 .provider-balance > .t-radio-group,
@@ -658,9 +664,11 @@
   padding: 0;
   background: transparent;
 }
+.provider-auth.ma-stack,
 .provider-balance.ma-stack {
   gap: var(--td-comp-margin-s) var(--td-comp-margin-l);
 }
+.provider-auth-heading,
 .provider-balance-heading {
   grid-column: 1 / -1;
   display: flex;

@@ -408,6 +408,25 @@ body {
   scrollbar-gutter: stable;
 }
 
+/* 添加成员：筛选、选择和分页固定，仅候选表格在可用正文高度内滚动。 */
+.add-members-dialog > .t-dialog__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.add-members-dialog > .t-dialog__body > :not(.add-members-table) {
+  flex-shrink: 0;
+}
+.add-members-dialog .add-members-table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.add-members-dialog .add-members-table > .t-table__content {
+  min-height: 0;
+  overflow: auto;
+}
+
 /* 窄窗口沿用业务宽度并以视口为上限；低高度窗口优先保留标题和底部操作区。 */
 .t-drawer__content-wrapper {
   max-width: 100vw;
@@ -489,4 +508,14 @@ body {
   color: var(--td-text-color-disabled);
   background-color: var(--td-bg-color-component-disabled);
   border-color: var(--td-bg-color-component-disabled);
+}
+
+/* Identity list actions keep their intrinsic width; business columns absorb spare space. */
+.identity-table-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.identity-action-table .identity-action-cell {
+  white-space: nowrap;
 }

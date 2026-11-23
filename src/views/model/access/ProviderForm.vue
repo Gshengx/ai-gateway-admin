@@ -1,6 +1,6 @@
 <template>
   <t-dialog
-    dialog-class-name="model-access-dialog"
+    dialog-class-name="model-access-dialog provider-form-dialog"
     :close-btn="!saving"
     :visible="true"
     :header="t(provider.id ? 'ma.editProvider' : 'ma.createProvider')"
@@ -23,11 +23,7 @@
       <t-form-item v-bind="fieldState('name')" :label="t('ma.providerName')" required-mark
         ><t-input clearable v-model="provider.name" :placeholder="t('providers.namePlaceholder')"
       /></t-form-item>
-      <t-form-item
-        v-bind="fieldState('template')"
-        :label="t('ma.template')"
-        :help="t('ma.providerTemplateHelp')"
-        required-mark
+      <t-form-item v-bind="fieldState('template')" :label="t('ma.template')" required-mark
         ><t-select
           clearable
           v-model="provider.template_version_id"
@@ -44,7 +40,6 @@
       /></t-form-item>
       <t-alert
         v-if="changedTemplate && provider.id"
-        class="ma-section"
         theme="warning"
         :message="t('ma.templateChange')"
       />
@@ -56,8 +51,10 @@
         ><t-input clearable v-model="provider.base_url" placeholder="https://api.example.com/v1"
       /></t-form-item>
       <div class="ma-stack provider-auth">
-        <h3>{{ t('ma.auth') }}</h3>
-        <p class="ma-muted">{{ t('ma.authHelp') }}</p>
+        <div class="provider-auth-heading">
+          <h3>{{ t('ma.auth') }}</h3>
+          <p class="ma-muted">{{ t('ma.authHelp') }}</p>
+        </div>
         <t-form-item
           v-for="field in fields"
           :key="field.key"

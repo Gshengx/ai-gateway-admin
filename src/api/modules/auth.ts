@@ -124,6 +124,6 @@ export function logoutApi(sessionInvalidated = false) {
   return request.post<{ applied: boolean; replayed: boolean }>(
     '/auth/logout',
     {},
-    { skipErrorHandler: sessionInvalidated },
+    { skipErrorHandler: sessionInvalidated, handledErrorCodes: ['CSRF_INVALID', 'UNAUTHORIZED'] },
   )
 }

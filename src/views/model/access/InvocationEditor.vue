@@ -4,9 +4,14 @@
       <span class="invocation-editor__required">{{ t('ma.protocol') }}</span>
       <span class="invocation-editor__required">{{ t('ma.protocolPath') }}</span>
     </div>
-    <t-alert v-if="notice" class="model-config-warning" theme="warning" :message="notice" />
-    <div v-for="row in rows" :key="row.key" class="invocation-editor__row">
-      <t-form-item :label-width="0">
+    <p v-if="notice" class="ma-error" role="alert">{{ notice }}</p>
+    <div v-for="(row, index) in rows" :key="row.key" class="invocation-editor__row">
+      <t-form-item
+        :name="`custom_invocation_apis[${index}].invocation_api`"
+        :rules="fieldRules(row, 'protocol')"
+        :label-width="0"
+        :status-icon="false"
+      >
         <t-select
           clearable
           :aria-label="t('ma.protocol')"
@@ -14,12 +19,8 @@
           :value="row.protocol"
           :disabled="disabled"
           :placeholder="t('ma.chooseProtocol')"
-          :status="protocolError(row) ? 'error' : undefined"
-          @change="(value: unknown) => selectProtocol(row, String(value))"
+          @change="(value: unknown) => selectProtocol(row, String(value ?? ''))"
         >
-          <template v-if="protocolError(row)" #tips>
-            <t-alert class="model-config-warning" theme="warning" :message="protocolError(row)" />
-          </template>
           <t-option
             v-for="option in options"
             class="invocation-editor__protocol-option"
@@ -41,7 +42,12 @@
           </t-option>
         </t-select>
       </t-form-item>
-      <t-form-item :label-width="0">
+      <t-form-item
+        :name="`custom_invocation_apis[${index}].path`"
+        :rules="fieldRules(row, 'path')"
+        :label-width="0"
+        :status-icon="false"
+      >
         <t-input
           clearable
           :aria-label="t('ma.protocolPath')"
@@ -49,13 +55,8 @@
           v-model="row.path"
           :disabled="disabled"
           :placeholder="t('ma.choosePath')"
-          :status="pathError(row) ? 'error' : undefined"
           @change="syncEditedConfiguration(row)"
-        >
-          <template v-if="pathError(row)" #tips>
-            <t-alert class="model-config-warning" theme="warning" :message="pathError(row)" />
-          </template>
-        </t-input>
+        />
       </t-form-item>
       <t-button
         variant="text"
@@ -66,12 +67,6 @@
         ><template #icon><minus-circle-icon /></template
       ></t-button>
     </div>
-    <t-alert
-      v-if="validateRequired && validationError === 'required'"
-      class="model-config-warning"
-      theme="warning"
-      :message="t('ma.invocationRequired')"
-    />
     <div class="invocation-editor__actions">
       <span v-if="rows.length >= maximumRows" class="ma-muted">{{ t('ma.protocolLimit') }}</span>
       <t-button variant="text" :disabled="disabled || rows.length >= maximumRows" @click="addRow()">
@@ -84,6 +79,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AddIcon, MinusCircleIcon } from 'tdesign-icons-vue-next'
+import type { FormRule } from 'tdesign-vue-next'
 import { accessApi, invocationApis, type Model } from '@/api/modules/modelAccess'
 import { resolveInvocationApiIds, validInvocationPath } from '@/utils/modelInvocation'
 import { useLatestRequest } from '@/utils/useLatestRequest'
@@ -349,6 +345,17 @@ function pathError(row: InvocationRow) {
   if (props.validateRequired && !validInvocationPath(row.path))
     return row.path ? t('ma.protocolIncomplete') : t('ma.choosePath')
   return ''
+}
+function fieldRules(row: InvocationRow, field: 'protocol' | 'path'): FormRule[] {
+  const error = field === 'protocol' ? protocolError : pathError
+  return [
+    {
+      required: props.validateRequired,
+      message: t(field === 'protocol' ? 'ma.chooseProtocol' : 'ma.choosePath'),
+      trigger: 'change',
+    },
+    { validator: () => !error(row), message: error(row), trigger: 'change' },
+  ]
 }
 // Both parent flows validate the same ordered configuration they submit.
 const validationError = computed<'required' | 'duplicate' | 'incomplete' | null>(() => {

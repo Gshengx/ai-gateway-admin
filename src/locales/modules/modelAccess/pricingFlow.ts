@@ -14,6 +14,10 @@ const pricingFlow = {
   useCurrent: ['使用当前价', 'Use current pricing'],
   useDraft: ['采用草稿并继续编辑', 'Accept draft and continue editing'],
   unpriced: ['待配置', 'Not configured'],
+  noBillingItemsSummary: [
+    '无计费项，暂不计算费用',
+    'No billable metrics; costs are not calculated',
+  ],
   refreshFailed: [
     '已保存，但价格回读失败，请重新打开详情重试。',
     'Saved, but pricing could not be reloaded. Reopen the details to retry.',

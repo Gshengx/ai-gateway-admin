@@ -42,48 +42,57 @@
           </div>
         </template></FilterBar
       >
-      <t-table
-        row-key="id"
-        :data="items"
-        :columns="columns"
-        :loading="loading"
-        :pagination="pagination"
-        @page-change="changePage"
-      >
-        <template #status="{ row }"
-          ><t-tag :theme="row.status === 'ACTIVE' ? 'success' : 'default'" variant="light">{{
-            t(`projects.${row.status}`)
-          }}</t-tag></template
+      <div ref="actionTableRoot">
+        <t-table
+          class="identity-action-table"
+          row-key="id"
+          table-layout="fixed"
+          :table-content-width="tableContentWidth"
+          :data="items"
+          :columns="columns"
+          :loading="loading"
+          :pagination="pagination"
+          @page-change="changePage"
         >
-        <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
-        <template #actions="{ row }"
-          ><t-space v-permission.write="'identity.projects'">
-            <t-link key="edit" v-if="row.status === 'ACTIVE'" theme="primary" @click="edit(row)">{{
-              t('projects.editAction')
-            }}</t-link>
-            <t-link
-              key="status"
-              theme="primary"
-              @click="confirm(row, row.status === 'ACTIVE' ? 'disable' : 'enable')"
-              >{{ t(row.status === 'ACTIVE' ? 'projects.disable' : 'projects.enable') }}</t-link
-            >
-            <t-link
-              key="archive"
-              v-if="row.status !== 'ARCHIVED'"
-              theme="primary"
-              @click="confirm(row, 'archive')"
-              >{{ t('projects.archive') }}</t-link
-            >
-            <t-link
-              key="delete"
-              v-if="row.status !== 'ACTIVE'"
-              theme="danger"
-              @click="confirm(row, 'delete')"
-              >{{ t('projects.delete') }}</t-link
-            >
-          </t-space></template
-        >
-      </t-table>
+          <template #status="{ row }"
+            ><t-tag :theme="row.status === 'ACTIVE' ? 'success' : 'default'" variant="light">{{
+              t(`projects.${row.status}`)
+            }}</t-tag></template
+          >
+          <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          <template #actions="{ row }"
+            ><t-space class="identity-table-actions" v-permission.write="'identity.projects'">
+              <t-link
+                key="edit"
+                v-if="row.status === 'ACTIVE'"
+                theme="primary"
+                @click="edit(row)"
+                >{{ t('projects.editAction') }}</t-link
+              >
+              <t-link
+                key="status"
+                theme="primary"
+                @click="confirm(row, row.status === 'ACTIVE' ? 'disable' : 'enable')"
+                >{{ t(row.status === 'ACTIVE' ? 'projects.disable' : 'projects.enable') }}</t-link
+              >
+              <t-link
+                key="archive"
+                v-if="row.status !== 'ARCHIVED'"
+                theme="primary"
+                @click="confirm(row, 'archive')"
+                >{{ t('projects.archive') }}</t-link
+              >
+              <t-link
+                key="delete"
+                v-if="row.status !== 'ACTIVE'"
+                theme="danger"
+                @click="confirm(row, 'delete')"
+                >{{ t('projects.delete') }}</t-link
+              >
+            </t-space></template
+          >
+        </t-table>
+      </div>
     </t-card>
     <ProjectForm
       v-if="formVisible"
@@ -118,6 +127,11 @@
   </div>
 </template>
 <script setup lang="ts">
+import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
+  cellSelector: '.identity-action-table .identity-action-cell',
+  actionsSelector: '.identity-table-actions',
+})
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
@@ -149,13 +163,24 @@ const statuses = computed(() => [
   ...['ACTIVE', 'DISABLED', 'ARCHIVED'].map((value) => ({ value, label: t(`projects.${value}`) })),
 ])
 const columns = computed<PrimaryTableCol<ProjectItem>[]>(() => [
-  { colKey: 'name', title: t('projects.name'), minWidth: 180, ellipsis: true },
+  { colKey: 'name', title: t('projects.name'), width: 180, ellipsis: true },
   { colKey: 'department', title: t('projects.department'), minWidth: 220, ellipsis: true },
   { colKey: 'member_count', title: t('projects.memberCount'), width: 120 },
   { colKey: 'status', title: t('projects.status'), width: 110 },
   { colKey: 'created_at', title: t('projects.created'), width: 190 },
-  { colKey: 'actions', title: t('projects.actions'), width: 200, fixed: 'right' },
+  {
+    colKey: 'actions',
+    title: t('projects.actions'),
+    width: actionColumnWidth.value,
+    className: 'identity-action-cell',
+    fixed: 'right',
+  },
 ])
+const tableContentWidth = computed(
+  () =>
+    `max(100%, ${columns.value.reduce((width, column) => width + Number(column.width ?? column.minWidth ?? 0), 0)}px)`,
+)
+
 const confirmation = computed(() => {
   const p = target.value
   if (!p) return []

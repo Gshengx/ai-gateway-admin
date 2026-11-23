@@ -1,12 +1,12 @@
 <template>
   <t-dialog
-    dialog-class-name="stable-async-dialog"
+    dialog-class-name="stable-async-dialog add-members-dialog"
     attach="body"
     :visible="visible"
     :header="t('groups.addMembers.title')"
     width="760px"
     placement="center"
-    :close-on-overlay-click="!submitting"
+    :close-on-overlay-click="false"
     :confirm-btn="{
       content: t('groups.addMembers.submit', { n: selectedKeys.length }),
       loading: submitting,
@@ -38,6 +38,8 @@
         :placeholder="t('groups.addMembers.allDepartments')"
         @change="onDepartmentChange"
       />
+    </div>
+    <div class="add-selection">
       <span>{{ t('common.selected', { n: selectedKeys.length }) }}</span>
       <t-button v-if="selectedKeys.length" variant="text" size="small" @click="clearSelection">
         {{ t('common.clearSelection') }}
@@ -127,9 +129,24 @@ const pagination = reactive<PaginationProps>({
 
 const columns = computed<PrimaryTableCol<UserGroupMember>[]>(() => [
   { colKey: 'row-select', type: 'multiple', width: 48 },
-  { colKey: 'username', title: t('groups.addMembers.columns.username'), width: 160 },
-  { colKey: 'display_name', title: t('groups.addMembers.columns.displayName'), width: 120 },
-  { colKey: 'department', title: t('groups.addMembers.columns.department'), width: 200 },
+  {
+    colKey: 'username',
+    title: t('groups.addMembers.columns.username'),
+    width: 220,
+    ellipsis: true,
+  },
+  {
+    colKey: 'display_name',
+    title: t('groups.addMembers.columns.displayName'),
+    width: 160,
+    ellipsis: true,
+  },
+  {
+    colKey: 'department',
+    title: t('groups.addMembers.columns.department'),
+    width: 100,
+    ellipsis: true,
+  },
 ])
 
 let requestSequence = 0
@@ -185,7 +202,6 @@ watch(
     invalidateRequests()
     loading.value = true
     failed.value = false
-    clearSelection()
     pagination.current = 1
     if (!value) {
       void fetchCandidates()
@@ -195,14 +211,6 @@ watch(
         void fetchCandidates()
       }, 300)
     }
-  },
-  { flush: 'sync' },
-)
-
-watch(
-  departmentId,
-  () => {
-    clearSelection()
   },
   { flush: 'sync' },
 )
@@ -295,6 +303,13 @@ async function handleSubmit() {
   flex: 1 1 var(--department-filter-field-basis);
   min-width: 0;
   max-width: 100%;
+}
+
+.add-selection {
+  display: flex;
+  align-items: center;
+  gap: var(--td-comp-margin-s);
+  margin-bottom: var(--td-comp-margin-l);
 }
 
 .add-filter__select {

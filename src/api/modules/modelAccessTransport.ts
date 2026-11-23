@@ -992,6 +992,7 @@ export const transport = {
     const view = pricingView(p.price, p.metric_specs, p.billing_currency)
     view.version = p.price_version
     view.state = p.state
+    view.unpriced_reason = p.unpriced_reason
     return view
   },
   prices: async (id: string, page = 1, page_size = 20, config?: RequestConfig) => {

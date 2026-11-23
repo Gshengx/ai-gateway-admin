@@ -179,7 +179,9 @@ async function onUserAction({ value }: { value: string | number }) {
   }
   if (value === 'logout') {
     try {
-      await Promise.all([userStore.logout(), import('@/views/login/index.vue')])
+      // 登录页就绪后再清理会话，避免资源加载期间提前卸载当前业务页面。
+      await import('@/views/login/index.vue')
+      await userStore.logout()
       await router.replace('/login')
     } catch {
       // 请求错误由拦截器提示；退出失败时保留当前页面和会话。

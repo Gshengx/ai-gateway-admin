@@ -167,6 +167,7 @@
             />
             <div class="onboarding-model-card__configuration">
               <t-form
+                :data="model"
                 class="ma-form onboarding-model-card__form"
                 label-align="top"
                 required-mark-position="right"

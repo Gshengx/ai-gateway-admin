@@ -25,7 +25,12 @@
     <LoadingState :loading="loading" :failed="loadFailed" retryable @retry="loadModel"
       ><t-tabs ref="tabsRef" v-model="tab" class="drawer-tabs">
         <t-tab-panel value="basic" :label="t('ma.basic')"
-          ><t-form class="ma-form ma-section" label-align="top" required-mark-position="right">
+          ><t-form
+            :data="model"
+            class="ma-form ma-section"
+            label-align="top"
+            required-mark-position="right"
+          >
             <div class="ma-grid">
               <t-form-item
                 v-bind="basicFieldState('provider')"
@@ -98,10 +103,11 @@
                 ><t-select
                   clearable
                   v-model="model.input_modalities"
+                  v-model:input-value="metadataSearch.input_modalities"
                   :disabled="metadataLocked"
                   multiple
                   filterable
-                  creatable
+                  :creatable="canCreateMetadata('input_modalities')"
                   :options="
                     [...new Set([...inputModalities, ...model.input_modalities])].map((v) => ({
                       value: v,
@@ -116,10 +122,11 @@
                 ><t-select
                   clearable
                   v-model="model.output_modalities"
+                  v-model:input-value="metadataSearch.output_modalities"
                   :disabled="metadataLocked"
                   multiple
                   filterable
-                  creatable
+                  :creatable="canCreateMetadata('output_modalities')"
                   :options="
                     [...new Set([...outputModalities, ...model.output_modalities])].map((v) => ({
                       value: v,
@@ -136,12 +143,14 @@
               ><t-select
                 clearable
                 v-model="model.tags"
+                v-model:input-value="metadataSearch.tags"
                 :disabled="metadataLocked"
                 multiple
                 filterable
-                creatable
+                :creatable="canCreateMetadata('tags')"
                 :options="tagChoices"
                 @search="searchTags"
+                @create="(v: string | number | boolean | bigint) => addModality('tags', String(v))"
             /></t-form-item>
             <p class="ma-muted">{{ t('ma.metadataHelp') }}</p>
             <div class="ma-grid">
@@ -765,9 +774,25 @@ function acceptPriceComparison(useDraft: boolean) {
 function nameChanged(value: string) {
   manualName = !!value && value !== lastAutomaticName
 }
-function addModality(key: 'input_modalities' | 'output_modalities', value: string) {
+type MetadataTagField = 'input_modalities' | 'output_modalities' | 'tags'
+const metadataSearch = ref<Record<MetadataTagField, string>>({
+  input_modalities: '',
+  output_modalities: '',
+  tags: '',
+})
+function canCreateMetadata(key: MetadataTagField) {
+  const value = metadataSearch.value[key].trim()
+  if (!value) return false
+  if (key === 'tags')
+    return !tagChoices.value.some((option) => option.value === value || option.label === value)
+  const defaults = key === 'input_modalities' ? inputModalities : outputModalities
+  return ![...defaults, ...model.value[key]].includes(value)
+}
+function addModality(key: MetadataTagField, value: string) {
   const tag = value.trim()
   if (tag) model.value[key] = [...new Set([...model.value[key], tag])]
+  metadataSearch.value[key] = ''
+  if (key === 'tags') searchTags('')
 }
 const basicValidationAttempted = ref(false)
 const basicValidationFailed = ref(false)

@@ -24,7 +24,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/modules/user'
 import { useTermsStore } from '@/stores/modules/terms'
@@ -34,10 +34,12 @@ import zhCN from 'tdesign-vue-next/es/locale/zh_CN'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import TermsAcceptDialog from '@/components/TermsAcceptDialog.vue'
 import AccessState from '@/components/AccessState.vue'
+import { setTimeZone } from '@/utils/datetime'
 
 // 组件库内置文案（分页/弹窗/日期等）跟随应用语言切换
 const { locale, t } = useI18n()
 const userStore = useUserStore()
+watch(() => userStore.context.session?.time_zone, setTimeZone, { immediate: true, flush: 'sync' })
 const termsStore = useTermsStore()
 const router = useRouter()
 const isLoginPage = computed(() => router.currentRoute.value.path === '/login')

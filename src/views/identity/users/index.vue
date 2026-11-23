@@ -193,108 +193,114 @@
             </t-space>
           </div>
 
-          <t-table
-            height="var(--stable-table-height)"
-            row-key="id"
-            :data="tableData"
-            :columns="columns"
-            :loading="loading"
-            :selected-row-keys="selectedKeys"
-            :pagination="pagination"
-            :class="{
-              'stable-table--pending-footer': (loading || listFailed) && !tableData.length,
-            }"
-            :scroll="{ x: 1598 }"
-            hover
-            @select-change="onSelectChange"
-            @page-change="onPageChange"
-          >
-            <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
-            <template #username="{ row }">
-              <t-link theme="primary" hover="color" @click="onView(row)">
-                {{ row.username }}
-              </t-link>
-            </template>
-            <template #email="{ row }">
-              <span :class="{ 'cell-empty': !row.email }">{{ row.email ?? '—' }}</span>
-            </template>
-            <template #phone="{ row }">
-              <span :class="{ 'cell-empty': !row.phone }">{{ row.phone || '—' }}</span>
-            </template>
-            <template #department="{ row }">
-              <span :class="{ 'cell-empty': !row.department }">
-                {{ row.department?.display_name ?? '—' }}
-              </span>
-            </template>
-            <template #groups="{ row }">
-              <t-tooltip :content="groupTooltip(row)">
-                <span class="group-text">
-                  {{ row.groups.length ? row.groups[0].display_name : '—' }}
-                  <t-tag v-if="row.groups.length > 1" size="small" variant="light">
-                    +{{ row.groups.length - 1 }}
-                  </t-tag>
+          <div ref="actionTableRoot">
+            <t-table
+              class="identity-action-table"
+              height="var(--stable-table-height)"
+              row-key="id"
+              :data="tableData"
+              :columns="columns"
+              :loading="loading"
+              :selected-row-keys="selectedKeys"
+              :pagination="pagination"
+              :class="{
+                'stable-table--pending-footer': (loading || listFailed) && !tableData.length,
+              }"
+              table-layout="fixed"
+              :table-content-width="tableContentWidth"
+              hover
+              @select-change="onSelectChange"
+              @page-change="onPageChange"
+            >
+              <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
+              <template #username="{ row }">
+                <t-link theme="primary" hover="color" @click="onView(row)">
+                  {{ row.username }}
+                </t-link>
+              </template>
+              <template #email="{ row }">
+                <span :class="{ 'cell-empty': !row.email }">{{ row.email ?? '—' }}</span>
+              </template>
+              <template #phone="{ row }">
+                <span :class="{ 'cell-empty': !row.phone }">{{ row.phone || '—' }}</span>
+              </template>
+              <template #department="{ row }">
+                <span :class="{ 'cell-empty': !row.department }">
+                  {{ row.department?.display_name ?? '—' }}
                 </span>
-              </t-tooltip>
-            </template>
-            <template #role="{ row }">
-              <span :class="{ 'cell-empty': !row.role }">
-                {{ row.role?.display_name ?? '—' }}
-              </span>
-            </template>
-            <template #projects="{ row }">
-              <t-tooltip :content="projectTooltip(row)">
-                <span class="group-text">
-                  {{ row.projects?.[0]?.display_name ?? '—' }}
-                  <t-tag v-if="(row.projects?.length ?? 0) > 1" size="small" variant="light">
-                    +{{ row.projects.length - 1 }}
-                  </t-tag>
+              </template>
+              <template #groups="{ row }">
+                <t-tooltip :content="groupTooltip(row)">
+                  <span class="group-text">
+                    {{ row.groups.length ? row.groups[0].display_name : '—' }}
+                    <t-tag v-if="row.groups.length > 1" size="small" variant="light">
+                      +{{ row.groups.length - 1 }}
+                    </t-tag>
+                  </span>
+                </t-tooltip>
+              </template>
+              <template #role="{ row }">
+                <span :class="{ 'cell-empty': !row.role }">
+                  {{ row.role?.display_name ?? '—' }}
                 </span>
-              </t-tooltip>
-            </template>
+              </template>
+              <template #projects="{ row }">
+                <t-tooltip :content="projectTooltip(row)">
+                  <span class="group-text">
+                    {{ row.projects?.[0]?.display_name ?? '—' }}
+                    <t-tag v-if="(row.projects?.length ?? 0) > 1" size="small" variant="light">
+                      +{{ row.projects.length - 1 }}
+                    </t-tag>
+                  </span>
+                </t-tooltip>
+              </template>
 
-            <template #status="{ row }">
-              <span class="status-cell" :class="`status-cell--${row.status}`">
-                <span class="status-dot" :class="`status-dot--${row.status}`"></span>
-                {{ row.status === 'ACTIVE' ? t('users.statusEnabled') : t('users.statusDisabled') }}
-              </span>
-            </template>
-            <template #last_login_at="{ row }">
-              <span :class="{ 'cell-empty': !row.last_login_at }">
-                {{ formatDateTime(row.last_login_at) || '—' }}
-              </span>
-            </template>
-            <template #action="{ row }">
-              <t-space :size="12">
-                <t-link
-                  v-permission.write="'identity.users'"
-                  theme="primary"
-                  hover="color"
-                  :disabled="!canEditUser(row)"
-                  @click="onEdit(row)"
-                >
-                  {{ t('users.edit') }}
-                </t-link>
-                <t-link
-                  v-permission.write="'identity.users'"
-                  theme="primary"
-                  hover="color"
-                  :disabled="!canEditUser(row)"
-                  @click="onResetPassword(row)"
-                >
-                  {{ t('users.resetPassword') }}
-                </t-link>
-                <t-link
-                  v-permission.write="'identity.users'"
-                  theme="primary"
-                  hover="color"
-                  :disabled="row.is_initial_admin"
-                  @click="onToggleStatus(row)"
-                >
-                  {{ row.status === 'ACTIVE' ? t('users.disable') : t('users.enable') }}
-                </t-link>
-              </t-space>
-            </template>
-          </t-table>
+              <template #status="{ row }">
+                <span class="status-cell" :class="`status-cell--${row.status}`">
+                  <span class="status-dot" :class="`status-dot--${row.status}`"></span>
+                  {{
+                    row.status === 'ACTIVE' ? t('users.statusEnabled') : t('users.statusDisabled')
+                  }}
+                </span>
+              </template>
+              <template #last_login_at="{ row }">
+                <span :class="{ 'cell-empty': !row.last_login_at }">
+                  {{ formatDateTime(row.last_login_at) || '—' }}
+                </span>
+              </template>
+              <template #action="{ row }">
+                <t-space class="identity-table-actions" :size="12">
+                  <t-link
+                    v-permission.write="'identity.users'"
+                    theme="primary"
+                    hover="color"
+                    :disabled="!canEditUser(row)"
+                    @click="onEdit(row)"
+                  >
+                    {{ t('users.edit') }}
+                  </t-link>
+                  <t-link
+                    v-permission.write="'identity.users'"
+                    theme="primary"
+                    hover="color"
+                    :disabled="!canEditUser(row)"
+                    @click="onResetPassword(row)"
+                  >
+                    {{ t('users.resetPassword') }}
+                  </t-link>
+                  <t-link
+                    v-permission.write="'identity.users'"
+                    theme="primary"
+                    hover="color"
+                    :disabled="row.is_initial_admin"
+                    @click="onToggleStatus(row)"
+                  >
+                    {{ row.status === 'ACTIVE' ? t('users.disable') : t('users.enable') }}
+                  </t-link>
+                </t-space>
+              </template>
+            </t-table>
+          </div>
         </div>
       </div>
     </div>
@@ -418,6 +424,11 @@
 </template>
 
 <script setup lang="ts">
+import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
+  cellSelector: '.identity-action-table .identity-action-cell',
+  actionsSelector: '.identity-table-actions',
+})
 import { useDepartmentScope } from '@/utils/useDepartmentScope'
 import { useTreeBranches } from '@/utils/useTreeBranches'
 import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
@@ -766,8 +777,8 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
     checkProps: ({ row }) => ({ disabled: row.is_initial_admin }),
   },
   { colKey: 'username', title: t('users.columns.username'), width: 140 },
-  { colKey: 'display_name', title: t('users.columns.displayName'), width: 100 },
-  { colKey: 'email', title: t('users.columns.email'), width: 200, ellipsis: true },
+  { colKey: 'display_name', title: t('users.columns.displayName'), width: 160, ellipsis: true },
+  { colKey: 'email', title: t('users.columns.email'), minWidth: 200, ellipsis: true },
   { colKey: 'phone', title: t('users.columns.phone'), width: 140 },
   { colKey: 'department', title: t('users.columns.department'), width: 160, ellipsis: true },
   { colKey: 'groups', title: t('users.columns.groups'), width: 130 },
@@ -775,8 +786,19 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
   { colKey: 'role', title: t('users.columns.role'), width: 120 },
   { colKey: 'status', title: t('users.columns.status'), width: 100 },
   { colKey: 'last_login_at', title: t('users.columns.lastLogin'), width: 170 },
-  { colKey: 'action', title: t('users.columns.action'), width: 190, fixed: 'right' },
+  {
+    colKey: 'action',
+    title: t('users.columns.action'),
+    width: actionColumnWidth.value,
+    className: 'identity-action-cell',
+    fixed: 'right',
+  },
 ])
+
+const tableContentWidth = computed(
+  () =>
+    `max(100%, ${columns.value.reduce((width, column) => width + Number(column.width ?? column.minWidth ?? 0), 0)}px)`,
+)
 
 /**
  * 用户列表使用后端页码分页（page / page_size），
@@ -873,6 +895,7 @@ async function onRefreshDepartments() {
     ) {
       selectedDepartmentId.value = defaultDepartmentId.value
     }
+    await fetchUsers()
   } finally {
     departmentRefreshing.value = false
   }

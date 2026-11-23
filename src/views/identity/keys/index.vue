@@ -74,101 +74,108 @@
         {{ t('common.clearSelection') }}
       </t-button>
     </t-space>
-    <t-table
-      height="var(--stable-table-height)"
-      row-key="id"
-      table-layout="fixed"
-      table-content-width="max(100%, var(--managed-key-table-width))"
-      :data="items"
-      :columns="columns"
-      :loading="loading"
-      :selected-row-keys="selectedKeys"
-      :disable-data-page="true"
-      :empty="listFailed ? t('common.loadFailed') : t('managedKeys.empty')"
-      @select-change="selectRows"
-    >
-      <template #id="{ row }"
-        ><code>{{ row.id }}</code></template
+    <div ref="actionTableRoot">
+      <t-table
+        class="identity-action-table"
+        height="var(--stable-table-height)"
+        row-key="id"
+        table-layout="fixed"
+        table-content-width="max(100%, var(--managed-key-table-width))"
+        :data="items"
+        :columns="columns"
+        :loading="loading"
+        :selected-row-keys="selectedKeys"
+        :disable-data-page="true"
+        :empty="listFailed ? t('common.loadFailed') : t('managedKeys.empty')"
+        @select-change="selectRows"
       >
-      <template #masked_value="{ row }"
-        ><t-tooltip :content="t('myKeys.maskedHint')"
-          ><code>{{ row.masked_value }}</code></t-tooltip
-        ></template
-      >
-      <template #name="{ row }"
-        ><t-tooltip :content="row.name"
-          ><span class="key-ellipsis">{{ row.name }}</span></t-tooltip
-        ></template
-      >
-      <template #username="{ row }">
-        <t-link
-          v-if="canReadUsers"
-          theme="primary"
-          :href="router.resolve({ path: '/identity/users', query: { user: row.user_id } }).href"
-          >{{ row.username || '—' }}</t-link
+        <template #id="{ row }"
+          ><code>{{ row.id }}</code></template
         >
-        <span v-else>{{ row.username || '—' }}</span>
-      </template>
-      <template #user="{ row }">{{ row.user_display_name || '—' }}</template>
-      <template #department="{ row }">{{
-        row.department_display_name || row.department_name || '—'
-      }}</template>
-      <template #status="{ row }"
-        ><t-tag variant="light" :theme="row.status === 'ACTIVE' ? 'success' : 'default'">{{
-          t(row.status === 'ACTIVE' ? 'myKeys.active' : 'myKeys.disabled')
-        }}</t-tag></template
-      >
-      <template #access="{ row }">
-        <component
-          :is="accessState(row).reasons.length ? Tooltip : 'div'"
-          v-bind="
-            accessState(row).reasons.length
-              ? {
-                  content: accessState(row)
-                    .reasons.map((reason) => reason.text)
-                    .join(' · '),
-                }
-              : {}
-          "
+        <template #masked_value="{ row }"
+          ><t-tooltip :content="t('myKeys.maskedHint')"
+            ><code>{{ row.masked_value }}</code></t-tooltip
+          ></template
         >
-          <div class="key-access-cell">
-            <span :class="['key-access', accessState(row).tone]">{{ accessState(row).text }}</span>
-            <div v-if="accessState(row).reasons.length" class="key-access-reasons">
-              <t-tag
-                v-for="reason in accessState(row).reasons"
-                :key="reason.code"
-                variant="light"
-                :theme="reason.theme"
-                >{{ reason.text }}</t-tag
-              >
-            </div>
-          </div>
-        </component>
-      </template>
-      <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
-      <template #last_used_at="{ row }">{{
-        row.last_used_at ? formatDateTime(row.last_used_at) : '—'
-      }}</template>
-      <template #last_used_ip="{ row }">{{ row.last_used_ip || '—' }}</template>
-      <template #action="{ row }"
-        ><t-space>
+        <template #name="{ row }"
+          ><t-tooltip :content="row.name"
+            ><span class="key-ellipsis">{{ row.name }}</span></t-tooltip
+          ></template
+        >
+        <template #username="{ row }">
           <t-link
-            v-permission.write="'identity.keys'"
+            v-if="canReadUsers"
             theme="primary"
-            :disabled="busy || loading"
-            @click="openOperation(row.status === 'ACTIVE' ? 'disable' : 'enable', row)"
-            >{{ t(row.status === 'ACTIVE' ? 'managedKeys.disable' : 'managedKeys.enable') }}</t-link
+            :href="router.resolve({ path: '/identity/users', query: { user: row.user_id } }).href"
+            >{{ row.username || '—' }}</t-link
           >
-          <t-link
-            v-permission.write="'identity.keys'"
-            theme="danger"
-            :disabled="busy || loading"
-            @click="openOperation('delete', row)"
-            >{{ t('myKeys.delete') }}</t-link
+          <span v-else>{{ row.username || '—' }}</span>
+        </template>
+        <template #user="{ row }">{{ row.user_display_name || '—' }}</template>
+        <template #department="{ row }">{{
+          row.department_display_name || row.department_name || '—'
+        }}</template>
+        <template #status="{ row }"
+          ><t-tag variant="light" :theme="row.status === 'ACTIVE' ? 'success' : 'default'">{{
+            t(row.status === 'ACTIVE' ? 'myKeys.active' : 'myKeys.disabled')
+          }}</t-tag></template
+        >
+        <template #access="{ row }">
+          <component
+            :is="accessState(row).reasons.length ? Tooltip : 'div'"
+            v-bind="
+              accessState(row).reasons.length
+                ? {
+                    content: accessState(row)
+                      .reasons.map((reason) => reason.text)
+                      .join(' · '),
+                  }
+                : {}
+            "
           >
-        </t-space></template
-      >
-    </t-table>
+            <div class="key-access-cell">
+              <span :class="['key-access', accessState(row).tone]">{{
+                accessState(row).text
+              }}</span>
+              <div v-if="accessState(row).reasons.length" class="key-access-reasons">
+                <t-tag
+                  v-for="reason in accessState(row).reasons"
+                  :key="reason.code"
+                  variant="light"
+                  :theme="reason.theme"
+                  >{{ reason.text }}</t-tag
+                >
+              </div>
+            </div>
+          </component>
+        </template>
+        <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        <template #last_used_at="{ row }">{{
+          row.last_used_at ? formatDateTime(row.last_used_at) : '—'
+        }}</template>
+        <template #last_used_ip="{ row }">{{ row.last_used_ip || '—' }}</template>
+        <template #action="{ row }"
+          ><t-space class="identity-table-actions">
+            <t-link
+              v-permission.write="'identity.keys'"
+              theme="primary"
+              :disabled="busy || loading"
+              @click="openOperation(row.status === 'ACTIVE' ? 'disable' : 'enable', row)"
+              >{{
+                t(row.status === 'ACTIVE' ? 'managedKeys.disable' : 'managedKeys.enable')
+              }}</t-link
+            >
+            <t-link
+              v-permission.write="'identity.keys'"
+              theme="danger"
+              :disabled="busy || loading"
+              @click="openOperation('delete', row)"
+              >{{ t('myKeys.delete') }}</t-link
+            >
+          </t-space></template
+        >
+      </t-table>
+    </div>
     <div class="key-pagination">
       <t-pagination
         :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
@@ -199,6 +206,11 @@
 </template>
 
 <script setup lang="ts">
+import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
+  cellSelector: '.identity-action-table .identity-action-cell',
+  actionsSelector: '.identity-table-actions',
+})
 import { usePageSelection } from '@/utils/usePageSelection'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -288,7 +300,13 @@ const columns = computed<PrimaryTableCol<ManagedKeyItem>[]>(() => [
   { colKey: 'created_at', title: t('myKeys.createdAt'), width: 180 },
   { colKey: 'last_used_at', title: t('myKeys.lastUsed'), width: 180 },
   { colKey: 'last_used_ip', title: t('managedKeys.lastIp'), width: 140 },
-  { colKey: 'action', title: t('myKeys.action'), width: 110, fixed: 'right' },
+  {
+    colKey: 'action',
+    title: t('myKeys.action'),
+    width: actionColumnWidth.value,
+    className: 'identity-action-cell',
+    fixed: 'right',
+  },
 ])
 function accessState(row: ManagedKeyItem) {
   const allowed = row.control_condition === 'BASIC_CONDITIONS_MET' && !row.control_reasons.length

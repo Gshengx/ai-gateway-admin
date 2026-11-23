@@ -103,6 +103,7 @@ export interface Rate {
 }
 export interface Pricing {
   state?: 'PRICED' | 'UNPRICED' | 'CURRENCY_MISMATCH'
+  unpriced_reason?: string | null
   catalog_default_price_version_id?: string | null
   catalog_price_version_id?: string | null
   id: string

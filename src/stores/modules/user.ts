@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { MessagePlugin } from 'tdesign-vue-next'
+import type { NotifiedError } from '@/api/request'
 import { useTermsStore } from './terms'
 import { useLocaleOptionsStore } from './localeOptions'
 
@@ -245,7 +247,26 @@ export const useUserStore = defineStore('user', {
       usePermissionStore().reset()
     },
     async logout(sessionInvalidated = false) {
-      await logoutApi(sessionInvalidated)
+      try {
+        try {
+          await logoutApi(sessionInvalidated)
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'CSRF_INVALID') throw error
+          // 只更新退出所需令牌，不提前重置当前页面的权限状态。
+          const context = await getAuthContextApi()
+          setCsrfToken(context.csrf_token, context.csrf_header)
+          await logoutApi(sessionInvalidated)
+        }
+      } catch (error) {
+        const err = error as NotifiedError
+        if (err.status !== 401 && !['UNAUTHENTICATED', 'UNAUTHORIZED'].includes(err.code ?? '')) {
+          if (!err.notified) {
+            MessagePlugin.error(err.message || i18n.global.t('authErrors.fallback'))
+            err.notified = true
+          }
+          throw error
+        }
+      }
       this.reset()
       this.loggedOut = true
     },

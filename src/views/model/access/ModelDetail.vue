@@ -421,7 +421,9 @@ const info = computed(() => {
             pricesFailed.value
               ? t('common.loadFailed')
               : currentPrice.value?.state === 'UNPRICED'
-                ? t('pricingFlow.unpriced')
+                ? currentPrice.value.unpriced_reason === 'METRIC_SPEC_UNAVAILABLE'
+                  ? t('pricingFlow.noBillingItemsSummary')
+                  : t('pricingFlow.unpriced')
                 : '—',
           ],
         ]

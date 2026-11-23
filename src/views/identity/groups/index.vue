@@ -19,69 +19,73 @@
       </t-input>
     </div>
 
-    <t-table
-      height="var(--stable-table-height)"
-      row-key="id"
-      :data="tableData"
-      :columns="columns"
-      :loading="loading"
-      :pagination="pagination"
-      :class="{ 'stable-table--pending-footer': (loading || listFailed) && !tableData.length }"
-      :scroll="{ x: 1030 }"
-      hover
-      @page-change="onPageChange"
-    >
-      <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
-      <template #name="{ row }">
-        <t-link theme="primary" hover="color" @click="onOpenMembers(row)">
-          {{ row.display_name || row.name }}
-        </t-link>
-      </template>
-      <template #description="{ row }">
-        <t-tooltip
-          v-if="row.display_description || row.description"
-          :content="row.display_description || row.description"
-          :show-arrow="false"
-        >
-          <span class="cell-ellipsis">{{ row.display_description || row.description }}</span>
-        </t-tooltip>
-        <span v-else class="cell-empty">—</span>
-      </template>
-      <template #visible_member_count="{ row }">
-        {{ row.total_member_count ?? row.visible_member_count }}
-      </template>
-      <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
-      <template #created_by="{ row }">
-        <span :class="{ 'cell-empty': !row.created_by }">
-          {{ userDisplayName(row.created_by?.display_name, row.created_by?.username) }}
-        </span>
-      </template>
-      <template #action="{ row }">
-        <t-space :size="12">
+    <div ref="actionTableRoot">
+      <t-table
+        class="identity-action-table"
+        height="var(--stable-table-height)"
+        row-key="id"
+        :data="tableData"
+        :columns="columns"
+        :loading="loading"
+        :pagination="pagination"
+        :class="{ 'stable-table--pending-footer': (loading || listFailed) && !tableData.length }"
+        table-layout="fixed"
+        :table-content-width="tableContentWidth"
+        hover
+        @page-change="onPageChange"
+      >
+        <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
+        <template #name="{ row }">
           <t-link theme="primary" hover="color" @click="onOpenMembers(row)">
-            {{ t('groups.members') }}
+            {{ row.display_name || row.name }}
           </t-link>
-          <t-link
-            v-permission="'identity.groups:write'"
-            theme="primary"
-            hover="color"
-            :disabled="!row.can_manage"
-            @click="onEdit(row)"
+        </template>
+        <template #description="{ row }">
+          <t-tooltip
+            v-if="row.display_description || row.description"
+            :content="row.display_description || row.description"
+            :show-arrow="false"
           >
-            {{ t('groups.edit') }}
-          </t-link>
-          <t-link
-            v-permission="'identity.groups:write'"
-            theme="danger"
-            hover="color"
-            :disabled="!row.can_manage"
-            @click="onDelete(row)"
-          >
-            {{ t('groups.deleteAction') }}
-          </t-link>
-        </t-space>
-      </template>
-    </t-table>
+            <span class="cell-ellipsis">{{ row.display_description || row.description }}</span>
+          </t-tooltip>
+          <span v-else class="cell-empty">—</span>
+        </template>
+        <template #visible_member_count="{ row }">
+          {{ row.total_member_count ?? row.visible_member_count }}
+        </template>
+        <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        <template #created_by="{ row }">
+          <span :class="{ 'cell-empty': !row.created_by }">
+            {{ userDisplayName(row.created_by?.display_name, row.created_by?.username) }}
+          </span>
+        </template>
+        <template #action="{ row }">
+          <t-space class="identity-table-actions" :size="12">
+            <t-link theme="primary" hover="color" @click="onOpenMembers(row)">
+              {{ t('groups.members') }}
+            </t-link>
+            <t-link
+              v-permission="'identity.groups:write'"
+              theme="primary"
+              hover="color"
+              :disabled="!row.can_manage"
+              @click="onEdit(row)"
+            >
+              {{ t('groups.edit') }}
+            </t-link>
+            <t-link
+              v-permission="'identity.groups:write'"
+              theme="danger"
+              hover="color"
+              :disabled="!row.can_manage"
+              @click="onDelete(row)"
+            >
+              {{ t('groups.deleteAction') }}
+            </t-link>
+          </t-space>
+        </template>
+      </t-table>
+    </div>
   </t-card>
 
   <group-form-dialog
@@ -124,6 +128,11 @@
 </template>
 
 <script setup lang="ts">
+import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
+  cellSelector: '.identity-action-table .identity-action-cell',
+  actionsSelector: '.identity-table-actions',
+})
 import { userDisplayName } from '@/utils/userLabel'
 import { h, computed, onMounted, reactive, ref, watch } from 'vue'
 import { useLatestRequest } from '@/utils/useLatestRequest'
@@ -171,12 +180,22 @@ const pagination = reactive<PaginationProps>({
 
 const columns = computed<PrimaryTableCol<UserGroupItem>[]>(() => [
   { colKey: 'name', title: t('groups.columns.name'), width: 200 },
-  { colKey: 'description', title: t('groups.columns.description'), width: 260, ellipsis: true },
+  { colKey: 'description', title: t('groups.columns.description'), minWidth: 260, ellipsis: true },
   { colKey: 'visible_member_count', title: t('groups.columns.members'), width: 100 },
   { colKey: 'created_at', title: t('groups.columns.createdAt'), width: 180 },
   { colKey: 'created_by', title: t('groups.columns.createdBy'), width: 140 },
-  { colKey: 'action', title: t('groups.columns.action'), width: 170, fixed: 'right' },
+  {
+    colKey: 'action',
+    title: t('groups.columns.action'),
+    width: actionColumnWidth.value,
+    className: 'identity-action-cell',
+    fixed: 'right',
+  },
 ])
+const tableContentWidth = computed(
+  () =>
+    `max(100%, ${columns.value.reduce((width, column) => width + Number(column.width ?? column.minWidth ?? 0), 0)}px)`,
+)
 
 watch(keyword, () => {
   pagination.current = 1

@@ -309,10 +309,6 @@ const labels: Record<string, [string, string]> = {
   joinList: ['加入列表', 'Add to List'],
   capabilityModalities: ['能力与模态', 'Capabilities and Modalities'],
   contextOutput: ['上下文 / 最大输出', 'Context / Maximum Output'],
-  providerTemplateHelp: [
-    '配置字段和可用性以当前模板目录为准。',
-    'Configuration fields and availability follow the current template catalog.',
-  ],
   bailianBaseUrlHelp: [
     '填写百炼控制台提供的完整 API 地址，并使用对应的 API Key。',
     'Enter the complete API URL provided by the Bailian console and use its corresponding API Key.',

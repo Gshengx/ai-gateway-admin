@@ -87,6 +87,8 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
     config?.url !== '/auth/login' &&
     (status === 401 || UNAUTHORIZED_CODES.includes(code ?? ''))
   ) {
+    // 主动退出由调用方清理会话并跳转，避免过期会话触发整页重载。
+    if (config?.url === '/auth/logout') throw error
     await handleUnauthorized()
     error.notified = true
     throw error
@@ -246,7 +248,8 @@ instance.interceptors.request.use(async (config) => {
         const context = await getAuthContextApi()
         setCsrfToken(context.csrf_token, context.csrf_header)
       } catch (error) {
-        if ((error as NotifiedError).code === 'UNAUTHENTICATED') await handleUnauthorized()
+        if (config.url !== '/auth/logout' && (error as NotifiedError).code === 'UNAUTHENTICATED')
+          await handleUnauthorized()
         throw error
       }
     }
