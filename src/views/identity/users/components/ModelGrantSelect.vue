@@ -35,7 +35,13 @@
               >{{ names[item.id] }}</t-checkbox
             >
             <p v-if="!items.length && !loading" class="model-grant-picker__empty">
-              {{ t('users.detail.models.empty') }}
+              {{
+                failed
+                  ? t('common.loadFailed')
+                  : keyword.trim()
+                    ? t('users.detail.models.noMatchingCandidates')
+                    : t('users.detail.models.noCandidates')
+              }}
             </p>
           </div>
         </t-loading>
@@ -74,6 +80,7 @@ const { t, locale } = useI18n()
 const popupVisible = ref(false),
   keyword = ref(''),
   loading = ref(false),
+  failed = ref(false),
   page = ref(1),
   total = ref(0)
 const pageSize = 5
@@ -88,6 +95,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 async function load() {
   const request = ++generation
   loading.value = true
+  failed.value = false
   try {
     const result = await getModelAuthorizationOptionsApi({
       subject_type: props.subjectType ?? 'USER',
@@ -106,6 +114,7 @@ async function load() {
     emit('names', labels)
   } catch {
     if (request === generation) {
+      failed.value = true
       items.value = []
       total.value = 0
     }

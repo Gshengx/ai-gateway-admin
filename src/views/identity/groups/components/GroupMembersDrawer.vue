@@ -208,14 +208,6 @@ const canWrite = computed(
     !props.group?.write_blocking_code,
 )
 
-watch(
-  departmentId,
-  () => {
-    clearSelection()
-  },
-  { flush: 'sync' },
-)
-
 function onDepartmentChange({ id }: { id: string }) {
   if (!id && !appliedDepartmentId) return
   appliedDepartmentId = id
@@ -226,7 +218,6 @@ function onDepartmentChange({ id }: { id: string }) {
 watch(
   search,
   () => {
-    clearSelection()
     pagination.current = 1
     if (props.visible && !resettingFilters) void fetchMembers()
   },

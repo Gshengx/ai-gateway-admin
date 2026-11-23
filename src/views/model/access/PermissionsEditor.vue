@@ -49,7 +49,10 @@
             showPageSize: false,
           }"
           :disable-data-page="true"
-          @select-change="(keys: (string | number)[]) => (selected[kind] = keys.map(String))"
+          @select-change="
+            (keys: (string | number)[]) =>
+              (selected[kind] = mergePageSelection(selected[kind], rows[kind], keys))
+          "
           @page-change="
             (p: PageInfo) => {
               pages[kind] = p.current
@@ -105,6 +108,7 @@ import { usePermissionScope } from '@/utils/usePermissionScope'
 import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
 import SubjectSelect from './SubjectSelect.vue'
+import { mergePageSelection } from '@/utils/usePageSelection'
 import { accessApi, type Permission, type Subject } from '@/api/modules/modelAccess'
 
 const props = defineProps<{ modelId: string }>()

@@ -1,5 +1,20 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue'
 
+/** A table event only replaces the selection on its current page. */
+export function mergePageSelection(
+  selected: string[],
+  rows: ReadonlyArray<{ id: string }>,
+  keys: Array<string | number>,
+): string[] {
+  const pageIds = new Set(rows.map((row) => row.id))
+  return [
+    ...new Set([
+      ...selected.filter((id) => !pageIds.has(id)),
+      ...keys.map(String).filter((id) => pageIds.has(id)),
+    ]),
+  ]
+}
+
 /** Keep IDs across remote pages; cache selected records for status-based batch actions. */
 export function usePageSelection<T extends { id: string }>(rows: Ref<T[]>) {
   const selectedKeys = ref<string[]>([])
@@ -18,13 +33,7 @@ export function usePageSelection<T extends { id: string }>(rows: Ref<T[]>) {
   )
   const selectedItems = computed(() => [...records.value.values()])
   function selectRows(keys: Array<string | number>) {
-    const pageIds = new Set(rows.value.map((row) => row.id))
-    selectedKeys.value = [
-      ...new Set([
-        ...selectedKeys.value.filter((id) => !pageIds.has(id)),
-        ...keys.map(String).filter((id) => pageIds.has(id)),
-      ]),
-    ]
+    selectedKeys.value = mergePageSelection(selectedKeys.value, rows.value, keys)
   }
   function clearSelection() {
     selectedKeys.value = []

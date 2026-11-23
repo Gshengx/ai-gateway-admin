@@ -398,14 +398,12 @@ const latestList = useLatestRequest()
 watch(
   () => filters.search,
   () => {
-    clearSelection()
     resetPage()
     loading.value = true
     latestList.schedule(() => void fetchList())
   },
 )
 watch([() => filters.status, () => filters.control, () => filters.department, locale], () => {
-  clearSelection()
   resetPage()
   // Coalesce a reset that changes both text and select filters.
   latestList.schedule(() => void fetchList(), 0)

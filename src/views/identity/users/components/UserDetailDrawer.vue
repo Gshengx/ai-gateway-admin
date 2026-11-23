@@ -229,7 +229,10 @@
                 {{ t('common.clearSelection') }}
               </t-button>
               <t-button
-                variant="outline"
+                class="list-action-soft"
+                size="small"
+                theme="primary"
+                variant="base"
                 :disabled="
                   keysLoading ||
                   loading ||
@@ -240,7 +243,10 @@
                 >{{ t('managedKeys.enable') }}</t-button
               >
               <t-button
-                variant="outline"
+                class="list-action-soft"
+                size="small"
+                theme="primary"
+                variant="base"
                 :disabled="
                   keysLoading ||
                   loading ||
@@ -251,7 +257,9 @@
                 >{{ t('managedKeys.disable') }}</t-button
               >
               <t-button
-                variant="outline"
+                class="list-action-soft"
+                size="small"
+                variant="base"
                 theme="danger"
                 :disabled="keysLoading || loading || keyBusy || !selectedKeyIds.length"
                 @click="openKeyOperation('delete')"
@@ -665,7 +673,7 @@ const keyDialogContent = computed(() =>
   ),
 )
 watch(keySearch, () => {
-  resetKeyOperation()
+  resetKeyOperation(false)
   keyPage.value = 1
   if (props.visible && props.user && canViewKeys.value && activeTab.value === 'keys')
     keyRequest.schedule(() => void loadKeys(props.user!.id).catch(() => {}))
@@ -715,13 +723,13 @@ async function loadKeys(userId: string) {
     if (current.isCurrent()) keysLoading.value = false
   }
 }
-function resetKeyOperation() {
+function resetKeyOperation(resetSelection = true) {
   keyRequest.invalidate()
   ++keyGeneration
   keyConfirmVisible.value = false
   keyBusy.value = false
   keysLoading.value = false
-  clearSelection()
+  if (resetSelection) clearSelection()
   keyTargets.value = []
 }
 function openKeyOperation(action: KeyOperation) {
@@ -1083,7 +1091,8 @@ function onClose() {
 
 .key-toolbar {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
   gap: var(--td-comp-margin-s);
   margin-bottom: var(--td-comp-margin-l);
@@ -1111,10 +1120,13 @@ function onClose() {
 
 .key-actions {
   display: flex;
+  align-items: center;
   gap: var(--td-comp-margin-s);
 }
 .key-search {
-  flex: 1;
+  flex: 0 1 var(--list-search-width);
+  width: var(--list-search-width);
+  max-width: 100%;
   min-width: 0;
   margin-left: auto;
 }

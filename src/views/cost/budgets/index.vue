@@ -363,6 +363,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { usePageSelection } from '@/utils/usePageSelection'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -419,7 +420,6 @@ const search = ref(''),
   loading = ref(false)
 const rows = ref<Budget[]>([]),
   headquarters = ref<Budget | null>(null),
-  selected = ref<(string | number)[]>([]),
   branches = ref<Record<string, Budget[]>>({})
 const formVisible = ref(false),
   editing = ref<Budget | null>(null),
@@ -535,6 +535,7 @@ const displayRows = computed(() => {
   visit(rows.value, 0)
   return output
 })
+const { selectedKeys: selected, selectRows } = usePageSelection(displayRows)
 const activeAdjustments = computed(
   () => removing.value?.adjustments.filter((a) => a.status === 'ACTIVE') ?? [],
 )
@@ -605,10 +606,10 @@ function reset() {
   search.value = ''
   status.value = ''
   departmentId.value = ''
-  selected.value = []
   loadFirst()
 }
 function changeTab() {
+  selected.value = []
   void router.replace({
     query:
       tab.value === 'projects' ? { tab: 'project' } : tab.value === 'users' ? { tab: 'user' } : {},
@@ -617,7 +618,7 @@ function changeTab() {
   reset()
 }
 function selectChange(keys: (string | number)[]) {
-  selected.value = keys
+  selectRows(keys)
 }
 function pageChange(info: PageInfo) {
   page.value = info.current

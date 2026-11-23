@@ -46,6 +46,7 @@
   </t-select-input>
 </template>
 <script setup lang="ts">
+import { mergePageSelection } from '@/utils/usePageSelection'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { PageInfo, PrimaryTableCol, SelectInputProps } from 'tdesign-vue-next'
 import { getCostUsers } from '@/api/modules/cost'
@@ -116,10 +117,7 @@ function changePage(info: PageInfo) {
   void load()
 }
 function selectRows(keys: (string | number)[]) {
-  const ids = items.value.map((u) => u.id)
-  emit('update:modelValue', [
-    ...new Set([...props.modelValue.filter((id) => !ids.includes(id)), ...keys.map(String)]),
-  ])
+  emit('update:modelValue', mergePageSelection(props.modelValue, items.value, keys))
 }
 const changeTags: NonNullable<SelectInputProps['onTagChange']> = (_value, context) => {
   if (context.trigger === 'clear') emit('update:modelValue', [])

@@ -122,6 +122,8 @@ export default {
       },
       models: {
         empty: 'No authorized models',
+        noCandidates: 'No published models available for authorization',
+        noMatchingCandidates: 'No matching models available for authorization',
         sourceDepartment: 'Dept · {name}',
         sourceGroup: 'Group · {name}',
         sourceOutOfScope: 'Out-of-scope source',

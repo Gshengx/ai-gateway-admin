@@ -117,6 +117,8 @@ export default {
       },
       models: {
         empty: '暂无已授权模型',
+        noCandidates: '暂无可授权的已上架模型',
+        noMatchingCandidates: '暂无匹配的可授权模型',
         sourceDepartment: '部门·{name}',
         sourceGroup: '用户组·{name}',
         sourceOutOfScope: '范围外来源',

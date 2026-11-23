@@ -48,14 +48,21 @@
             }
           "
           ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
-        ><t-button
+        >
+        <span v-if="selected.length" class="ma-muted">{{
+          t('common.selected', { n: selected.length })
+        }}</span>
+        <t-button v-if="selected.length" variant="text" size="small" @click="clearSelection">
+          {{ t('common.clearSelection') }}
+        </t-button>
+        <t-button
           v-permission.write="'model.permissions'"
           class="list-action-soft"
           theme="primary"
           :disabled="!canBatchAuthorize"
           @click="
             authorization = {
-              models: items.filter((model) => selected.includes(model.id)),
+              models: selectedItems,
               batch: true,
             }
           "
@@ -79,7 +86,7 @@
       :pagination="pagination"
       :class="{ 'stable-table--pending-footer': (loading || listFailed) && !items.length }"
       :disable-data-page="true"
-      @select-change="(v: (string | number)[]) => (selected = v.map(String))"
+      @select-change="selectRows"
       @page-change="changePage"
     >
       <template v-if="listFailed" #empty>{{ t('common.loadFailed') }}</template>
@@ -193,6 +200,7 @@ import {
 } from '@/api/modules/modelAccess'
 import type { ModelListItem, Summary } from '@/api/modules/modelAccessContract'
 import { formatDateTime } from '@/utils/datetime'
+import { usePageSelection } from '@/utils/usePageSelection'
 import { statusTheme } from '../access/helpers'
 import { useUserStore, canWriteResource } from '@/stores/modules/user'
 import RowActions, { type RowAction } from '../access/RowActions.vue'
@@ -210,8 +218,13 @@ const user = useUserStore()
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth()
 const detailRef = ref<InstanceType<typeof ModelDetail>>()
 const providers = ref<Summary['providers']>([]),
-  items = ref<ModelListItem[]>([]),
-  selected = ref<string[]>([])
+  items = ref<ModelListItem[]>([])
+const {
+  selectedKeys: selected,
+  selectedItems,
+  selectRows,
+  clearSelection,
+} = usePageSelection(items)
 const search = ref(''),
   status = ref(''),
   providerId = ref(''),
@@ -232,9 +245,7 @@ const authorization = ref<{
   batch: boolean
 }>()
 const selectedHasPendingReview = computed(() =>
-  items.value.some(
-    (model) => selected.value.includes(model.id) && model.status === 'PENDING_REVIEW',
-  ),
+  selectedItems.value.some((model) => model.status === 'PENDING_REVIEW'),
 )
 const canBatchAuthorize = computed(
   () => selected.value.length > 0 && !selectedHasPendingReview.value,
@@ -378,7 +389,6 @@ async function load() {
     }
     items.value = result.items
     pagination.total = result.total
-    selected.value = []
   } catch {
     if (g === generation) listFailed.value = true
   } finally {

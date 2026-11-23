@@ -822,14 +822,6 @@ const selectedAdmin = computed(() => selectedItems.value.some((user) => user.is_
 function canEditUser(user: UserItem) {
   return !user.is_initial_admin || user.id === userStore.context.session?.user_id
 }
-watch(
-  [query, selectedDepartmentId],
-  () => {
-    clearSelection()
-  },
-  { flush: 'sync' },
-)
-
 const defaultDepartmentId = ref('')
 
 async function fetchDepartments(options: { loadUsers?: boolean } = {}) {
