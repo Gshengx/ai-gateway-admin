@@ -37,6 +37,7 @@
         <div v-for="period in namedPeriods" :key="period.id" class="ma-box ma-stack pricing-period">
           <div class="pricing-period__heading">
             <t-input
+              clearable
               aria-required="true"
               :aria-label="t('ma.periodName')"
               v-model="period.name"

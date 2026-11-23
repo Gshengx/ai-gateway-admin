@@ -19,6 +19,7 @@
     >
       <t-form-item :label="t('users.form.username')" name="username">
         <t-input
+          clearable
           v-model="form.username"
           name="managed-account"
           autocomplete="section-managed-user username"
@@ -32,6 +33,7 @@
       </t-form-item>
       <t-form-item :label="t('users.form.displayName')" name="display_name">
         <t-input
+          clearable
           v-model="form.display_name"
           name="managed-display"
           autocomplete="off"
@@ -44,6 +46,7 @@
       </t-form-item>
       <t-form-item :label="t('users.form.email')" name="email">
         <t-input
+          clearable
           v-model="form.email"
           name="managed-contact"
           autocomplete="off"
@@ -55,6 +58,7 @@
       </t-form-item>
       <t-form-item :label="t('users.form.phone')" name="phone">
         <t-input
+          clearable
           v-model="form.phone"
           name="managed-phone"
           autocomplete="off"
@@ -64,35 +68,38 @@
           :placeholder="t('users.form.phonePlaceholder')"
         />
       </t-form-item>
-      <t-form-item
-        :label="t('users.form.department')"
-        name="department_id"
-        @focusout="departmentSearchFocused = false"
-      >
-        <t-tree-select
-          v-model="form.department_id"
-          :disabled="isInitialAdmin"
-          :data="departmentTree"
-          :tree-props="departmentTreeProps"
-          :filter="() => true"
-          :value-display="() => selectedDepartmentName"
-          :loading="departmentLoading"
-          :loading-text="t('users.form.departmentLoading')"
-          :empty="t('users.form.departmentEmpty')"
-          @search="onDepartmentSearch"
-          @focus="departmentSearchFocused = true"
-          @blur="departmentSearchFocused = false"
-          filterable
-          :input-props="{
-            name: 'managed-department-filter',
-            autocomplete: 'off',
-            readonly: !departmentSearchFocused,
-          }"
-          :placeholder="t('users.form.departmentPlaceholder')"
-        />
+      <t-form-item :label="t('users.form.department')" name="department_id">
+        <div class="department-select-controls">
+          <t-tree-select
+            clearable
+            @clear="clearDepartment"
+            v-model="form.department_id"
+            :disabled="isInitialAdmin"
+            :input-value="departmentPopupVisible ? departmentKeyword : ''"
+            :data="departmentTree"
+            :tree-props="departmentTreeProps"
+            :popup-props="{ overlayInnerClassName: 'department-tree-popup' }"
+            :filter="() => true"
+            :value-display="() => selectedDepartmentName"
+            :title="selectedDepartmentName"
+            :loading="departmentLoading"
+            :loading-text="t('users.form.departmentLoading')"
+            :empty="t('users.form.departmentEmpty')"
+            @search="onDepartmentSearch"
+            @input-change="onDepartmentSearch"
+            @popup-visible-change="onDepartmentPopupChange"
+            filterable
+            :input-props="{
+              name: 'managed-department-filter',
+              autocomplete: 'off',
+            }"
+            :placeholder="t('users.form.departmentPlaceholder')"
+          />
+        </div>
       </t-form-item>
       <t-form-item :label="t('users.form.role')" name="role_id">
         <t-select
+          clearable
           v-model="form.role_id"
           :disabled="isInitialAdmin"
           :options="roleSelectOptions"
@@ -106,6 +113,7 @@
         name="initial_password"
       >
         <t-input
+          clearable
           v-model="form.initial_password"
           name="managed-initial-password"
           type="password"
@@ -131,12 +139,13 @@
 <script setup lang="ts">
 import DrawerSaving from '@/components/DrawerSaving.vue'
 import { useTreeBranches } from '@/utils/useTreeBranches'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/modules/user'
 import type { FormInstanceFunctions, FormRules, TreeProps } from 'tdesign-vue-next'
 
 import { getDepartmentDetailApi, getDepartmentListApi } from '@/api/modules/identity'
+import { useDepartmentScope } from '@/utils/useDepartmentScope'
 import type {
   DepartmentItem,
   CreateUserPayload,
@@ -170,6 +179,12 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
+useDepartmentScope(() => {
+  resetDepartmentRequests()
+  lazyDepartments.value = []
+  departmentNames.clear()
+  if (props.visible) void initializeDepartments()
+})
 const userStore = useUserStore()
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -204,9 +219,11 @@ interface DepartmentNode {
 
 const lazyDepartments = ref<DepartmentNode[]>([])
 const searchDepartments = ref<DepartmentNode[]>([])
+const searchExpanded = ref<Array<string | number>>([])
+const browseExpanded = ref<Array<string | number>>([])
+const departmentPopupVisible = ref(false)
 const departmentKeyword = ref('')
 const departmentLoading = ref(false)
-const departmentSearchFocused = ref(false)
 const focusedTextField = ref('')
 const departmentNames = reactive(new Map<string, string>())
 let departmentSession = 0
@@ -226,6 +243,10 @@ function departmentNodes(items: DepartmentItem[]): DepartmentNode[] {
 }
 
 const departmentBranches = useTreeBranches(lazyDepartments, async (id, signal) => {
+  const result = await getDepartmentListApi({ parent_id: id })
+  return signal.aborted ? [] : departmentNodes(result.items)
+})
+const searchBranches = useTreeBranches(searchDepartments, async (id, signal) => {
   const result = await getDepartmentListApi({ parent_id: id })
   return signal.aborted ? [] : departmentNodes(result.items)
 })
@@ -258,13 +279,22 @@ const departmentTreeProps = computed<TreeProps>(() => ({
       text.slice(end),
     ])
   },
-  onExpand: departmentBranches.onExpand,
-  icon: departmentBranches.icon,
-  expandAll: Boolean(departmentKeyword.value),
+  expanded: departmentKeyword.value ? searchExpanded.value : browseExpanded.value,
+  onExpand: (values, context) => {
+    if (departmentKeyword.value) {
+      searchExpanded.value = values
+      searchBranches.onExpand(values, context)
+    } else {
+      browseExpanded.value = values
+      departmentBranches.onExpand(values, context)
+    }
+  },
+  icon: departmentKeyword.value ? searchBranches.icon : departmentBranches.icon,
 }))
 
 function onDepartmentSearch(value: string) {
-  departmentBranches.invalidate()
+  if (value.trim() === departmentKeyword.value) return
+  searchBranches.invalidate()
   clearTimeout(searchTimer)
   const version = ++searchVersion
   const session = departmentSession
@@ -272,7 +302,11 @@ function onDepartmentSearch(value: string) {
   departmentKeyword.value = keyword
   searchDepartments.value = []
   departmentLoading.value = Boolean(keyword)
-  if (!keyword) return
+  if (!keyword) {
+    if (departmentPopupVisible.value && !lazyDepartments.value.length)
+      void restoreDepartmentRoots(version, session)
+    return
+  }
   searchTimer = setTimeout(async () => {
     try {
       const result = await getDepartmentListApi({ search: keyword })
@@ -280,9 +314,6 @@ function onDepartmentSearch(value: string) {
       const nodes = departmentNodes(result.items)
       const byId = new Map(nodes.map((node) => [node.value, node]))
       const roots: DepartmentNode[] = []
-      nodes.forEach((node) => {
-        node.children = undefined
-      })
       result.items.forEach((item, index) => {
         const node = nodes[index]!
         const parent = item.parent_id ? byId.get(item.parent_id) : undefined
@@ -292,6 +323,9 @@ function onDepartmentSearch(value: string) {
         } else roots.push(node)
       })
       searchDepartments.value = roots
+      searchExpanded.value = nodes
+        .filter((node) => Array.isArray(node.children))
+        .map((node) => node.value)
     } catch {
       // Request errors are reported by the request interceptor.
     } finally {
@@ -299,6 +333,73 @@ function onDepartmentSearch(value: string) {
         departmentLoading.value = false
     }
   }, 300)
+}
+
+async function restoreDepartmentRoots(version: number, session: number) {
+  departmentLoading.value = true
+  try {
+    const result = await getDepartmentListApi()
+    if (version !== searchVersion || session !== departmentSession) return
+    lazyDepartments.value = departmentNodes(result.items)
+  } catch {
+    // Request errors are reported by the request interceptor.
+  } finally {
+    if (version === searchVersion && session === departmentSession) departmentLoading.value = false
+  }
+}
+
+async function onDepartmentPopupChange(visible: boolean) {
+  departmentPopupVisible.value = visible
+  if (!visible) {
+    onDepartmentSearch('')
+    await nextTick()
+    if (!departmentPopupVisible.value) {
+      const selected = form.department_id
+      const name = departmentNames.get(selected)
+      resetDepartmentRequests(true)
+      lazyDepartments.value = []
+      departmentNames.clear()
+      if (name) departmentNames.set(selected, name)
+    }
+    return
+  }
+  await nextTick()
+  if (!departmentPopupVisible.value) return
+  const session = departmentSession
+  const selected = form.department_id
+  const isCurrent = () =>
+    session === departmentSession && selected === form.department_id && !departmentKeyword.value
+  if (selected) {
+    const name = departmentNames.get(selected)
+    if (name) onDepartmentSearch(name)
+    else {
+      try {
+        const detail = await getDepartmentDetailApi(selected)
+        if (!isCurrent()) return
+        const label = detail.translations[locale.value]?.name || detail.name
+        departmentNames.set(selected, label)
+        onDepartmentSearch(label)
+      } catch {
+        // Request errors are reported by the request interceptor.
+      }
+    }
+    return
+  }
+  if (!lazyDepartments.value.length) {
+    try {
+      const result = await getDepartmentListApi()
+      if (!isCurrent()) return
+      lazyDepartments.value = departmentNodes(result.items)
+    } catch {
+      return
+    }
+  }
+}
+
+function clearDepartment() {
+  if (isInitialAdmin.value || props.submitting || validating.value) return
+  form.department_id = ''
+  onDepartmentSearch('')
 }
 
 async function initializeDepartments() {
@@ -330,10 +431,13 @@ async function initializeDepartments() {
   await Promise.all([rootRequest(), nameRequest()])
 }
 
-function resetDepartmentRequests() {
+function resetDepartmentRequests(keepFieldFocus = false) {
+  browseExpanded.value = []
+  departmentPopupVisible.value = false
+  searchBranches.invalidate()
+  searchExpanded.value = []
   departmentBranches.invalidate()
-  departmentSearchFocused.value = false
-  focusedTextField.value = ''
+  if (!keepFieldFocus) focusedTextField.value = ''
   departmentSession++
   searchVersion++
   clearTimeout(searchTimer)

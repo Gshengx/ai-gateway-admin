@@ -29,6 +29,7 @@
           :status="fieldErrors.includes('name') ? 'error' : undefined"
           :tips="fieldErrors.includes('name') ? errorMessage : ''"
           ><t-input
+            clearable
             v-model="displayName"
             :disabled="readOnly || (domain === 'AUDIT' && form.built_in)"
             :maxlength="200"

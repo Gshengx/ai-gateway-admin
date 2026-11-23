@@ -15,19 +15,21 @@
       <t-form class="security-form" label-align="top" :disabled="readOnly" @submit="save">
         <t-alert v-if="errorMessage" theme="error" :message="errorMessage" />
         <t-form-item :label="label('ruleName')" required
-          ><t-input v-model="displayName" :maxlength="200"
+          ><t-input clearable v-model="displayName" :maxlength="200"
         /></t-form-item>
         <div class="security-grid">
           <t-form-item :label="label('ruleType')"
-            ><t-input :value="label('documentRules')" readonly /></t-form-item
+            ><t-input clearable :value="label('documentRules')" readonly /></t-form-item
           ><t-form-item :label="label('subCategory')"
             ><t-select
+              clearable
               v-model="form.sub_category"
               creatable
               filterable
               :options="choices(documentKinds)" /></t-form-item
           ><t-form-item :label="label('sensitivity')"
             ><t-select
+              clearable
               v-model="form.sensitivity_level"
               :options="choices(sensitivities)" /></t-form-item
           ><t-form-item :label="label('direction')"
@@ -74,19 +76,20 @@
           >
             <div class="security-grid">
               <t-form-item :label="label('fieldName')"
-                ><t-input v-model="field.field_name" /></t-form-item
+                ><t-input clearable v-model="field.field_name" /></t-form-item
               ><t-form-item :label="label('description')"
-                ><t-input v-model="field.description" /></t-form-item
+                ><t-input clearable v-model="field.description" /></t-form-item
               ><t-form-item :label="label('maskMode')"
                 ><t-select
+                  clearable
                   v-model="field.mask_config.mode"
                   :options="choices(['FULL_MASK', 'PARTIAL_MASK', 'REPLACE_TEXT'])" /></t-form-item
               ><t-form-item
                 v-if="field.mask_config.mode === 'REPLACE_TEXT'"
                 :label="label('replaceText')"
-                ><t-input v-model="field.mask_config.replace_text" /></t-form-item
+                ><t-input clearable v-model="field.mask_config.replace_text" /></t-form-item
               ><t-form-item v-else :label="label('maskChar')"
-                ><t-input v-model="field.mask_config.mask_char" :maxlength="4"
+                ><t-input clearable v-model="field.mask_config.mask_char" :maxlength="4"
               /></t-form-item>
             </div>
             <div v-if="field.mask_config.mode === 'PARTIAL_MASK'" class="security-grid">

@@ -1,5 +1,6 @@
 import { computed, reactive } from 'vue'
 import { useUserStore } from '@/stores/modules/user'
+import { useDepartmentScope } from '@/utils/useDepartmentScope'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
@@ -11,9 +12,6 @@ import {
 } from '@/api/modules/cost'
 const departments = reactive(new Map<string, CostDepartment>())
 const users = reactive<CostUser[]>([])
-const departmentRequests = new Map<string, Promise<void>>()
-let pending: Promise<void> | undefined
-let cachedActor = ''
 const scope = reactive({ root: 'hq', headquarters: true })
 export function useCost() {
   const { t, locale } = useI18n()
@@ -22,50 +20,29 @@ export function useCost() {
     const d = departments.get(id ?? '')
     return d ? (english.value ? (path ? d.path_en : d.name_en) : path ? d.path : d.name) : '—'
   }
+  const user = useUserStore()
+  const scopeKey = () => JSON.stringify([user.context.session?.user_id, user.permissionEpoch])
+  useDepartmentScope(() => {
+    departments.clear()
+    users.splice(0)
+    void init().catch(error)
+  })
   async function init() {
-    const actor = useUserStore().userInfo?.id ?? ''
-    if (cachedActor !== actor) {
-      pending = undefined
-      departments.clear()
-      departmentRequests.clear()
-      users.splice(0)
-      cachedActor = actor
-    }
-    pending ??= getCostContext()
-      .then((result) => {
-        result.departments.forEach((d) => departments.set(d.id, d))
-        users.splice(0, users.length, ...result.users)
-        scope.root = result.scope_root_id
-        scope.headquarters = result.is_headquarters
-      })
-      .catch((error) => {
-        pending = undefined
-        throw error
-      })
-    try {
-      await pending
-    } finally {
-      pending = undefined
-    }
+    const current = scopeKey()
+    const result = await getCostContext()
+    if (current !== scopeKey()) return
+    result.departments.forEach((d) => departments.set(d.id, d))
+    users.splice(0, users.length, ...result.users)
+    scope.root = result.scope_root_id
+    scope.headquarters = result.is_headquarters
   }
   async function ensureDepartments(ids: string[]) {
+    const current = scopeKey()
     await Promise.all(
-      [...new Set(ids)]
-        .filter((id) => id && !departments.has(id))
-        .map((id) => {
-          const existing = departmentRequests.get(id)
-          if (existing) return existing
-          const actor = cachedActor
-          const request = getCostDepartment(id)
-            .then((department) => {
-              if (actor === cachedActor) departments.set(id, department)
-            })
-            .finally(() => {
-              if (departmentRequests.get(id) === request) departmentRequests.delete(id)
-            })
-          departmentRequests.set(id, request)
-          return request
-        }),
+      [...new Set(ids)].filter(Boolean).map(async (id) => {
+        const department = await getCostDepartment(id)
+        if (current === scopeKey()) departments.set(id, department)
+      }),
     )
   }
   const money = (value: number, currency = 'CNY') =>

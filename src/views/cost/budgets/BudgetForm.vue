@@ -20,6 +20,7 @@
           :label="t('cost.selectDepartmentLabel')"
           required-mark
           ><DepartmentPicker v-if="!budget" v-model="departmentIds" /><t-input
+            clearable
             v-else
             :value="deptName(departmentId)"
             readonly

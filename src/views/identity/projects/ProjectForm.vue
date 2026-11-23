@@ -14,6 +14,7 @@
         <h3>{{ t('projects.basic') }}</h3>
         <t-form-item :label="t('projects.name')" required-mark
           ><t-input
+            clearable
             v-model="form.name"
             :maxlength="100"
             :placeholder="t('projects.namePlaceholder')"
@@ -33,7 +34,6 @@
               v-model="form.department_id"
               :resolve-descendants="false"
               :searchable="false"
-              :clearable="false"
             />
             <div class="hint">
               {{ t('projects.departmentHint') }}

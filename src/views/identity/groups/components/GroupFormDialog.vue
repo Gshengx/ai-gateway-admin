@@ -26,6 +26,7 @@
       >
         <t-form-item :label="t('groups.form.name')" name="name">
           <t-input
+            clearable
             v-model="form.name"
             :maxlength="128"
             :placeholder="t('groups.form.namePlaceholder')"

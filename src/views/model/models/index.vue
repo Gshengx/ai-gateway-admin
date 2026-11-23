@@ -23,6 +23,7 @@
             :placeholder="t('ma.search')"
             clearable
           /><t-select
+            clearable
             v-model="status"
             class="list-filter"
             :options="[

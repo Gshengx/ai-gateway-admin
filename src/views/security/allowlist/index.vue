@@ -14,6 +14,7 @@
               :placeholder="label('allowlistName')"
               @change="search"
             /><t-select
+              clearable
               v-model="query.enabled"
               :options="[
                 { value: '', label: label('allStatus') },

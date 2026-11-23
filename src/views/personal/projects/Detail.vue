@@ -212,6 +212,7 @@
         ><t-form-item :label="t('projects.role')"
           ><div class="field-stack">
             <t-select
+              clearable
               v-model="addRole"
               :options="[
                 { value: 'MEMBER', label: t('projects.normalMember') },

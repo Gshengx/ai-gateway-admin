@@ -91,7 +91,13 @@
           clearable
           @change="reset"
         />
-        <t-select class="list-filter" v-model="sortBy" :options="sortOptions" @change="reset" />
+        <t-select
+          clearable
+          class="list-filter"
+          v-model="sortBy"
+          :options="sortOptions"
+          @change="reset"
+        />
         <t-button theme="default" @click="toggleDirection">{{ t(`cost.${direction}`) }}</t-button>
         <t-button theme="primary" variant="outline" :loading="exporting" @click="download">{{
           t('cost.exportCsv')

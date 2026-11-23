@@ -21,23 +21,25 @@
           required
           :status="fieldErrors.includes('name') ? 'error' : undefined"
           :tips="fieldErrors.includes('name') ? errorMessage : ''"
-          ><t-input v-model="displayName" :maxlength="200"
+          ><t-input clearable v-model="displayName" :maxlength="200"
         /></t-form-item>
         <div class="security-grid">
           <t-form-item :label="label('ruleDomain')"
-            ><t-input :value="label(form.rule_domain)" readonly /></t-form-item
+            ><t-input clearable :value="label(form.rule_domain)" readonly /></t-form-item
           ><t-form-item v-if="!security" :label="label('ruleType')"
-            ><t-input :value="label('fieldRules')" readonly
+            ><t-input clearable :value="label('fieldRules')" readonly
           /></t-form-item>
         </div>
         <div class="security-grid">
           <t-form-item :label="label('category')" required
             ><t-select
+              clearable
               v-if="security"
               v-model="form.engine_type"
               :disabled="readOnly || form.built_in"
               :options="choices(engines)"
               @change="engineChanged" /><t-select
+              clearable
               v-else
               v-model="form.category"
               creatable
@@ -46,13 +48,15 @@
               :options="choices(categories)"
           /></t-form-item>
           <t-form-item :label="label('subCategory')"
-            ><t-input v-model="form.sub_category" :disabled="readOnly || form.built_in"
+            ><t-input clearable v-model="form.sub_category" :disabled="readOnly || form.built_in"
           /></t-form-item>
           <t-form-item :label="label(security ? 'risk' : 'sensitivity')" required
             ><t-select
+              clearable
               v-if="security"
               v-model="form.risk_level"
               :options="choices(risks)" /><t-select
+              clearable
               v-else
               v-model="form.sensitivity_level"
               :options="choices(sensitivities)"
@@ -66,7 +70,7 @@
         <p v-if="!security" class="security-help">{{ label('dataHelp') }}</p>
         <template v-if="form.engine_type === 'MALICIOUS_IOC'">
           <t-form-item :label="label('method')"
-            ><t-input :value="label('THREAT_INTELLIGENCE')" readonly
+            ><t-input clearable :value="label('THREAT_INTELLIGENCE')" readonly
           /></t-form-item>
           <t-form-item :label="label('checkCondition')" required
             ><t-checkbox-group
@@ -118,6 +122,7 @@
             :label="label('entity')"
             required
             ><t-select
+              clearable
               v-model="form.config.entity_type"
               :disabled="readOnly || form.built_in"
               :options="choices(['PERSON', 'ORGANIZATION'])"
@@ -167,6 +172,7 @@
         <template v-if="!security">
           <t-form-item :label="label('maskMode')" required
             ><t-select
+              clearable
               v-model="form.config.mask_config.mode"
               :options="choices(['FULL_MASK', 'PARTIAL_MASK', 'REPLACE_TEXT'])"
           /></t-form-item>
@@ -174,11 +180,11 @@
             v-if="form.config.mask_config.mode === 'REPLACE_TEXT'"
             :label="label('replaceText')"
             required
-            ><t-input v-model="form.config.mask_config.replace_text"
+            ><t-input clearable v-model="form.config.mask_config.replace_text"
           /></t-form-item>
           <template v-else
             ><t-form-item :label="label('maskChar')" required
-              ><t-input v-model="form.config.mask_config.mask_char" :maxlength="4"
+              ><t-input clearable v-model="form.config.mask_config.mask_char" :maxlength="4"
             /></t-form-item>
             <div v-if="form.config.mask_config.mode === 'PARTIAL_MASK'" class="security-grid">
               <t-form-item :label="label('keepPrefix')"

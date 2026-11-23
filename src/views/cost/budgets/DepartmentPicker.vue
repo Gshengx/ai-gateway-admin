@@ -1,5 +1,6 @@
 <template>
   <t-tree-select
+    clearable
     ref="selector"
     v-model="value"
     :data="nodes"
@@ -13,7 +14,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TreeProps } from 'tdesign-vue-next'
-import { getCostContext, getCostDepartment, type CostDepartment } from '@/api/modules/cost'
+import {
+  getCostContext as requestCostContext,
+  getCostDepartment as requestCostDepartment,
+  type CostDepartment,
+} from '@/api/modules/cost'
+import { useDepartmentScope } from '@/utils/useDepartmentScope'
 import { useCost } from '../useCost'
 import { useTreeBranches } from '@/utils/useTreeBranches'
 import { useLatestRequest } from '@/utils/useLatestRequest'
@@ -31,6 +37,12 @@ interface Node {
   children?: boolean | Node[]
 }
 const nodes = ref<Node[]>([])
+const visible = ref(false)
+const selectedRequests = useLatestRequest()
+const expanded = ref<Array<string | number>>([])
+useDepartmentScope(resetDirectory)
+const getCostContext = requestCostContext
+const getCostDepartment = requestCostDepartment
 const value = computed({
   get: () => props.modelValue,
   set: (value: unknown) => emit('update:modelValue', Array.isArray(value) ? value.map(String) : []),
@@ -55,20 +67,32 @@ const branches = useTreeBranches(nodes, async (id, signal) => {
 const treeProps = computed<TreeProps>(() => ({
   lazy: true,
   checkStrictly: true,
-  onExpand: branches.onExpand,
+  expanded: expanded.value,
+  onExpand: (values, context) => {
+    expanded.value = values
+    branches.onExpand(values, context)
+  },
   icon: branches.icon,
 }))
-async function open(visible: boolean) {
-  setVisible(visible)
+async function open(isVisible: boolean) {
+  selectedRequests.invalidate()
+  visible.value = isVisible
+  setVisible(isVisible)
   requests.invalidate()
   branches.invalidate()
-  if (!visible) return
+  if (!isVisible) {
+    nodes.value = []
+    expanded.value = []
+    return
+  }
   const current = requests.begin()
   try {
     const items = props.rootId
       ? [await getCostDepartment(props.rootId)]
       : (await getCostContext()).departments
-    if (current.isCurrent()) nodes.value = convert(items)
+    if (current.isCurrent()) {
+      nodes.value = convert(items)
+    }
   } catch (e) {
     if (current.isCurrent()) error(e)
   }
@@ -93,15 +117,26 @@ watch(
 watch(
   () => props.modelValue,
   async (ids) => {
+    const current = selectedRequests.begin()
     if (!ids.length || nodes.value.length) return
     try {
       await ensureDepartments(ids)
+      if (!current.isCurrent()) return
       const selected = ids.map((id) => departments.get(id)!)
       nodes.value = convert(selected)
     } catch (e) {
-      error(e)
+      if (current.isCurrent()) error(e)
     }
   },
   { immediate: true, deep: true },
 )
+function resetDirectory() {
+  selectedRequests.invalidate()
+  requests.invalidate()
+  branches.invalidate()
+  nodes.value = []
+  expanded.value = []
+  if (visible.value) void open(true)
+}
+watch(() => [english.value, props.rootId], resetDirectory)
 </script>

@@ -17,6 +17,7 @@
 
     <div class="header-bar__right">
       <t-select
+        clearable
         :value="currentLocale"
         :loading="changingLanguage"
         :disabled="changingLanguage || !remoteLocales.length"

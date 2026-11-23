@@ -32,6 +32,7 @@
                 :label="t('ma.provider')"
                 required-mark
                 ><t-select
+                  clearable
                   v-model="model.provider_id"
                   :disabled="identityLocked"
                   :placeholder="t('ma.chooseProvider')"
@@ -45,6 +46,7 @@
                 :label="t('ma.upstream')"
                 required-mark
                 ><t-input
+                  clearable
                   v-model="model.model_id_at_provider"
                   :disabled="identityLocked"
                   :placeholder="t('ma.upstreamHint')"
@@ -55,6 +57,7 @@
             <t-form-item v-bind="basicFieldState('name')" :label="t('ma.name')" required-mark
               ><div class="ma-stack">
                 <t-input
+                  clearable
                   v-model="model.model_id_at_gateway"
                   :disabled="basicLocked"
                   :placeholder="t('ma.nameHint')"
@@ -93,6 +96,7 @@
             <div class="ma-grid">
               <t-form-item :label="t('ma.input')"
                 ><t-select
+                  clearable
                   v-model="model.input_modalities"
                   :disabled="metadataLocked"
                   multiple
@@ -110,6 +114,7 @@
                   " /></t-form-item
               ><t-form-item :label="t('ma.output')"
                 ><t-select
+                  clearable
                   v-model="model.output_modalities"
                   :disabled="metadataLocked"
                   multiple
@@ -129,6 +134,7 @@
             </div>
             <t-form-item :label="t('ma.tags')"
               ><t-select
+                clearable
                 v-model="model.tags"
                 :disabled="metadataLocked"
                 multiple
@@ -180,6 +186,7 @@
                 <div class="ma-row model-health-fields__interval">
                   <span>{{ t('ma.interval') }}</span
                   ><t-select
+                    clearable
                     v-model="model.health_check_interval_minutes"
                     :disabled="editLocked || !model.auto_health_check"
                     :options="

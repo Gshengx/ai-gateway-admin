@@ -18,8 +18,15 @@
               :placeholder="t('projects.search')"
               @change="first"
             />
-            <t-select class="list-filter" v-model="status" :options="statuses" @change="first" />
             <t-select
+              clearable
+              class="list-filter"
+              v-model="status"
+              :options="statuses"
+              @change="first"
+            />
+            <t-select
+              clearable
               class="list-filter"
               v-model="role"
               :options="roles"

@@ -179,6 +179,7 @@
         <p class="security-help">{{ label('auditRangeHelp') }}</p>
         <div class="security-filters">
           <t-select
+            clearable
             v-model="range"
             :options="[
               { value: 90, label: label('last90') },
@@ -187,6 +188,7 @@
             ]"
             @change="loadRecords"
           /><t-select
+            clearable
             v-model="user"
             :options="[
               { value: '', label: label('ALL_USERS') },
@@ -194,6 +196,7 @@
             ]"
             @change="loadRecords"
           /><t-select
+            clearable
             v-model="model"
             :options="[
               { value: '', label: label('ALL_MODELS') },

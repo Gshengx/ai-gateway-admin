@@ -28,10 +28,11 @@
         label-width="88px"
       >
         <t-form-item :label="t('users.departments.form.parent')">
-          <t-input :value="parentLabel" disabled />
+          <t-input clearable :value="parentLabel" disabled />
         </t-form-item>
         <t-form-item :label="t('users.departments.form.name')" name="name">
           <t-input
+            clearable
             v-model="form.name"
             :maxlength="128"
             :placeholder="t('users.departments.form.namePlaceholder')"

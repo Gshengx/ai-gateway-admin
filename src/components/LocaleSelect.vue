@@ -1,5 +1,6 @@
 <template>
   <t-select
+    clearable
     :value="current"
     :options="options"
     :disabled="!options?.length"

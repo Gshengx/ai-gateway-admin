@@ -38,7 +38,7 @@
                 class="dept-tree"
                 :data="treeData"
                 lazy
-                :icon="departmentBranches.icon"
+                :icon="isDepartmentSearching ? searchBranches.icon : departmentBranches.icon"
                 :keys="{ value: 'id', label: 'label' }"
                 :label="true"
                 activable
@@ -418,6 +418,7 @@
 </template>
 
 <script setup lang="ts">
+import { useDepartmentScope } from '@/utils/useDepartmentScope'
 import { useTreeBranches } from '@/utils/useTreeBranches'
 import CollapsibleSidebar from '@/components/CollapsibleSidebar.vue'
 import { copyText } from '@/utils/clipboard'
@@ -494,6 +495,9 @@ interface TreeDataNode extends TreeOptionData {
 }
 
 const { t, locale } = useI18n()
+useDepartmentScope(() => {
+  void fetchDepartments({ loadUsers: true })
+})
 function groupTooltip(row: UserItem) {
   return row.groups.length
     ? row.groups.map((group) => group.display_name).join(t('users.detail.listSeparator'))
@@ -578,7 +582,7 @@ function buildTree(items: DepartmentItem[]): TreeDataNode[] {
       if (Array.isArray(node.children) && node.children.length) {
         fillPath(node.children, node.path)
       } else {
-        delete node.children
+        node.children = node.has_children ? true : undefined
       }
     })
   }
@@ -588,6 +592,7 @@ function buildTree(items: DepartmentItem[]): TreeDataNode[] {
 
 const lazyTree = ref<TreeDataNode[]>([])
 const searchTree = ref<TreeDataNode[]>([])
+const searchExpandedKeys = ref<Array<string | number>>([])
 const departmentTreeRef = ref<TreeInstanceFunctions<TreeDataNode> | null>(null)
 const departmentBranchVersions = new Map<string, number>()
 let departmentSession = 0
@@ -631,11 +636,23 @@ async function loadDepartmentChildren(node: Pick<TreeNodeModel, 'value'>): Promi
   const parent = findTreeNode(lazyTree.value, String(node.value))
   return Array.isArray(parent?.children) ? parent.children : []
 }
+const searchBranches = useTreeBranches(
+  searchTree,
+  async (id, signal) => {
+    const parent = findTreeNode(searchTree.value, id)
+    const result = await getDepartmentListApi({ parent_id: id }, signal)
+    if (signal.aborted) return []
+    mergeDepartments(result.items)
+    return departmentNodes(result.items, parent?.path)
+  },
+  (node) => node.id,
+)
 
 const departmentSearching = ref(false)
 const departmentLoading = ref(true),
   departmentFailed = ref(false)
 function searchDepartments() {
+  searchBranches.invalidate()
   departmentSearchRequest.invalidate()
   const keyword = departmentKeyword.value.trim()
   searchTree.value = []
@@ -649,6 +666,10 @@ function searchDepartments() {
       if (!current.isCurrent()) return
       mergeDepartments(result.items)
       searchTree.value = buildTree(result.items)
+      const ancestors = new Set(result.items.map((item) => item.parent_id))
+      searchExpandedKeys.value = result.items
+        .filter((item) => ancestors.has(item.id))
+        .map((item) => item.id)
     } catch {
       if (current.isCurrent()) departmentFailed.value = true
     } finally {
@@ -657,7 +678,17 @@ function searchDepartments() {
   }, 300)
 }
 
-watch(departmentKeyword, searchDepartments, { flush: 'sync' })
+watch(
+  departmentKeyword,
+  (value, previous) => {
+    if (!value.trim() && previous.trim()) {
+      selectedDepartmentId.value = defaultDepartmentId.value || lazyTree.value[0]?.id || ''
+      void fetchUsers({ resetPage: true })
+    }
+    searchDepartments()
+  },
+  { flush: 'sync' },
+)
 onBeforeUnmount(() => {
   departmentSession += 1
 })
@@ -668,23 +699,16 @@ const treeExpandedKeys = computed<Array<string | number>>(() => {
     // Expanding placeholder nodes with children === true triggers lazy loading.
     return expandedKeys.value
   }
-  const keys: string[] = []
-  const collect = (nodes: TreeDataNode[]) => {
-    nodes.forEach((node) => {
-      if (Array.isArray(node.children) && node.children.length) {
-        keys.push(node.id)
-        collect(node.children)
-      }
-    })
-  }
-  collect(searchTree.value)
-  return keys
+  return searchExpandedKeys.value
 })
 
 const onTreeExpand: NonNullable<TreeProps['onExpand']> = (value, context) => {
   if (!isDepartmentSearching.value) {
     expandedKeys.value = [...value]
     departmentBranches.onExpand(value, context)
+  } else {
+    searchExpandedKeys.value = [...value]
+    searchBranches.onExpand(value, context)
   }
 }
 

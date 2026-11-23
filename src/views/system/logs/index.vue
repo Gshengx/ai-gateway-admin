@@ -15,7 +15,12 @@
     <filter-bar class="logs-filter">
       <template #content>
         <div class="logs-filter-row">
-          <t-select v-model="filters.range" :options="ranges" :aria-label="t('logs.timeRange')" />
+          <t-select
+            clearable
+            v-model="filters.range"
+            :options="ranges"
+            :aria-label="t('logs.timeRange')"
+          />
           <template v-if="filters.range === 'custom'">
             <t-date-picker
               v-model="filters.start"
@@ -62,6 +67,7 @@
               :aria-label="t('logs.resourceType')"
             />
             <t-select
+              clearable
               v-model="filters.outcome"
               :options="outcomeOptions"
               :aria-label="t('logs.outcome')"
@@ -83,6 +89,7 @@
               :aria-label="t('logs.logSource')"
             />
             <t-select
+              clearable
               v-model="filters.node_id"
               :options="nodeOptions"
               :aria-label="t('logs.node')"

@@ -22,10 +22,11 @@
           clearable
         />
         <t-loading :loading="loading">
-          <div class="model-grant-picker__options">
+          <div class="model-grant-picker__options searchable-option-list">
             <t-checkbox
               v-for="item in items"
               :key="item.id"
+              :title="names[item.id]"
               :checked="locked.has(item.id) || selection.includes(item.id)"
               :disabled="
                 locked.has(item.id) || (!selection.includes(item.id) && selection.length >= 100)

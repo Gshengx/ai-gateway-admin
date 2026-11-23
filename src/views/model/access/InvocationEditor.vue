@@ -8,6 +8,7 @@
     <div v-for="row in rows" :key="row.key" class="invocation-editor__row">
       <t-form-item :label-width="0">
         <t-select
+          clearable
           :aria-label="t('ma.protocol')"
           aria-required="true"
           :value="row.protocol"
@@ -42,6 +43,7 @@
       </t-form-item>
       <t-form-item :label-width="0">
         <t-input
+          clearable
           :aria-label="t('ma.protocolPath')"
           aria-required="true"
           v-model="row.path"

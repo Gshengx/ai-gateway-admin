@@ -2,14 +2,15 @@
   <div class="security-stack">
     <div v-for="(item, index) in model" :key="index" class="security-inline">
       <t-select
+        clearable
         v-model="item.field"
         :options="fields.map((value) => ({ value, label: value }))"
         :placeholder="label('attributeField')"
         creatable
         filterable
       />
-      <t-select v-model="item.operator" :options="choices(['EQ', 'IN', 'CONTAINS'])" />
-      <t-input v-model="item.value" :placeholder="label('value')" />
+      <t-select clearable v-model="item.operator" :options="choices(['EQ', 'IN', 'CONTAINS'])" />
+      <t-input clearable v-model="item.value" :placeholder="label('value')" />
       <t-button theme="danger" variant="text" @click="model.splice(index, 1)">{{
         label('remove')
       }}</t-button>

@@ -55,6 +55,7 @@
           <template #prefix-icon><t-icon name="search" /></template>
         </t-input>
         <department-tree-select
+          :key="group?.id"
           v-model="departmentId"
           :load-departments="loadMemberDepartments"
           :resolve-descendants="false"
@@ -133,7 +134,7 @@
     </t-dialog>
 
     <add-members-dialog
-      v-if="group && addVisible"
+      v-if="group"
       v-model:visible="addVisible"
       :group-id="group.id"
       @added="onMembersAdded"

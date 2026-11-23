@@ -1,18 +1,22 @@
 <template>
-  <div ref="root" class="cost-department-select">
+  <div ref="root" class="cost-department-select department-select-controls">
     <t-tree-select
       :value="modelValue"
       :data="nodes"
       :tree-props="treeProps"
       :placeholder="placeholder || t('cost.allDepartments')"
       :value-display="() => (deptName(modelValue) === '—' ? '' : deptName(modelValue))"
+      :title="deptName(modelValue) === '—' ? '' : deptName(modelValue)"
       :filterable="searchable"
       :clearable="clearable"
+      :input-value="visible ? keyword : ''"
       :filter="() => true"
       :loading="loading"
       :popup-props="popupProps"
       @change="change"
+      @clear="clearDepartment"
       @search="search"
+      @input-change="search"
       @popup-visible-change="open"
     />
   </div>
@@ -20,7 +24,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TreeProps, TreeSelectProps } from 'tdesign-vue-next'
-import { getCostContext, type CostDepartment } from '@/api/modules/cost'
+import {
+  getCostContext as requestCostContext,
+  getCostDepartment,
+  type CostDepartment,
+} from '@/api/modules/cost'
+import { useDepartmentScope } from '@/utils/useDepartmentScope'
 import { useCost } from './useCost'
 import { useDepartmentPopup } from '@/utils/useDepartmentPopup'
 import { useTreeBranches } from '@/utils/useTreeBranches'
@@ -46,7 +55,17 @@ interface Node {
 }
 const nodes = ref<Node[]>([]),
   loading = ref(false)
+const expanded = ref<Array<string | number>>([])
 const requests = useLatestRequest()
+useDepartmentScope(() => {
+  requests.invalidate()
+  branches.invalidate()
+  nodes.value = []
+  keyword.value = ''
+  expanded.value = []
+  if (visible.value) void loadOptions()
+})
+const getCostContext = requestCostContext
 const visible = ref(false)
 const keyword = ref('')
 const toNodes = (items: CostDepartment[]): Node[] =>
@@ -64,10 +83,15 @@ const branches = useTreeBranches(nodes, async (id, signal) => {
 })
 const treeProps = computed<TreeProps>(() => ({
   lazy: true,
-  onExpand: branches.onExpand,
+  expanded: expanded.value,
+  onExpand: (values, context) => {
+    expanded.value = values
+    branches.onExpand(values, context)
+  },
   icon: branches.icon,
 }))
 async function loadOptions() {
+  requests.invalidate()
   const current = requests.begin()
   branches.invalidate()
   loading.value = true
@@ -76,30 +100,51 @@ async function loadOptions() {
     if (keyword.value) {
       items = (await getCostContext(undefined, keyword.value, props.rootId)).departments
     } else if (props.rootId) {
-      await ensureDepartments([props.rootId])
-      items = [departments.get(props.rootId)!]
+      items = [await getCostDepartment(props.rootId)]
     } else items = (await getCostContext()).departments
-    if (current.isCurrent())
-      nodes.value = toNodes(items).map((node) =>
-        keyword.value ? { ...node, children: undefined } : node,
-      )
+    if (current.isCurrent()) {
+      nodes.value = toNodes(items)
+    }
   } catch (err) {
     if (current.isCurrent()) error(err)
   } finally {
     if (current.isCurrent()) loading.value = false
   }
 }
-function open(value: boolean) {
+async function open(value: boolean) {
   visible.value = value
   setVisible(value)
   keyword.value = ''
   requests.invalidate()
   branches.invalidate()
-  if (value) void loadOptions()
-  else loading.value = false
+  if (!value) {
+    nodes.value = []
+    expanded.value = []
+    loading.value = false
+    return
+  }
+  const selected = props.modelValue
+  if (props.searchable && selected) {
+    try {
+      await ensureDepartments([selected])
+      if (!visible.value || selected !== props.modelValue || keyword.value) return
+      keyword.value = deptName(selected) === '—' ? '' : deptName(selected)
+    } catch (err) {
+      error(err)
+      return
+    }
+  }
+  await loadOptions()
+}
+function clearDepartment() {
+  keyword.value = ''
+  requests.invalidate()
+  branches.invalidate()
+  if (visible.value) void loadOptions()
 }
 function search(value: string) {
-  keyword.value = value
+  if (keyword.value === value.trim()) return
+  keyword.value = value.trim()
   void loadOptions()
 }
 const change: NonNullable<TreeSelectProps['onChange']> = (value) => {
@@ -117,6 +162,13 @@ watch(english, () => {
   if (visible.value) void loadOptions()
   else nodes.value = []
 })
+watch(
+  () => props.rootId,
+  () => {
+    nodes.value = []
+    if (visible.value) void loadOptions()
+  },
+)
 </script>
 <style scoped>
 .cost-department-select {

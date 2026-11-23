@@ -23,6 +23,7 @@
           <SubjectSelect
             v-model="candidates[kind]"
             :type="kind"
+            :reuse-department-directory="kind === 'DEPARTMENT'"
             :labels="names"
             :locked-ids="authorized[kind]"
             @names="remember"

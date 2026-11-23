@@ -23,7 +23,7 @@
   >
     <template #suffixIcon><t-icon name="chevron-down" /></template>
     <template #panel>
-      <div v-if="popupVisible" class="subject-picker" @click.stop>
+      <div v-show="popupVisible" class="subject-picker" @click.stop>
         <DepartmentTreeSelect
           v-if="type === 'USER'"
           v-model="department"
@@ -32,23 +32,34 @@
           @change="departmentChanged"
         />
         <t-input v-model="keyword" :placeholder="t('ma.subjectSearch')" clearable />
-        <t-loading :loading="loading" :inert="loading">
+        <t-loading
+          ref="resultsRegion"
+          :loading="loading"
+          :inert="loading"
+          :style="
+            loading && pendingResultsHeight
+              ? { '--subject-picker-loading-height': `${pendingResultsHeight}px` }
+              : undefined
+          "
+        >
           <t-tree
             v-if="type === 'DEPARTMENT'"
             :value="checkedIds"
             :data="departmentOptions"
             :icon="branches.icon"
-            :default-expanded="searchExpanded"
+            :expanded="departmentExpanded"
+            :transition="false"
             checkable
             check-strictly
             value-mode="all"
             @change="treeChanged"
-            @expand="branches.onExpand"
+            @expand="onDepartmentExpand"
           />
-          <div v-else class="subject-picker__options">
+          <div v-else class="subject-picker__options searchable-option-list">
             <t-checkbox
               v-for="option in options"
               :key="option.value"
+              :title="option.label"
               :checked="checkedIds.includes(option.value)"
               :disabled="loading || locked.has(option.value)"
               @change="(checked: boolean) => toggle(option.value, checked)"
@@ -84,6 +95,8 @@ import { modelAccessApi } from '@/api/modules/modelAccessApi'
 import type { Subject } from '@/api/modules/modelAccess'
 import { useTreeBranches } from '@/utils/useTreeBranches'
 import { useLatestRequest } from '@/utils/useLatestRequest'
+import { useDepartmentCache } from '@/utils/useDepartmentCache'
+import { revealDepartmentSelection } from '@/utils/revealDepartmentSelection'
 const props = defineProps<{
   purpose?: 'balance'
   providerId?: string
@@ -92,6 +105,7 @@ const props = defineProps<{
   activeOnly?: boolean
   lockedIds?: string[]
   unresolvedLabel?: string
+  reuseDepartmentDirectory?: boolean
 }>()
 const selection = defineModel<string[]>({ required: true })
 const emit = defineEmits<{
@@ -99,6 +113,18 @@ const emit = defineEmits<{
   records: [records: { id: string; name: string; email: string | null }[]]
 }>()
 const { t, locale } = useI18n()
+const resultsRegion = ref<{ $el: HTMLElement }>()
+const pendingResultsHeight = ref(0)
+const departmentCache = useDepartmentCache(() => {
+  requests.invalidate()
+  branches.invalidate()
+  departments.value = []
+  departmentParents.clear()
+  names.value = {}
+  departmentExpanded.value = []
+  options.value = []
+  if (popupVisible.value && props.type === 'DEPARTMENT') void load()
+})
 const names = ref<Record<string, string>>({}),
   options = ref<{ value: string; label: string }[]>([]),
   department = ref(''),
@@ -110,15 +136,22 @@ const names = ref<Record<string, string>>({}),
 interface Node {
   value: string
   label: string
+  checkable?: boolean
   children?: true | Node[]
 }
 const departments = ref<Node[]>([])
+const departmentParents = new Map<string, string | null>()
+const departmentExpanded = ref<Array<string | number>>([])
 const locked = computed(() => new Set(props.lockedIds ?? []))
 const checkedIds = computed(() => [...new Set([...selection.value, ...locked.value])])
 const requests = useLatestRequest()
 const branches = useTreeBranches(departments, async (id, signal) =>
   nodes((await getDepartmentListApi({ parent_id: id }, signal)).items),
 )
+const onDepartmentExpand: NonNullable<TreeProps['onExpand']> = (values, context) => {
+  departmentExpanded.value = values
+  branches.onExpand(values, context)
+}
 const departmentOptions = computed(() => {
   function decorate(items: Node[]): (Node & { disabled: boolean })[] {
     return items.map((item) => ({
@@ -151,10 +184,15 @@ async function getDepartmentListApi(
   params: { parent_id?: string; search?: string } = {},
   signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted()
+  if (params.search?.trim() || !props.reuseDepartmentDirectory) return requestDepartments(params)
+  return departmentCache.load(JSON.stringify(params), () => requestDepartments(params))
+}
+
+async function requestDepartments(params: { parent_id?: string; search?: string }) {
   const rows = []
   for (let page = 1; ; page++) {
     const result = await modelAccessApi.A12({
-      signal,
       params: {
         subject_type: 'DEPARTMENT',
         parent_id: params.parent_id,
@@ -166,14 +204,37 @@ async function getDepartmentListApi(
     rows.push(...result.items)
     if (page * result.page_size >= result.total) break
   }
-  return {
-    items: rows.map((s) => ({
+  const items = new Map<
+    string,
+    {
+      id: string
+      name: string
+      parent_id: string | null
+      has_children: boolean
+      checkable: boolean
+    }
+  >()
+  for (const row of rows) {
+    for (const [index, ancestor] of (row.ancestors ?? []).entries()) {
+      if (!items.has(ancestor.department_id))
+        items.set(ancestor.department_id, {
+          id: ancestor.department_id,
+          name: ancestor.name,
+          parent_id: row.ancestors[index - 1]?.department_id ?? null,
+          has_children: true,
+          checkable: false,
+        })
+    }
+  }
+  for (const s of rows)
+    items.set(s.subject_id, {
       id: s.subject_id,
       name: s.name,
       parent_id: s.parent_id,
       has_children: s.has_children ?? false,
-    })),
-  }
+      checkable: true,
+    })
+  return { items: [...items.values()] }
 }
 
 function remember(rows: { id: string; name: string }[]) {
@@ -188,8 +249,10 @@ function nodes(
     display_name?: string
     has_children: boolean
     parent_id: string | null
+    checkable?: boolean
   }[],
 ): Node[] {
+  items.forEach((item) => departmentParents.set(item.id, item.parent_id))
   remember(items.map((x) => ({ id: x.id, name: x.display_name || x.name })))
   const result = new Map(
     items.map((x) => [
@@ -197,6 +260,7 @@ function nodes(
       {
         value: x.id,
         label: x.display_name || x.name,
+        checkable: x.checkable,
         children: x.has_children ? true : undefined,
       } as Node,
     ]),
@@ -213,9 +277,14 @@ function nodes(
   return roots
 }
 let queriedDepartment = ''
+function startLoading() {
+  if (!loading.value)
+    pendingResultsHeight.value = resultsRegion.value?.$el.getBoundingClientRect().height ?? 0
+  loading.value = true
+}
 async function load() {
   const request = requests.begin()
-  loading.value = true
+  startLoading()
   try {
     if (props.type === 'DEPARTMENT') {
       const result = await getDepartmentListApi(
@@ -224,6 +293,17 @@ async function load() {
       )
       if (request.isCurrent()) {
         departments.value = nodes(result.items)
+        if (keyword.value) departmentExpanded.value = searchExpanded.value
+        else {
+          const ancestors = await revealDepartmentSelection(
+            selection.value,
+            (id) => departmentParents.get(id),
+            branches.load,
+            () => request.isCurrent() && !keyword.value,
+          )
+          if (request.isCurrent())
+            departmentExpanded.value = [...new Set([...departmentExpanded.value, ...ancestors])]
+        }
       }
     } else {
       const params = {
@@ -329,6 +409,7 @@ watch(keyword, () => {
   requests.invalidate()
   branches.invalidate()
   if (!popupVisible.value) return
+  startLoading()
   if (!keyword.value) query()
   else requests.schedule(query, 250)
 })
@@ -336,6 +417,12 @@ watch(popupVisible, (visible) => {
   if (!visible) {
     requests.invalidate()
     branches.invalidate()
+    if (!props.reuseDepartmentDirectory || props.type !== 'DEPARTMENT') departmentCache.clear()
+    departments.value = []
+    options.value = []
+    departmentExpanded.value = []
+    keyword.value = ''
+    loading.value = false
     return
   }
   department.value = ''
@@ -347,6 +434,7 @@ watch(popupVisible, (visible) => {
 watch(locale, () => {
   if (popupVisible.value) query()
 })
+watch(() => [props.type, props.purpose, props.providerId], departmentCache.clear)
 watch(locked, () => {
   selection.value = selection.value.filter((id) => !locked.value.has(id))
 })

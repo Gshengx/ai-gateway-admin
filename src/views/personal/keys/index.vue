@@ -90,6 +90,7 @@
       <t-alert v-if="nameError" theme="error" :message="nameError" />
       <t-form-item :label="t('myKeys.name')" required
         ><t-input
+          clearable
           v-if="nameVisible"
           v-model="nameForm.name"
           autofocus
@@ -122,9 +123,11 @@
       :message="t(plaintext ? 'myKeys.secretWarning' : 'myKeys.secretUnavailable')"
     />
     <div v-if="plaintext" class="key-secret">
-      <t-input :value="plaintext" readonly /><t-button variant="outline" @click="copySecret">{{
-        t('myKeys.copy')
-      }}</t-button>
+      <t-input clearable :value="plaintext" readonly /><t-button
+        variant="outline"
+        @click="copySecret"
+        >{{ t('myKeys.copy') }}</t-button
+      >
     </div>
   </t-dialog>
   <t-dialog

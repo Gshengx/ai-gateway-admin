@@ -28,10 +28,11 @@
       </div>
       <div class="security-grid">
         <t-form-item v-if="file" :label="label('checkCondition')" required>
-          <t-select v-model="item.file_checks" multiple :options="fileOptions" />
+          <t-select clearable v-model="item.file_checks" multiple :options="fileOptions" />
         </t-form-item>
         <t-form-item v-else :label="label('ruleScope')" required>
           <t-select
+            clearable
             v-model="item.selector"
             :options="
               choices(
@@ -45,6 +46,7 @@
         </t-form-item>
         <t-form-item :label="label('action')" required
           ><t-select
+            clearable
             v-model="item.action"
             :options="choices(file || security ? ['BLOCK', 'ALERT'] : ['BLOCK', 'MASK', 'ALERT'])"
         /></t-form-item>
@@ -55,6 +57,7 @@
           :label="label('formats')"
           required
           ><t-select
+            clearable
             v-model="item.formats"
             multiple
             :options="
@@ -82,10 +85,11 @@
             :options="choices(security ? risks : sensitivities)"
         /></t-form-item>
         <t-form-item v-if="item.selector === 'TYPES'" :label="label('category')" required
-          ><t-select v-model="item.values" multiple :options="choices(engines)"
+          ><t-select clearable v-model="item.values" multiple :options="choices(engines)"
         /></t-form-item>
         <t-form-item v-if="item.selector === 'IDS'" :label="label('detectionRules')" required
           ><t-select
+            clearable
             v-model="item.values"
             multiple
             filterable

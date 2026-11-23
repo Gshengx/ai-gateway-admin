@@ -21,7 +21,7 @@
       required-mark-position="right"
     >
       <t-form-item v-bind="fieldState('name')" :label="t('ma.providerName')" required-mark
-        ><t-input v-model="provider.name" :placeholder="t('providers.namePlaceholder')"
+        ><t-input clearable v-model="provider.name" :placeholder="t('providers.namePlaceholder')"
       /></t-form-item>
       <t-form-item
         v-bind="fieldState('template')"
@@ -29,6 +29,7 @@
         :help="t('ma.providerTemplateHelp')"
         required-mark
         ><t-select
+          clearable
           v-model="provider.template_version_id"
           filterable
           :options="
@@ -52,7 +53,7 @@
         :label="t('ma.baseUrl')"
         :help="baseUrlHelp"
         required-mark
-        ><t-input v-model="provider.base_url" placeholder="https://api.example.com/v1"
+        ><t-input clearable v-model="provider.base_url" placeholder="https://api.example.com/v1"
       /></t-form-item>
       <div class="ma-stack provider-auth">
         <h3>{{ t('ma.auth') }}</h3>
@@ -80,6 +81,7 @@
                 (provider.provider_config[field.key] = String(value ?? ''))
             "
           /><t-select
+            clearable
             v-else-if="field.dto?.control === 'SELECT' || field.dto?.control === 'RADIO'"
             v-model="provider.provider_config[field.key]"
             :options="field.dto.options.map((o) => ({ value: String(o.value), label: o.label }))"
@@ -92,6 +94,7 @@
             :placeholder="configured(field.key) ? t('ma.keepSecret') : ''"
           />
           <t-input
+            clearable
             v-else
             v-model="provider.provider_config[field.key]"
             :type="field.secret ? 'password' : 'text'"
@@ -119,14 +122,16 @@
         <div v-if="provider.balance_query_mode === 'CUSTOM'" class="provider-balance-fields">
           <t-form-item v-bind="fieldState('balance.method')" :label="t('ma.method')" required-mark
             ><t-select
+              clearable
               v-model="provider.balance_query_config.method"
               :options="['GET', 'POST'].map((v) => ({ value: v, label: v }))"
           /></t-form-item>
           <t-form-item v-bind="fieldState('balance.url')" :label="t('ma.balanceUrl')" required-mark
-            ><t-input v-model="provider.balance_query_config.url"
+            ><t-input clearable v-model="provider.balance_query_config.url"
           /></t-form-item>
           <t-form-item v-bind="fieldState('balance.auth')" :label="t('ma.authMode')" required-mark
             ><t-select
+              clearable
               v-model="provider.balance_query_config.auth"
               :options="[
                 { value: 'NONE', label: t('ma.noAuthentication') },
@@ -140,6 +145,7 @@
             :label="t('ma.header')"
             required-mark
             ><t-input
+              clearable
               v-model="provider.balance_query_config.header"
               :placeholder="t('ma.balanceHeaderPlaceholder')"
           /></t-form-item>
@@ -149,6 +155,7 @@
             :label="t('ma.secret')"
             required-mark
             ><t-input
+              clearable
               v-model="provider.balance_query_config.secret"
               type="password"
               name="provider-balance-query-secret"
@@ -159,11 +166,13 @@
           /></t-form-item>
           <t-form-item v-bind="fieldState('balance.unit')" :label="t('ma.unit')" required-mark
             ><t-input
+              clearable
               v-model="provider.balance_query_config.unit"
               :placeholder="t('ma.balanceUnitPlaceholder')"
           /></t-form-item>
           <t-form-item v-bind="fieldState('balance.mapping')" :label="t('ma.mapping')" required-mark
             ><t-select
+              clearable
               v-model="provider.balance_query_config.mapping"
               :options="['AVAILABLE', 'SUBTRACT'].map((v) => ({ value: v, label: t('ma.' + v) }))"
           /></t-form-item>
@@ -173,6 +182,7 @@
             :label="t('ma.availablePath')"
             required-mark
             ><t-input
+              clearable
               v-model="provider.balance_query_config.available_path"
               :placeholder="t('ma.balanceAvailablePathPlaceholder')"
           /></t-form-item>
@@ -182,6 +192,7 @@
               :label="t('ma.totalPath')"
               required-mark
               ><t-input
+                clearable
                 v-model="provider.balance_query_config.total_path"
                 :placeholder="t('ma.balanceTotalPathPlaceholder')" /></t-form-item
             ><t-form-item
@@ -189,6 +200,7 @@
               :label="t('ma.usedPath')"
               required-mark
               ><t-input
+                clearable
                 v-model="provider.balance_query_config.used_path"
                 :placeholder="t('ma.balanceUsedPathPlaceholder')" /></t-form-item
           ></template>
@@ -276,6 +288,7 @@
       </div>
       <t-form-item v-bind="fieldState('security')" :label="t('ma.security')" required-mark
         ><t-select
+          clearable
           v-model="provider.security_level"
           :options="
             ['INTERNET', 'TRUSTED_CLOUD', 'PRIVATE'].map((v) => ({ value: v, label: t('ma.' + v) }))

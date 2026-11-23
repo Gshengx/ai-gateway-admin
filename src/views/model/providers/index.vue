@@ -511,7 +511,7 @@ async function edit(row: Provider) {
   try {
     const provider = await accessApi.provider(row.id, { signal: current.signal })
     if (!current.isCurrent()) return
-    await loadTemplates(provider.id, provider.template_version_id)
+    await loadTemplates(provider.id, provider.template_version_id, true)
     if (!current.isCurrent()) return
     editing.value = provider
     closeDetail()
@@ -662,16 +662,28 @@ watch(search, () => {
 let templateGeneration = 0
 const templateController = new AbortController()
 const templateRequests = new Map<string, Promise<void>>()
-function loadTemplates(providerId?: string, templateVersion?: string): Promise<void> {
-  const key = JSON.stringify([locale.value, providerId, templateVersion])
+function loadTemplates(
+  providerId?: string,
+  templateVersion?: string,
+  includeCurrent = false,
+): Promise<void> {
+  const key = JSON.stringify([locale.value, providerId, templateVersion, includeCurrent])
   const pending = templateRequests.get(key)
   if (pending) return pending
   const current = ++templateGeneration
   templatesLoading.value = true
-  const request = accessApi
-    .templates(providerId, { signal: templateController.signal })
-    .then((result) => {
-      if (current === templateGeneration) templates.value = result
+  const config = { signal: templateController.signal }
+  const request = Promise.all([
+    accessApi.templates(providerId, config),
+    providerId && includeCurrent ? accessApi.templates(undefined, config) : Promise.resolve([]),
+  ])
+    .then(([bound, candidates]) => {
+      if (current !== templateGeneration) return
+      templates.value = [
+        ...new Map(
+          [...candidates, ...bound].map((template) => [template.template_version_id, template]),
+        ).values(),
+      ]
     })
     .finally(() => {
       templateRequests.delete(key)
@@ -689,7 +701,11 @@ watch(locale, () => {
       ? detail.value
       : undefined
   if (formVisible.value || (detailVisible.value && provider))
-    void loadTemplates(provider?.id, provider?.template_version_id).catch(() => {})
+    void loadTemplates(
+      provider?.id,
+      provider?.template_version_id,
+      formVisible.value && !!provider,
+    ).catch(() => {})
 })
 onMounted(() => {
   void load().catch(() => {})

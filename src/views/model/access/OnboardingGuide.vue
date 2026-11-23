@@ -84,6 +84,7 @@
             </div> </template
           ><template #model_id_at_gateway="{ row }"
             ><t-input
+              clearable
               v-model="row.model_id_at_gateway"
               :disabled="row.already_added"
               :status="row.error_fields?.model_id_at_gateway ? 'error' : undefined"
@@ -118,6 +119,7 @@
           <span>{{ t('ma.manualModel') }}</span>
           <div class="ma-row">
             <t-input
+              clearable
               v-model="manual.model_id_at_provider"
               :placeholder="t('ma.upstream')"
               :status="manualAttempted && manualErrors.upstream ? 'error' : undefined"

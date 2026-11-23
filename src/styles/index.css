@@ -129,6 +129,69 @@ body {
   max-width: 100%;
 }
 
+/* 部门下拉 teleport 到 body，加载和空态文案统一在面板内居中。 */
+.department-select-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--td-comp-margin-xs);
+  width: 100%;
+  min-width: 0;
+}
+.department-select-controls > .t-tree-select {
+  flex: 1;
+  min-width: 0;
+}
+.department-tree-select .t-input__prefix,
+.department-select-controls .t-input__prefix {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.department-tree-popup .t-tree__label {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.department-tree-popup .t-select-loading-tips,
+.department-tree-popup .t-select__empty {
+  width: 100%;
+  text-align: center;
+}
+.department-tree-popup .t-select-loading-tips {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 标准下拉和自定义可搜索多选面板：保留选择控件空间，长名称单行省略。 */
+.t-select__list .t-select-option,
+.t-select__list .t-select-option__content,
+.searchable-option-list,
+.searchable-option-list .t-checkbox {
+  min-width: 0;
+  max-width: 100%;
+}
+.searchable-option-list .t-checkbox {
+  display: flex;
+  width: 100%;
+}
+.searchable-option-list .t-checkbox__input {
+  flex: none;
+}
+.t-select__list .t-select-option__content,
+.searchable-option-list .t-checkbox__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* TDesign Vue Next 1.20.10: useTreeItem renders .t-tree__item and
  * useRenderOperations renders .t-tree__operations. Global rules reach body teleport.
  * Opacity keeps native buttons in the Tab order, including before focus-within. */
@@ -306,9 +369,17 @@ body {
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
-.subject-picker > .t-loading__parent:has(> .t-loading--full),
 .model-grant-picker > .t-loading__parent:has(> .t-loading--full) {
   height: min(35dvh, calc(var(--td-comp-size-xxxl) * 5));
+}
+.subject-picker > .t-loading__parent:has(> .t-loading--full) {
+  min-height: var(--subject-picker-loading-height, var(--td-comp-size-l));
+}
+
+/* Popper 标记触发框已被滚动容器完全裁剪时，浮层不可悬浮到容器外。 */
+.t-popup[data-popper-reference-hidden] {
+  visibility: hidden;
+  pointer-events: none;
 }
 /* 反馈独占预留内容区，表单默认值在等待期间保持不可见且不可交互。 */
 .t-dialog__body > .loading-boundary > .loading-state,

@@ -126,6 +126,7 @@
       >
       <t-form-item v-if="form.target === 'PROJECT'" :label="t('budgetFlow.project')" required-mark
         ><t-select
+          clearable
           class="list-filter"
           v-model="form.project_id"
           :options="projectOptions"
@@ -185,6 +186,7 @@
         <div class="approvers">
           <t-form-item :label="t('budgetFlow.first')" required-mark
             ><t-select
+              clearable
               class="list-filter"
               v-model="form.first_approver_id"
               :options="
@@ -196,6 +198,7 @@
               filterable /></t-form-item
           ><t-form-item :label="t('budgetFlow.second')"
             ><t-input
+              clearable
               :value="
                 options?.second_approver
                   ? approvers.displayName(options.second_approver.id, options.second_approver.name)

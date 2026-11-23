@@ -30,6 +30,7 @@
         <template #prefix-icon><t-icon name="search" /></template>
       </t-input>
       <department-tree-select
+        :key="groupId"
         v-model="departmentId"
         :load-departments="loadMemberDepartments"
         :resolve-descendants="false"

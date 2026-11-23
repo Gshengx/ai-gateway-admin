@@ -19,7 +19,7 @@
           required
           :status="fieldErrors.includes('name') ? 'error' : undefined"
           :tips="fieldErrors.includes('name') ? errorMessage : ''"
-          ><t-input v-model="form.name" :maxlength="200"
+          ><t-input clearable v-model="form.name" :maxlength="200"
         /></t-form-item>
         <t-form-item :label="label('whitelistType')"
           ><span>{{ label(type) }}</span></t-form-item

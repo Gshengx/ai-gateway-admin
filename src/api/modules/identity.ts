@@ -1074,11 +1074,12 @@ export interface UserGroupMemberDepartmentOption {
   display_name: string
   parent_id: string | null
   has_children: boolean
+  matched: boolean
 }
 
 export type UserGroupMemberDepartmentOptionsQuery =
   | { mode?: 'FULL'; parent_id?: never; search?: string }
-  | { mode: 'CHILDREN'; parent_id?: string; search?: string }
+  | { mode: 'CHILDREN'; parent_id?: string; search?: never }
 
 export function getUserGroupMemberDepartmentOptionsApi(
   params: UserGroupMemberDepartmentOptionsQuery = {},

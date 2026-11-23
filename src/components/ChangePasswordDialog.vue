@@ -34,6 +34,7 @@
           :label="t(`changePassword.${field}`)"
         >
           <t-input
+            clearable
             v-model="formData[field]"
             :name="`change-${field}`"
             type="password"

@@ -77,7 +77,7 @@ const columns = computed<PrimaryTableCol[]>(() => [
     width: 40,
     disabled: ({ row }) => Boolean(row.disabled),
   },
-  { colKey: 'name', title: t('cost.selectUsers') },
+  { colKey: 'name', title: t('cost.selectUsers'), ellipsis: true },
 ])
 let version = 0,
   timer: ReturnType<typeof setTimeout> | undefined

@@ -15,6 +15,7 @@
           theme="normal" /></t-form-item
       ><t-form-item :label="t('cost.currency')" required-mark
         ><t-select
+          clearable
           v-model="form.currency"
           :disabled="!headquarters"
           :options="['CNY', 'USD'].map((value) => ({ value, label: t(`cost.${value}`) }))"
@@ -23,7 +24,7 @@
     <h3>3 {{ t('budgetPlan.plan') }}</h3>
     <slot name="mode" />
     <t-form-item :label="t('cost.budgetPeriod')" required-mark
-      ><t-select v-model="form.period_type" :options="periodOptions"
+      ><t-select clearable v-model="form.period_type" :options="periodOptions"
     /></t-form-item>
     <t-form-item :label="t('budgetPlan.allocation')" required-mark
       ><t-radio-group v-model="form.allocation" :options="allocationOptions"
@@ -104,7 +105,7 @@
       /></t-form-item>
     </div>
     <t-form-item :label="t('cost.overAction')" required-mark
-      ><t-select v-model="form.over_budget_action" :options="actionOptions"
+      ><t-select clearable v-model="form.over_budget_action" :options="actionOptions"
     /></t-form-item>
     <p class="hint">
       {{ t(form.over_budget_action === 'ALERT_ONLY' ? 'cost.alertHint' : 'cost.blockHint') }}

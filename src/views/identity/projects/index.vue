@@ -21,6 +21,7 @@
               @change="first"
             />
             <t-select
+              clearable
               class="list-filter"
               v-model="query.status"
               :options="statuses"
@@ -109,7 +110,7 @@
       <div class="project-confirm">
         <p v-for="(paragraph, index) in confirmation" :key="index">{{ paragraph }}</p>
         <div v-if="action === 'delete'" class="delete-confirm">
-          <t-input v-model="deleteName" :placeholder="t('projects.deletePlaceholder')" />
+          <t-input clearable v-model="deleteName" :placeholder="t('projects.deletePlaceholder')" />
           <p>{{ t('projects.deleteHint', { name: target?.name }) }}</p>
         </div>
       </div>

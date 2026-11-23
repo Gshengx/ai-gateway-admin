@@ -30,6 +30,7 @@
             :label="t(`profile.${field}`)"
           >
             <t-input
+              clearable
               v-model="draft[field]"
               :name="`profile-${field}`"
               :disabled="!writable"

@@ -53,6 +53,7 @@
     </CollapsibleSidebar>
     <div class="security-workspace">
       <t-select
+        clearable
         class="security-categories--mobile"
         :value="category"
         :options="groupOptions"
@@ -67,6 +68,7 @@
               :placeholder="label('ruleName')"
               @change="search"
             /><t-select
+              clearable
               v-model="query.direction"
               :options="[
                 { value: '', label: label('allDirections') },
@@ -74,6 +76,7 @@
               ]"
               @change="search"
             /><t-select
+              clearable
               v-model="query.built_in"
               :options="[
                 { value: '', label: label('allSources') },
@@ -82,6 +85,7 @@
               ]"
               @change="search"
             /><t-select
+              clearable
               v-model="query.enabled"
               :options="[
                 { value: '', label: label('allStatus') },

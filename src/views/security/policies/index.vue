@@ -39,7 +39,7 @@
               :placeholder="label('auditFields')"
               @change="search"
             />
-            <t-select v-model="query.enabled" :options="statusOptions" @change="search" />
+            <t-select clearable v-model="query.enabled" :options="statusOptions" @change="search" />
             <t-button theme="default" @click="reset">{{ label('reset') }}</t-button>
           </div></template
         ></FilterBar

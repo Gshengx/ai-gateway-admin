@@ -38,6 +38,7 @@
             :autosize="{ minRows: 6, maxRows: 12 }"
           />
           <t-input
+            clearable
             v-else
             v-model="form[field.key]"
             :disabled="!canWrite || submitting"

@@ -8,16 +8,20 @@
         :tree-props="departmentTreeProps"
         :filter="() => true"
         :value-display="() => selectedDepartmentName"
+        :title="selectedDepartmentName"
         :loading="departmentLoading"
         :loading-text="t('common.departmentTree.loading')"
         :empty="t('common.departmentTree.empty')"
         :placeholder="placeholder"
         :clearable="clearable"
+        :input-value="popupVisible ? departmentKeyword : ''"
         :disabled="disabled || resolving"
         :popup-props="departmentPopupProps"
         :filterable="searchable"
         :input-props="{ name: 'department-tree-filter', autocomplete: 'off' }"
         @change="onChange"
+        @clear="clearDepartment"
+        @input-change="onDepartmentSearch"
         @search="onDepartmentSearch"
         @popup-visible-change="onPopupVisibleChange"
       />
@@ -33,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button, MessagePlugin, type TreeProps, type TreeSelectProps } from 'tdesign-vue-next'
 import { RefreshIcon } from 'tdesign-icons-vue-next'
@@ -44,11 +48,13 @@ import {
 } from '@/api/modules/identity'
 import { useDepartmentPopup } from '@/utils/useDepartmentPopup'
 import { useTreeBranches } from '@/utils/useTreeBranches'
+import { useDepartmentScope } from '@/utils/useDepartmentScope'
+import { revealDepartmentSelection } from '@/utils/revealDepartmentSelection'
 
 type DepartmentOption = Pick<
   DepartmentItem,
   'id' | 'name' | 'display_name' | 'parent_id' | 'has_children'
->
+> & { matched?: boolean }
 
 const props = withDefaults(
   defineProps<{
@@ -58,10 +64,7 @@ const props = withDefaults(
     disabled?: boolean
     resolveDescendants?: boolean
     searchable?: boolean
-    loadDepartments?: (
-      params: DepartmentQuery,
-      refresh?: boolean,
-    ) => Promise<{ items: DepartmentOption[] }>
+    loadDepartments?: (params: DepartmentQuery) => Promise<{ items: DepartmentOption[] }>
   }>(),
   { clearable: true, resolveDescendants: true, searchable: true },
 )
@@ -78,11 +81,16 @@ interface DepartmentNode {
   value: string
   label: string
   children?: true | DepartmentNode[]
+  matched?: boolean
 }
 
 const lazyDepartments = ref<DepartmentNode[]>([])
 const searchDepartments = ref<DepartmentNode[]>([])
+const searchExpanded = ref<Array<string | number>>([])
+const browseExpanded = ref<Array<string | number>>([])
 const departmentKeyword = ref('')
+const popupVisible = ref(false)
+let panelCleanupPending = false
 const searchLoading = ref(false)
 const rootLoading = ref(false)
 const resolving = ref(false)
@@ -95,7 +103,6 @@ const departmentLoading = computed(
 const departmentItems = new Map<string, DepartmentOption>()
 const nodeVersions = new Map<string, number>()
 const refreshingNodes = reactive(new Set<string>())
-const inFlight = new Map<string, Promise<DepartmentOption[]>>()
 let rootLoaded = false
 let selectionVersion = 0
 const departmentNames = reactive(new Map<string, string>())
@@ -106,11 +113,15 @@ const departmentTree = computed(() =>
   departmentKeyword.value ? searchDepartments.value : lazyDepartments.value,
 )
 const selectedDepartmentName = computed(() => departmentNames.get(props.modelValue) ?? '')
+useDepartmentScope(reset)
 
-function fetchDepartments(params: DepartmentQuery = {}, refresh = false) {
-  return props.loadDepartments
-    ? props.loadDepartments(params, refresh)
-    : getDepartmentListApi(params)
+function fetchDepartments(params: DepartmentQuery = {}) {
+  const query = params.search?.trim()
+    ? { search: params.search.trim() }
+    : params.parent_id
+      ? { parent_id: params.parent_id }
+      : {}
+  return props.loadDepartments ? props.loadDepartments(query) : getDepartmentListApi(query)
 }
 
 function departmentNodes(items: DepartmentOption[]): DepartmentNode[] {
@@ -118,11 +129,20 @@ function departmentNodes(items: DepartmentOption[]): DepartmentNode[] {
     departmentItems.set(item.id, item)
     const label = item.display_name || item.name
     departmentNames.set(item.id, label)
-    return { value: item.id, label, children: item.has_children ? true : undefined }
+    return {
+      value: item.id,
+      label,
+      children: item.has_children ? true : undefined,
+      matched: item.matched,
+    }
   })
 }
 
 const branches = useTreeBranches(lazyDepartments, async (id, signal) => {
+  const items = await requestChildren(id)
+  return signal.aborted ? [] : departmentNodes(items)
+})
+const searchBranches = useTreeBranches(searchDepartments, async (id, signal) => {
   const items = await requestChildren(id)
   return signal.aborted ? [] : departmentNodes(items)
 })
@@ -161,10 +181,12 @@ const departmentTreeProps = computed<TreeProps>(() => ({
   label: (h, nodeModel) => {
     const text = String(nodeModel.data.label ?? nodeModel.label ?? '')
     const keyword = departmentKeyword.value
-    if (!keyword) return text
-    const index = text.toLowerCase().indexOf(keyword.toLowerCase())
-    if (index < 0) return text
-    const end = index + keyword.length
+    if (!keyword || nodeModel.data.matched === false) return text
+    const matchIndex = text.toLowerCase().indexOf(keyword.toLowerCase())
+    if (matchIndex < 0 && nodeModel.data.matched !== true) return text
+    // A raw-name match may have a translated display name without the keyword.
+    const index = Math.max(0, matchIndex)
+    const end = matchIndex < 0 ? text.length : index + keyword.length
     return h('span', [
       text.slice(0, index),
       h(
@@ -184,12 +206,22 @@ const departmentTreeProps = computed<TreeProps>(() => ({
       text.slice(end),
     ])
   },
-  onExpand: branches.onExpand,
-  icon: branches.icon,
-  expandAll: Boolean(departmentKeyword.value),
+  expanded: departmentKeyword.value ? searchExpanded.value : browseExpanded.value,
+  onExpand: (values, context) => {
+    if (departmentKeyword.value) {
+      searchExpanded.value = values
+      searchBranches.onExpand(values, context)
+    } else {
+      browseExpanded.value = values
+      branches.onExpand(values, context)
+    }
+  },
+  icon: departmentKeyword.value ? searchBranches.icon : branches.icon,
 }))
 
 function onDepartmentSearch(value: string) {
+  if (value.trim() === departmentKeyword.value) return
+  searchBranches.invalidate()
   clearTimeout(searchTimer)
   const version = ++searchVersion
   const session = departmentSession
@@ -205,9 +237,6 @@ function onDepartmentSearch(value: string) {
       const nodes = departmentNodes(result.items)
       const byId = new Map(nodes.map((node) => [node.value, node]))
       const roots: DepartmentNode[] = []
-      nodes.forEach((node) => {
-        node.children = undefined
-      })
       result.items.forEach((item, index) => {
         const node = nodes[index]!
         const parent = item.parent_id ? byId.get(item.parent_id) : undefined
@@ -217,6 +246,9 @@ function onDepartmentSearch(value: string) {
         } else roots.push(node)
       })
       searchDepartments.value = roots
+      searchExpanded.value = nodes
+        .filter((node) => Array.isArray(node.children))
+        .map((node) => node.value)
     } catch {
       // Request errors are reported by the request interceptor.
     } finally {
@@ -233,17 +265,8 @@ function findNode(nodes: DepartmentNode[], id: string): DepartmentNode | undefin
   }
 }
 
-function requestChildren(id: string, refresh = false): Promise<DepartmentOption[]> {
-  const pending = inFlight.get(id)
-  if (pending) return pending
-  const session = departmentSession
-  const request = fetchDepartments({ parent_id: id }, refresh)
-    .then((result) => result.items)
-    .finally(() => {
-      if (session === departmentSession && inFlight.get(id) === request) inFlight.delete(id)
-    })
-  inFlight.set(id, request)
-  return request
+function requestChildren(id: string): Promise<DepartmentOption[]> {
+  return fetchDepartments({ parent_id: id }).then((result) => result.items)
 }
 
 async function collectDescendants(
@@ -341,16 +364,65 @@ async function loadRoots() {
   }
 }
 
-function onPopupVisibleChange(visible: boolean) {
+async function onPopupVisibleChange(visible: boolean) {
+  popupVisible.value = visible
   setPopupVisible(visible)
   if (visible) {
-    void loadRoots()
+    panelCleanupPending = false
+    await nextTick()
+    if (!popupVisible.value) return
+    if (props.searchable && props.modelValue && selectedDepartmentName.value) {
+      onDepartmentSearch(selectedDepartmentName.value)
+      return
+    }
+    const session = departmentSession
+    const selected = props.modelValue
+    await loadRoots()
+    if (!rootLoaded && session === departmentSession) {
+      try {
+        const result = await fetchDepartments()
+        if (session !== departmentSession) return
+        lazyDepartments.value = departmentNodes(result.items)
+        rootLoaded = true
+      } catch {
+        return
+      }
+    }
+    const isCurrent = () =>
+      session === departmentSession && selected === props.modelValue && !departmentKeyword.value
+    const ancestors = await revealDepartmentSelection(
+      [selected],
+      (id) => departmentItems.get(id)?.parent_id,
+      branches.load,
+      isCurrent,
+    )
+    if (isCurrent()) browseExpanded.value = [...new Set([...browseExpanded.value, ...ancestors])]
   } else {
     onDepartmentSearch('')
+    panelCleanupPending = true
+    await nextTick()
+    if (!popupVisible.value && !resolving.value) clearState(true)
   }
 }
 
-function clearState() {
+watch(resolving, async (busy) => {
+  if (!busy && panelCleanupPending && !popupVisible.value) {
+    await nextTick()
+    if (!popupVisible.value) clearState(true)
+  }
+})
+
+function clearDepartment() {
+  if (props.disabled || resolving.value) return
+  onDepartmentSearch('')
+  if (popupVisible.value) void loadRoots()
+}
+
+function clearState(keepSelection = false) {
+  const selected = props.modelValue
+  const name = keepSelection ? departmentNames.get(selected) : undefined
+  const item = keepSelection ? departmentItems.get(selected) : undefined
+  panelCleanupPending = false
   failure.value = ''
   retrySelection = undefined
   departmentSession++
@@ -358,7 +430,9 @@ function clearState() {
   selectionVersion++
   clearTimeout(searchTimer)
   branches.invalidate()
-  inFlight.clear()
+  searchBranches.invalidate()
+  searchExpanded.value = []
+  browseExpanded.value = []
   nodeVersions.clear()
   refreshingNodes.clear()
   lazyDepartments.value = []
@@ -370,6 +444,8 @@ function clearState() {
   searchLoading.value = false
   rootLoading.value = false
   resolving.value = false
+  if (name) departmentNames.set(selected, name)
+  if (item) departmentItems.set(selected, item)
 }
 
 function reset() {
@@ -386,15 +462,14 @@ async function refreshNode(id: string) {
   nodeVersions.set(id, version)
   refreshingNodes.add(id)
   branches.invalidate(id)
-  inFlight.delete(id)
   const isCurrent = () => session === departmentSession && nodeVersions.get(id) === version
   try {
-    const items = await requestChildren(id, true)
+    const items = await requestChildren(id)
     if (!isCurrent() || findNode(lazyDepartments.value, id) !== parent) return
     const previous = new Map(
       (Array.isArray(parent.children) ? parent.children : []).map((child) => [child.value, child]),
     )
-    // Resolve the selected descendant's direct branch before updating cached parent links.
+    // Resolve the selected descendant's direct branch before updating the displayed parent links.
     let branch = props.modelValue
     const visited = new Set<string>()
     while (branch && !visited.has(branch)) {
@@ -416,8 +491,8 @@ async function refreshNode(id: string) {
     // Notify TDesign's shallow data watcher. TreeSelect retains its controlled
     // expanded/actived values; the selector instance and treeVersion stay unchanged.
     lazyDepartments.value = [...lazyDepartments.value]
-    const cachedParent = departmentItems.get(id)
-    if (cachedParent) departmentItems.set(id, { ...cachedParent, has_children: items.length > 0 })
+    const parentItem = departmentItems.get(id)
+    if (parentItem) departmentItems.set(id, { ...parentItem, has_children: items.length > 0 })
     if (missingSelection) void MessagePlugin.warning(t('common.departmentTree.selectionMissing'))
     // 刷新的是当前筛选部门本身时，其后代范围可能已变化，需要重算并通知调用方。
     if (props.resolveDescendants && props.modelValue === id) void resolveSelection(id)
@@ -435,6 +510,8 @@ function retry() {
 }
 
 defineExpose({ reset })
+
+watch(() => props.loadDepartments, reset, { flush: 'sync' })
 
 watch(locale, async () => {
   const id = props.modelValue
@@ -465,7 +542,7 @@ watch(locale, async () => {
       if (parent) parent.children = children
     }
     if (!departmentNames.has(id)) {
-      // Supports externally supplied values whose ancestor path is not cached yet.
+      // Supports externally supplied values whose ancestor path is not loaded yet.
       const result = await fetchDepartments({ search: selected?.name || id })
       if (session !== departmentSession) return
       departmentNodes(result.items)

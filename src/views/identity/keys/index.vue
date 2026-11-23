@@ -14,12 +14,14 @@
             :disabled="busy"
           />
           <t-select
+            clearable
             v-model="filters.status"
             class="managed-key-status"
             :options="statusOptions"
             :disabled="busy"
           />
           <t-select
+            clearable
             v-model="filters.control"
             class="managed-key-access"
             :options="accessOptions"

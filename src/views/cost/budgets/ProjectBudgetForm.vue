@@ -12,7 +12,13 @@
       <t-form class="form" label-align="top" required-mark-position="right"
         ><h3>1 {{ t('budgetPlan.objects') }}</h3>
         <t-form-item :label="t('budgetPlan.selectProject')" required-mark
-          ><t-select v-model="ids" multiple :disabled="Boolean(record)" :options="projectOptions" />
+          ><t-select
+            clearable
+            v-model="ids"
+            multiple
+            :disabled="Boolean(record)"
+            :options="projectOptions"
+          />
           <p class="hint">{{ t('budgetPlan.activeOnly') }}</p></t-form-item
         ><PlanFields :form="form" kind="projects" :source-period="source?.period_type" />
         <h3>5 {{ t('budgetPlan.notifications') }}</h3>

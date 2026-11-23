@@ -87,7 +87,12 @@
         :disabled="readonly || formLoading"
       >
         <t-form-item :label="t('roles.name')" required>
-          <t-input v-model="form.name" :maxlength="30" :placeholder="t('roles.namePlaceholder')" />
+          <t-input
+            clearable
+            v-model="form.name"
+            :maxlength="30"
+            :placeholder="t('roles.namePlaceholder')"
+          />
         </t-form-item>
         <t-form-item class="permission-form__description" :label="t('roles.description')">
           <t-textarea

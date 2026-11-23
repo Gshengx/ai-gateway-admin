@@ -23,7 +23,9 @@
         <t-form-item :label="label('days')"
           ><t-checkbox-group v-model="model.days" :options="days"
         /></t-form-item>
-        <t-form-item :label="label('timeZone')"><t-input v-model="model.time_zone" /></t-form-item>
+        <t-form-item :label="label('timeZone')"
+          ><t-input clearable v-model="model.time_zone"
+        /></t-form-item>
       </template>
       <t-form-item :label="label('clients')"
         ><t-textarea
@@ -40,6 +42,7 @@
       <t-form-item v-else :label="label('terminals')"
         ><div class="security-stack">
           <t-select
+            clearable
             v-model="model.terminal_type"
             :options="choices(['ALL', 'MANAGED', 'UNMANAGED', 'SPECIFIED'])"
           /><t-textarea
