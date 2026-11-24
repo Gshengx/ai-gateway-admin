@@ -301,7 +301,7 @@ watch(
 }
 .summary,
 .adjustment {
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   border-radius: var(--td-radius-medium);
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
 }

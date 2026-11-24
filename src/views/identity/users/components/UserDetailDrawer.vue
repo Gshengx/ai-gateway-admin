@@ -294,6 +294,7 @@
             @select-change="selectKeyRows"
             hover
             table-layout="fixed"
+            table-content-width="max(100%, var(--user-detail-key-table-width))"
             :max-height="460"
             :empty="keysFailed ? t('common.loadFailed') : t('users.detail.keys.empty')"
           >
@@ -322,10 +323,10 @@
               </t-tag>
             </template>
             <template #created_at="{ row }">
-              {{ formatDateTime(row.created_at) || '—' }}
+              <span class="key-time">{{ formatDateTime(row.created_at) || '—' }}</span>
             </template>
             <template #last_used_at="{ row }">
-              <span :class="{ 'detail-empty-value': !row.last_used_at }">
+              <span class="key-time" :class="{ 'detail-empty-value': !row.last_used_at }">
                 {{ formatDateTime(row.last_used_at) || '—' }}
               </span>
             </template>
@@ -647,8 +648,8 @@ const keyColumns = computed<PrimaryTableCol<UserApiKeyItem>[]>(() => [
   },
   { colKey: 'id', title: t('users.detail.keys.columns.keyId'), width: 125, ellipsis: true },
   { colKey: 'status', title: t('users.detail.keys.columns.status'), width: 86 },
-  { colKey: 'created_at', title: t('users.detail.keys.columns.createdAt'), width: 145 },
-  { colKey: 'last_used_at', title: t('users.detail.keys.columns.lastUsed'), width: 145 },
+  { colKey: 'created_at', title: t('users.detail.keys.columns.createdAt'), width: 180 },
+  { colKey: 'last_used_at', title: t('users.detail.keys.columns.lastUsed'), width: 180 },
 ])
 
 type KeyOperation = 'enable' | 'disable' | 'delete'
@@ -1137,6 +1138,9 @@ function onClose() {
 .key-name {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.key-time {
+  white-space: nowrap;
 }
 .selected-models {
   margin: 0;

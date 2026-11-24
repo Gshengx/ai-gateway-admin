@@ -837,7 +837,7 @@ onBeforeUnmount(() => {
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
   border: 1px solid var(--td-component-border);
   border-radius: var(--td-radius-medium);
-  background: var(--td-bg-color-container-hover);
+  background: var(--td-bg-color-page);
   text-align: center;
   margin-bottom: var(--td-comp-margin-l);
 }
@@ -865,7 +865,7 @@ onBeforeUnmount(() => {
 }
 .import-mode {
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-l);
-  background: var(--td-bg-color-container-hover);
+  background: var(--td-bg-color-page);
   margin-bottom: var(--td-comp-margin-l);
 }
 .import-content {

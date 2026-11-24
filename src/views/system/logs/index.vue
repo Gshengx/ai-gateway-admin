@@ -931,7 +931,7 @@ onBeforeUnmount(() => {
 .logs-detail-section pre {
   margin: 0;
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   border-radius: var(--td-radius-medium);
   font-size: var(--td-font-size-body-small);
   white-space: pre-wrap;

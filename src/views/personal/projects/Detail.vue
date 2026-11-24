@@ -475,7 +475,7 @@ h3 {
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
   border: 1px solid var(--td-component-stroke);
   border-radius: var(--td-radius-medium);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   display: flex;
   flex-direction: column;
   gap: var(--td-comp-margin-s);

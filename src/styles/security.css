@@ -180,7 +180,7 @@
   overflow-wrap: anywhere;
   margin: 0;
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   border-radius: var(--td-radius-small);
 }
 .security-drag {

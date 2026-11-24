@@ -44,7 +44,7 @@
   white-space: nowrap;
 }
 .onboarding-manual {
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
 }
 .onboarding-manual > .ma-row {
   display: grid;
@@ -101,7 +101,7 @@
   margin-bottom: var(--td-comp-margin-l);
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
   border-radius: var(--td-radius-medium);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
 }
 .onboarding-manual :deep(.t-input__tips) {
   position: static;
@@ -139,7 +139,7 @@
   margin: 0;
   padding: var(--td-comp-paddingTB-s) var(--td-comp-paddingLR-s);
   border-radius: var(--td-radius-small);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   color: var(--td-text-color-secondary);
   font-size: var(--td-font-size-body-medium);
   line-height: var(--td-line-height-body-medium);
@@ -278,7 +278,7 @@
   margin: 0;
   padding: var(--td-comp-paddingTB-s) var(--td-comp-paddingLR-s);
   gap: var(--td-comp-margin-s);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   border-radius: var(--td-radius-default);
 }
 .provider-detail :deep(.t-divider) {
@@ -416,6 +416,18 @@
 .pricing-heading {
   flex-wrap: wrap;
 }
+.pricing-timezone {
+  flex-wrap: wrap;
+}
+.pricing-timezone-help {
+  display: grid;
+  gap: var(--td-comp-margin-s);
+  max-width: calc(var(--td-comp-size-xxxl) * 6);
+  white-space: normal;
+}
+.pricing-timezone-help p {
+  margin: 0;
+}
 .pricing-form :deep(.t-form__item) {
   margin-bottom: 0;
 }
@@ -423,7 +435,7 @@
 .pricing-condition,
 .pricing-fallback,
 .pricing-cell {
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
 }
 .pricing-period {
   background: var(--td-bg-color-container);
@@ -529,7 +541,7 @@
   width: 100%;
 }
 .model-health-card {
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
 }
 .provider-alert-threshold :deep(.t-input-number) {
   /* 分组内侧缩进不改变阈值与外层安全等级的半列宽度。 */
@@ -634,7 +646,7 @@
   gap: var(--td-comp-margin-s);
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
   border-radius: var(--td-radius-medium);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
 }
 .onboarding-model-card__name {
   grid-column: 1;

@@ -262,6 +262,8 @@ body {
   --users-sidebar-width: 260px;
   /* 2026-11-18 用户确认：加宽用户详情，为已授权模型六列表格预留空间。 */
   --user-detail-drawer-width: min(1000px, 100vw);
+  /* 2026-11-24 用户要求 API Key 的创建/最后使用时间保持单行；按各列可读宽度之和预留，窄屏横向滚动。 */
+  --user-detail-key-table-width: 920px;
   /* 沿用窄屏部门树原有 260px 高度上限，首屏和刷新均预留同一内容区。 */
   --users-department-tree-height: 260px;
 }

@@ -79,7 +79,7 @@ section {
 }
 section {
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   border-radius: var(--td-radius-medium);
 }
 .heading {

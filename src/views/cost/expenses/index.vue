@@ -512,7 +512,7 @@ onMounted(async () => {
 }
 .summary {
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   gap: var(--td-comp-margin-l);
 }
 .hint {

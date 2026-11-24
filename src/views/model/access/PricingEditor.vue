@@ -32,7 +32,28 @@
             t('ma.addPeriod')
           }}</t-button>
         </div>
-        <p class="ma-muted">{{ t('ma.timezone') }}</p>
+        <div class="ma-row pricing-timezone">
+          <strong>{{ t('ma.timezone') }}</strong>
+          <t-popup trigger="click" placement="bottom-left" show-arrow>
+            <t-button
+              variant="text"
+              theme="default"
+              shape="square"
+              size="small"
+              :aria-label="t('ma.timezoneHelp')"
+            >
+              <t-icon name="info-circle" />
+            </t-button>
+            <template #content>
+              <div class="pricing-timezone-help">
+                <p>{{ t('ma.periodMatchHelp') }}</p>
+                <p>{{ t('ma.timezoneDisplayHelp') }}</p>
+                <p class="ma-muted">{{ t('ma.timezoneSource') }}</p>
+              </div>
+            </template>
+          </t-popup>
+        </div>
+        <p class="ma-muted">{{ t('ma.periodRulesHelp') }}</p>
         <p v-if="!namedPeriods.length" class="ma-muted">{{ t('ma.emptyNamedPeriodsHelp') }}</p>
         <div v-for="period in namedPeriods" :key="period.id" class="ma-box ma-stack pricing-period">
           <div class="pricing-period__heading">

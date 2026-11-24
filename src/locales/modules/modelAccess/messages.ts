@@ -1046,9 +1046,20 @@ const labels: Record<string, [string, string]> = {
   start: ['开始时间', 'Start time'],
   end: ['结束时间', 'End time'],
   addCondition: ['添加时间条件', 'Add Time Condition'],
-  timezone: [
-    '时区：Asia/Shanghai，按请求开始时间匹配。每个命名时段可添加多个时间条件，命中任一条件即按该时段计价；未命中其他时段时使用兜底时段。时间条件不得重叠，跨午夜请拆分为两个条件。',
-    'Time zone: Asia/Shanghai. Match periods using the request start time. A named period can contain multiple time conditions; matching any condition applies that period’s price. Use the fallback period if no other period matches. Conditions must not overlap; split overnight ranges into two conditions.',
+  timezone: ['计费时区：北京时间（UTC+8）', 'Billing time zone: Beijing time (UTC+8)'],
+  timezoneHelp: ['计费时区说明', 'Billing time zone information'],
+  timezoneSource: ['来源：系统默认', 'Source: system default'],
+  periodMatchHelp: [
+    '所有时段均按北京时间生效，以请求开始时间匹配价格。',
+    'All periods use Beijing time. The request start time determines the price.',
+  ],
+  timezoneDisplayHelp: [
+    '个人时区只影响页面时间显示，不改变计费时区或价格时段。',
+    'Your personal time zone only changes displayed timestamps, not the billing time zone or pricing periods.',
+  ],
+  periodRulesHelp: [
+    '同一时段满足任一条件即生效；未匹配时使用兜底价格；条件不可重叠，跨午夜请拆分。',
+    'Any matching condition activates a period; otherwise the fallback price applies. Conditions must not overlap; split overnight ranges.',
   ],
   invalidPeriods: [
     '请检查时段名称、星期与时间；时段不可重叠，必须保留兜底时段。',

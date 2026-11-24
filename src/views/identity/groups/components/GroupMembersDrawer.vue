@@ -356,7 +356,7 @@ async function onMembersAdded() {
   margin: 0;
   padding: var(--td-comp-paddingTB-s, 12px) var(--td-comp-paddingLR-l, 16px);
   border-radius: var(--td-radius-medium, 6px);
-  background: var(--td-bg-color-container-hover, #f3f3f3);
+  background: var(--td-bg-color-page);
   color: var(--td-text-color-secondary);
   font-size: var(--td-font-size-body-small, 13px);
   line-height: 20px;

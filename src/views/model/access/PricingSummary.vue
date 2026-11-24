@@ -11,6 +11,10 @@
         <t-tooltip v-for="period in price.time_periods" :key="period.id" placement="top">
           <template #content>
             <div>{{ period.is_fallback ? t('ma.fallbackHelp') : t('ma.timezone') }}</div>
+            <template v-if="!period.is_fallback">
+              <div>{{ t('ma.timezoneSource') }}</div>
+              <div>{{ t('ma.periodMatchHelp') }}</div>
+            </template>
             <div v-for="(condition, index) in period.conditions" :key="index">
               {{ condition.weekdays.map(weekday).join('、') }} {{ condition.start }}–{{
                 condition.end
@@ -45,7 +49,7 @@ const weekday = (day: number) =>
 .pricing-summary {
   border: 1px solid var(--td-component-stroke);
   border-radius: var(--td-radius-medium);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   padding: var(--td-comp-paddingTB-m) var(--td-comp-paddingLR-m);
   min-width: 0;
 }

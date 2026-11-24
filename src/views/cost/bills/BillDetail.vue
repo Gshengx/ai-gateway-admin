@@ -454,7 +454,7 @@ watch(locale, reset)
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--td-comp-margin-l);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
   border-radius: var(--td-radius-medium);
 }

@@ -234,7 +234,7 @@ h3 {
   flex-wrap: wrap;
   gap: var(--td-comp-margin-l);
   padding: var(--td-comp-paddingTB-s) var(--td-comp-paddingLR-s);
-  background: var(--td-bg-color-secondarycontainer);
+  background: var(--td-bg-color-page);
 }
 :deep(.t-input-number),
 :deep(.t-select__wrap) {
