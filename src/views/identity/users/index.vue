@@ -782,7 +782,6 @@ const columns = computed<PrimaryTableCol<UserItem>[]>(() => [
   { colKey: 'phone', title: t('users.columns.phone'), width: 140 },
   { colKey: 'department', title: t('users.columns.department'), width: 160, ellipsis: true },
   { colKey: 'groups', title: t('users.columns.groups'), width: 130 },
-  { colKey: 'projects', title: t('projects.project'), width: 160 },
   { colKey: 'role', title: t('users.columns.role'), width: 120 },
   { colKey: 'status', title: t('users.columns.status'), width: 100 },
   { colKey: 'last_login_at', title: t('users.columns.lastLogin'), width: 170 },
