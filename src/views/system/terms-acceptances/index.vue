@@ -82,7 +82,7 @@ import {
   type TermsAcceptanceQuery,
 } from '@/api/modules/terms'
 import { useLatestRequest } from '@/utils/useLatestRequest'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime, parseDateTimeInTimeZone } from '@/utils/datetime'
 const { t, locale } = useI18n()
 const draft = reactive({ search: '', user_id: '', terms_id: '' })
 const dates = ref<string[]>([])
@@ -159,12 +159,10 @@ function search() {
     filterError.value = t('termsAudit.invalidId')
     return
   }
-  const range = dates.value.map((value) => new Date(value.replace(' ', 'T')))
+  const range = dates.value.map(parseDateTimeInTimeZone)
   if (
     range.length &&
-    (range.length !== 2 ||
-      range.some((value) => Number.isNaN(value.getTime())) ||
-      range[0]! > range[1]!)
+    (range.length !== 2 || range.some((value) => !value) || range[0]! > range[1]!)
   ) {
     filterError.value = t('termsAudit.invalidRange')
     return

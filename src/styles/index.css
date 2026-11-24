@@ -6,6 +6,8 @@
   --model-access-table-width: 1420px;
   /* 模型列表说明弹层：完整原因换行展示，避免长文本超出窄窗口。 */
   --model-status-explanation-width: 320px;
+  /* 2026-11-24 用户要求计费时区提示更宽，常规窗口完整展示单句说明；TDesign 无对应业务宽度 token。 */
+  --pricing-timezone-help-width: 480px;
   /* 状态流程说明按视口限制高度，完整中英文说明在浮层内滚动。 */
   --model-status-flow-max-height: 55dvh;
   /* 长弹窗正文最多占视口六成，保留标题、操作区及上下留白；无对应 TDesign 业务高度 token。 */

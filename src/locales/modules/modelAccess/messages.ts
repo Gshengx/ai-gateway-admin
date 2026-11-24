@@ -1053,10 +1053,6 @@ const labels: Record<string, [string, string]> = {
     '所有时段均按北京时间生效，以请求开始时间匹配价格。',
     'All periods use Beijing time. The request start time determines the price.',
   ],
-  timezoneDisplayHelp: [
-    '个人时区只影响页面时间显示，不改变计费时区或价格时段。',
-    'Your personal time zone only changes displayed timestamps, not the billing time zone or pricing periods.',
-  ],
   periodRulesHelp: [
     '同一时段满足任一条件即生效；未匹配时使用兜底价格；条件不可重叠，跨午夜请拆分。',
     'Any matching condition activates a period; otherwise the fallback price applies. Conditions must not overlap; split overnight ranges.',

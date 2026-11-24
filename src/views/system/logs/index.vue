@@ -324,7 +324,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type TableProps, type PageInfo } from 'tdesign-vue-next'
 import { DownloadIcon, SettingIcon } from 'tdesign-icons-vue-next'
 import FilterBar from '@/components/FilterBar.vue'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime, getDateRangeInTimeZone, getTimeZone } from '@/utils/datetime'
 import { copyText } from '@/utils/clipboard'
 import {
   getManagementLogs,
@@ -391,12 +391,13 @@ const nodeOptions = computed(() => [
   { value: '', label: t('logs.allNodes') },
   ...options.value.nodes,
 ])
+const customWindow = computed(() => getDateRangeInTimeZone(filters.start, filters.end))
 const dateError = computed(() =>
   filters.range !== 'custom'
     ? ''
     : !filters.start || !filters.end
       ? t('logs.selectDates')
-      : filters.start > filters.end
+      : !customWindow.value
         ? t('logs.invalidDates')
         : '',
 )
@@ -474,13 +475,8 @@ function notify(error: unknown) {
 }
 function setWindow() {
   if (filters.range === 'custom') {
-    if (dateError.value) return
-    const end = new Date(`${filters.end}T00:00:00`)
-    end.setDate(end.getDate() + 1)
-    windowBounds.value = {
-      from: new Date(`${filters.start}T00:00:00`).toISOString(),
-      to: end.toISOString(),
-    }
+    if (dateError.value || !customWindow.value) return
+    windowBounds.value = customWindow.value
   } else {
     const end = new Date()
     const hours = filters.range === 'hour' ? 1 : filters.range === 'week' ? 168 : 24
@@ -534,7 +530,7 @@ async function load() {
   }
 }
 let timer: ReturnType<typeof setTimeout> | undefined
-watch(filters, () => {
+watch([filters, () => (filters.range === 'custom' ? getTimeZone() : '')], () => {
   loading.value = true
   failed.value = false
   clearTimeout(timer)

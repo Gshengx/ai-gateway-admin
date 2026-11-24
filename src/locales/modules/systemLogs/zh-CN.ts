@@ -70,7 +70,7 @@ const messages = {
   cancel: '取消',
   saved: '日志保留配置已保存',
   selectDates: '请选择开始日期和结束日期',
-  invalidDates: '开始日期不能晚于结束日期',
+  invalidDates: '请选择个人时区下有效的日期范围，开始日期不能晚于结束日期',
   emptyOperation: '没有符合条件的操作日志，请调整筛选条件',
   emptyRuntime: '没有符合条件的系统运行日志，请调整筛选条件',
   loadFailed: '日志加载失败，请重试',

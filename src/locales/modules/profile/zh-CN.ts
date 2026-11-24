@@ -9,6 +9,7 @@ export default {
     role: '角色',
     language: '语言偏好（可在顶部切换）',
     time_zone: '时区',
+    timeZoneHelp: '页面时间和时间筛选使用此时区，不改变实际发生时间、计费时区或价格时段。',
     createdAt: '创建时间',
     updatedAt: '更新时间',
     required: '请输入显示名称',

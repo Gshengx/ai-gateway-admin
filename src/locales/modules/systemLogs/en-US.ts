@@ -70,7 +70,7 @@ const messages = {
   cancel: 'Cancel',
   saved: 'Log retention settings saved',
   selectDates: 'Select a start and end date',
-  invalidDates: 'Start date must not be after end date',
+  invalidDates: 'Choose valid dates in your time zone, with the start no later than the end',
   emptyOperation: 'No matching operation logs. Adjust your filters.',
   emptyRuntime: 'No matching runtime logs. Adjust your filters.',
   loadFailed: 'Could not load logs. Please retry.',

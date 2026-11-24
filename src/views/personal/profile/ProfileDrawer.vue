@@ -28,6 +28,7 @@
             :key="field"
             :name="field"
             :label="t(`profile.${field}`)"
+            :help="field === 'time_zone' ? t('profile.timeZoneHelp') : undefined"
           >
             <t-input
               clearable

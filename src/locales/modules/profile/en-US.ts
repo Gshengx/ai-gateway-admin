@@ -9,6 +9,8 @@ export default {
     role: 'Role',
     language: 'Preferred language (change in header)',
     time_zone: 'Time zone',
+    timeZoneHelp:
+      'Used for displayed times and time filters. It does not change when events occurred, the billing time zone, or pricing periods.',
     createdAt: 'Created at',
     updatedAt: 'Updated at',
     required: 'Enter a display name',

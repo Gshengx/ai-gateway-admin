@@ -1,13 +1,19 @@
 <template>
   <div class="status-flow-guide">
-    <t-popup v-model:visible="visible" trigger="click" placement="bottom-right">
+    <t-popup
+      :visible="visible"
+      trigger="hover"
+      placement="bottom-right"
+      @visible-change="updateVisibility"
+    >
       <t-button
         class="status-flow-guide__trigger"
         theme="default"
         variant="text"
         :aria-expanded="visible"
         aria-controls="model-status-flow-guide"
-        @keydown.esc="visible = false"
+        @click="togglePinned"
+        @keydown.esc="closeOnEscape"
       >
         <template #icon><t-icon name="info-circle" /></template>
         {{ t('ma.statusFlowGuide') }}
@@ -17,7 +23,7 @@
           id="model-status-flow-guide"
           class="status-flow-guide__content"
           :aria-label="t('ma.statusFlowGuide')"
-          @keydown.esc="visible = false"
+          @keydown.esc="closeOnEscape"
         >
           <h4 class="status-flow-guide__title">{{ t('ma.statusFlowGuide') }}</h4>
           <div class="status-flow-guide__steps">
@@ -38,11 +44,11 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useInfoPopup } from '@/utils/useInfoPopup'
 
 const { t } = useI18n()
-const visible = ref(false)
+const { visible, updateVisibility, togglePinned, closeOnEscape } = useInfoPopup()
 const steps = ['DRAFT', 'statusFlowAdmission', 'PENDING_REVIEW', 'ACTIVE']
 const states = [
   { status: 'DRAFT', hint: 'draftFlowDescription' },

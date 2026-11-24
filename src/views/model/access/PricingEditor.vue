@@ -34,20 +34,28 @@
         </div>
         <div class="ma-row pricing-timezone">
           <strong>{{ t('ma.timezone') }}</strong>
-          <t-popup trigger="click" placement="bottom-left" show-arrow>
+          <t-popup
+            :visible="timezoneHelpVisible"
+            trigger="hover"
+            placement="bottom-left"
+            show-arrow
+            @visible-change="updateTimezoneHelp"
+          >
             <t-button
               variant="text"
               theme="default"
               shape="square"
               size="small"
               :aria-label="t('ma.timezoneHelp')"
+              :aria-expanded="timezoneHelpVisible"
+              @click="toggleTimezoneHelp"
+              @keydown.esc="closeTimezoneHelpOnEscape"
             >
               <t-icon name="info-circle" />
             </t-button>
             <template #content>
-              <div class="pricing-timezone-help">
+              <div class="pricing-timezone-help" @keydown.esc="closeTimezoneHelpOnEscape">
                 <p>{{ t('ma.periodMatchHelp') }}</p>
-                <p>{{ t('ma.timezoneDisplayHelp') }}</p>
                 <p class="ma-muted">{{ t('ma.timezoneSource') }}</p>
               </div>
             </template>
@@ -248,6 +256,13 @@ import { type Pricing, type Period } from '@/api/modules/modelAccess'
 import { pricingError, periodsError, validatePeriods } from '@/utils/modelPricing'
 import { isDecimal } from '@/utils/modelContract'
 import { metricLabel, unitLabel } from './helpers'
+import { useInfoPopup } from '@/utils/useInfoPopup'
+const {
+  visible: timezoneHelpVisible,
+  updateVisibility: updateTimezoneHelp,
+  togglePinned: toggleTimezoneHelp,
+  closeOnEscape: closeTimezoneHelpOnEscape,
+} = useInfoPopup()
 const props = defineProps<{
   defaultPrice?: Pricing
   loadDefault?: () => Promise<Pricing | undefined | null>
