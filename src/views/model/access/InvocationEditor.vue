@@ -200,9 +200,7 @@ watch(
         .map((protocol) => makeRow(protocol, defaultPaths[protocol] ?? '')),
       ...configuration.custom_invocation_apis.map((api) =>
         makeRow(
-          api.invocation_api === 'CUSTOM_PASSTHROUGH' || !api.invocation_api
-            ? 'CUSTOM'
-            : api.invocation_api,
+          api.invocation_api === 'CUSTOM_PASSTHROUGH' ? 'CUSTOM' : api.invocation_api,
           api.path,
           api.id,
         ),

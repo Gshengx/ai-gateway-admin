@@ -24,7 +24,7 @@
     </div>
     <LoadingState :loading="loading" :failed="loadFailed" retryable @retry="loadModel"
       ><t-tabs ref="tabsRef" v-model="tab" class="drawer-tabs">
-        <t-tab-panel value="basic" :label="t('ma.basic')"
+        <t-tab-panel :destroy-on-hide="false" value="basic" :label="t('ma.basic')"
           ><t-form
             :data="model"
             class="ma-form ma-section"

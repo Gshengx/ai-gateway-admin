@@ -421,7 +421,6 @@
 }
 .pricing-timezone-help {
   display: grid;
-  gap: var(--td-comp-margin-s);
   max-width: min(var(--pricing-timezone-help-width), calc(100vw - 2 * var(--td-comp-margin-l)));
   white-space: normal;
 }
