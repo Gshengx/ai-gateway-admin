@@ -47,7 +47,7 @@ async function retryPermissions() {
   try {
     if (!userStore.contextLoaded) await userStore.loadContext()
     await userStore.fetchUserInfo()
-    const target = window.location.hash.slice(1) || '/'
+    const target = router.options.history.location || '/'
     await router.replace(target.startsWith('/login') ? '/' : target)
   } catch {
     /* Error and retry remain visible. */

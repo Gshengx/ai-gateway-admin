@@ -126,7 +126,7 @@ async function rejectResponse(response?: AxiosResponse, config?: RequestConfig):
   throw error
 }
 
-/** 登录失效：清理本地会话并跳登录页，reload 以卸载已动态注册的路由 */
+/** 登录失效：清理本地会话并整页跳登录页，以卸载已动态注册的路由 */
 let redirecting = false
 async function handleUnauthorized(): Promise<void> {
   if (redirecting) return
@@ -135,14 +135,13 @@ async function handleUnauthorized(): Promise<void> {
   const { useUserStore } = await import('@/stores/modules/user')
   useUserStore().reset()
 
-  const { pathname, search, hash } = window.location
-  // hash 路由：当前业务路径在 hash 内，取其作为 redirect 便于登录后回跳
-  const current = hash.replace(/^#/, '') || '/'
-  const target = /^\/login(?:[?#]|$)/.test(current)
-    ? `${pathname}${search}#${current}`
-    : `${pathname}${search}#/login?redirect=${encodeURIComponent(current)}`
-  window.location.href = target
-  window.location.reload()
+  const { router } = await import('@/router')
+  // 从 History 地址保留业务路径、查询参数和锚点，登录后回到原页面。
+  const current = router.options.history.location || '/'
+  const target = router.resolve(
+    /^\/login(?:[?#]|$)/.test(current) ? current : { path: '/login', query: { redirect: current } },
+  ).href
+  window.location.replace(target)
 }
 
 const instance: AxiosInstance = axios.create({

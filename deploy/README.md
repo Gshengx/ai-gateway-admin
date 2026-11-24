@@ -1,5 +1,13 @@
 # Linux 部署（Nginx HTTPS + Jenkins + K3s）
 
+## History 路由与页面回退
+
+前端使用 History 路由，登录页为 `https://10.22.116.88/login`，模型管理页为 `https://10.22.116.88/model/models`。直接访问或刷新子页面时，服务器须返回前端入口 `index.html`，再由 Vue Router 根据会话与权限处理页面。
+
+现有 [K3s Nginx 配置](k8s/ais-gateway.yaml) 已包含 `try_files $uri $uri/ /index.html`；`/assets/` 中不存在的资源返回 404。外层 [Nginx 配置](nginx.conf) 单独代理 `/api/` 到后端，其余前端路径交给 K3s 服务，保留现有 Jenkins、证书和 ACME 路由。
+
+更换部署方式时应保留页面回退，并避免将 API 错误或静态资源请求回退到 `index.html`。发布后应直接访问、刷新一个子页面，再验证登录回跳和浏览器前进后退；未登录时应进入带原路径 `redirect` 的登录页，而非服务器 404。
+
 ## Jenkins + 单节点 K3s 自动构建发布
 
 `setup-ci.sh` 在 CentOS 7 x86_64 虚拟机安装 K3s 与 Jenkins LTS，并创建
