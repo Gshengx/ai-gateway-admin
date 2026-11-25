@@ -255,9 +255,12 @@
           ><template #status="{ row }">{{ label(row.status) }}</template
           ><template #count="{ row }">{{ row.suggestions.length }}</template
           ><template #operations="{ row }"
-            ><t-space
-              ><t-link theme="primary" @click="openTask(row)">{{ label('view') }}</t-link
+            ><t-space size="small" class="table-row-actions"
+              ><t-link hover="color" theme="primary" @click="openTask(row)">{{
+                label('view')
+              }}</t-link
               ><t-link
+                hover="color"
                 v-permission.write="'security.dataControl'"
                 theme="danger"
                 @click="pendingDelete = row.id"

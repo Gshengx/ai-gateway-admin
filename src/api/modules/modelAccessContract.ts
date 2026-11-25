@@ -976,7 +976,6 @@ export interface ProviderCreate {
 export interface ProviderUpdate {
   expected_version: number
   name: string
-  template_key: string
   base_url: string
   security_level: 'INTERNET' | 'TRUSTED_CLOUD' | 'PRIVATE'
   public_config: ProviderPublicConfig
@@ -984,7 +983,6 @@ export interface ProviderUpdate {
   clear_secret_fields?: Array<string>
   notes?: string | null
   balance_config?: BalanceConfigInput
-  template_version_id: string
 }
 
 export interface BalanceConfigUpdate {

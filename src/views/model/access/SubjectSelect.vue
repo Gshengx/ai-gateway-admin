@@ -99,6 +99,7 @@ import { useDepartmentCache } from '@/utils/useDepartmentCache'
 import { revealDepartmentSelection } from '@/utils/revealDepartmentSelection'
 const props = defineProps<{
   purpose?: 'balance'
+  useCase?: 'MODEL_DETAIL'
   providerId?: string
   type: Subject
   labels?: Record<string, string>
@@ -179,7 +180,9 @@ const display = computed(() =>
     (id) => names.value[id] ?? props.labels?.[id] ?? props.unresolvedLabel ?? t('ma.unavailable'),
   ),
 )
-const pageSize = 5
+const pageSize = computed(() =>
+  props.type === 'USER_GROUP' && props.useCase === 'MODEL_DETAIL' ? 20 : 5,
+)
 async function getDepartmentListApi(
   params: { parent_id?: string; search?: string } = {},
   signal?: AbortSignal,
@@ -308,7 +311,7 @@ async function load() {
     } else {
       const params = {
         page: page.value,
-        page_size: pageSize,
+        page_size: pageSize.value,
         search: keyword.value || undefined,
         ...(props.type === 'USER' ? { department_id: department.value || undefined } : {}),
       }
@@ -332,6 +335,9 @@ async function load() {
                 q: params.search,
                 department_id: 'department_id' in params ? params.department_id : undefined,
                 subject_type: props.type,
+                ...(props.type === 'USER_GROUP' && props.useCase === 'MODEL_DETAIL'
+                  ? { use_case: props.useCase }
+                  : {}),
               },
             })
       if (!request.isCurrent()) return
@@ -434,7 +440,7 @@ watch(popupVisible, (visible) => {
 watch(locale, () => {
   if (popupVisible.value) query()
 })
-watch(() => [props.type, props.purpose, props.providerId], departmentCache.clear)
+watch(() => [props.type, props.purpose, props.providerId, props.useCase], departmentCache.clear)
 watch(locked, () => {
   selection.value = selection.value.filter((id) => !locked.value.has(id))
 })

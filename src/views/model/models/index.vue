@@ -1,79 +1,86 @@
 <template>
-  <section ref="actionTableRoot" class="panel identity-list-panel model-list-panel ma-stack">
-    <LoadingState
-      height="var(--td-comp-size-xxxl)"
-      :loading="tabsLoading"
-      :failed="tabsFailed"
-      retryable
-      @retry="loadAll"
-    >
-      <ProviderTabs
-        v-model="providerId"
-        :providers="providers"
-        :total="modelTotal"
-        @change="selectProvider"
-      />
-    </LoadingState>
-    <FilterBar class="ma-filter"
-      ><template #content
-        ><div class="list-toolbar">
-          <t-input
-            v-model="search"
-            class="list-search"
-            :placeholder="t('ma.search')"
-            clearable
-          /><t-select
-            clearable
-            v-model="status"
-            class="list-filter"
-            :options="[
-              { value: '', label: t('ma.allStatus') },
-              ...statuses.map((v) => ({ value: v, label: t('ma.' + v) })),
-            ]"
-          />
-          <t-button theme="default" @click="reset">{{ t('ma.reset') }}</t-button>
-        </div></template
-      ></FilterBar
-    >
-    <div class="model-list-toolbar">
-      <div class="ma-row model-list-toolbar__actions">
-        <t-button
-          theme="primary"
-          v-permission.write="'model.models'"
-          :disabled="tabsLoading || tabsFailed"
-          @click="
-            () => {
-              editingId = ''
-              formVisible = true
-            }
-          "
-          ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
-        >
-        <t-button
-          v-permission.write="'model.models'"
-          class="list-action-soft"
-          theme="primary"
-          :disabled="!canBatchAuthorize"
-          @click="
-            authorization = {
-              models: selectedItems,
-              batch: true,
-            }
-          "
-          >{{ t('ma.batchGrant') }}</t-button
-        >
-        <span v-if="selected.length" class="ma-muted">{{
-          t('common.selected', { n: selected.length })
-        }}</span>
-        <t-button v-if="selected.length" variant="text" size="small" @click="clearSelection">
-          {{ t('common.clearSelection') }}
-        </t-button>
+  <section
+    data-list-region
+    ref="actionTableRoot"
+    class="panel identity-list-panel model-list-panel ma-stack page-table-layout"
+  >
+    <div class="page-table-controls">
+      <LoadingState
+        height="var(--td-comp-size-xxxl)"
+        :loading="tabsLoading"
+        :failed="tabsFailed"
+        retryable
+        @retry="loadAll"
+      >
+        <ProviderTabs
+          v-model="providerId"
+          :providers="providers"
+          :total="modelTotal"
+          @change="selectProvider"
+        />
+      </LoadingState>
+      <FilterBar class="ma-filter"
+        ><template #content
+          ><div class="list-toolbar">
+            <t-input
+              v-model="search"
+              class="list-search"
+              :placeholder="t('ma.search')"
+              clearable
+            /><t-select
+              clearable
+              v-model="status"
+              class="list-filter"
+              :options="[
+                { value: '', label: t('ma.allStatus') },
+                ...statuses.map((v) => ({ value: v, label: t('ma.' + v) })),
+              ]"
+            />
+            <t-button theme="default" @click="reset">{{ t('ma.reset') }}</t-button>
+          </div></template
+        ></FilterBar
+      >
+      <div class="model-list-toolbar">
+        <div class="ma-row model-list-toolbar__actions">
+          <t-button
+            theme="primary"
+            v-permission.write="'model.models'"
+            :disabled="tabsLoading || tabsFailed"
+            @click="
+              () => {
+                editingId = ''
+                formVisible = true
+              }
+            "
+            ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
+          >
+          <t-button
+            v-permission.write="'model.permissions'"
+            class="list-action-soft"
+            theme="primary"
+            :disabled="!canBatchAuthorize"
+            @click="
+              authorization = {
+                models: selectedItems,
+                batch: true,
+              }
+            "
+            >{{ t('ma.batchGrant') }}</t-button
+          >
+          <span v-if="selected.length" class="ma-muted">{{
+            t('common.selected', { n: selected.length })
+          }}</span>
+          <t-button v-if="selected.length" variant="text" size="small" @click="clearSelection">
+            {{ t('common.clearSelection') }}
+          </t-button>
+        </div>
+        <StatusFlowGuide />
       </div>
-      <StatusFlowGuide />
     </div>
     <t-table
-      height="var(--stable-table-height)"
-      class="ma-table"
+      :ref="setTableRoot"
+      :height="tableHeight"
+      class="ma-table page-table-list"
       table-layout="fixed"
       table-content-width="max(100%, var(--model-access-table-width))"
       row-key="id"
@@ -184,6 +191,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingState from '@/components/LoadingState.vue'
@@ -211,6 +219,8 @@ import TestDialog from '../access/TestDialog.vue'
 import AuthorizationDrawer from '../access/AuthorizationDrawer.vue'
 import BatchAuthorizationDialog from '../access/BatchAuthorizationDialog.vue'
 import { useActionColumnWidth } from '../access/useActionColumnWidth'
+const { tableHeight, setTableRoot } = useTableViewport()
+
 const { t, locale } = useI18n()
 const user = useUserStore()
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth()
@@ -288,7 +298,7 @@ function rowActions(model: ModelListItem): RowAction[] {
   ) => actions.push({ label: t('ma.' + label), permission, run, danger, overflow })
   add(
     'authorize',
-    'model.models',
+    'model.permissions',
     () => {
       authorization.value = { models: [model], batch: false }
     },

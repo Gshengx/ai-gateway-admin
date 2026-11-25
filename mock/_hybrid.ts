@@ -3,10 +3,11 @@ import type { RespThisType } from 'vite-plugin-mock'
 import type { AuthContext, PermissionsResult } from '../src/api/modules/auth'
 import type { ApiResult } from '../src/api/types'
 import expenseRoutes from './expenses'
-import { directory, runtimeState, hybridRequests } from './_runtime'
+import billRoutes from './costBills'
+import { directory, hybridRequests } from './_runtime'
 import { fail, type MockMethod, type MockRequest } from './_utils'
 
-const localRoutes = [...expenseRoutes]
+const localRoutes = [...expenseRoutes, ...billRoutes]
 function match(route: MockMethod, pathname: string, method: string) {
   if (String(route.method ?? 'get').toLowerCase() !== method.toLowerCase()) return false
   if (typeof route.url !== 'string') return false
@@ -55,17 +56,6 @@ async function realGet<T>(
   return (await response.json()) as ApiResult<T>
 }
 
-function translateDepartment(value: unknown, from: string, to: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => translateDepartment(item, from, to))
-  if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      key === 'department_id' && item === from ? to : translateDepartment(item, from, to),
-    ]),
-  )
-}
-
 export async function handleHybridRequest(
   incoming: IncomingMessage,
   res: ServerResponse,
@@ -73,6 +63,7 @@ export async function handleHybridRequest(
 ): Promise<boolean> {
   const url = new URL(incoming.url ?? '/', 'http://localhost')
   const pathname = url.pathname
+  if (!pathname.startsWith('/api/v1/cost/')) return false
   const method = incoming.method ?? 'GET'
   const request: MockRequest = {
     url: incoming.url,
@@ -82,7 +73,6 @@ export async function handleHybridRequest(
   // Only modules without published backend APIs are handled locally.
   const route = localRoutes.find((candidate) => match(candidate, pathname, method))
   if (!route) return false
-  runtimeState('hybridMode', () => true)
 
   const context = await realGet<AuthContext>(target, '/api/v1/auth/context', incoming)
   if (context.code !== 'OK') {
@@ -103,8 +93,7 @@ export async function handleHybridRequest(
     id: session.user_id,
     username: session.username,
     display_name: session.display_name,
-    // The mock realm has its own organization; never mutate real identity data.
-    department_id: 'd-root',
+    department_id: original.data.department_scope_root_id,
     role_id: null,
     status: 'ACTIVE',
     last_login_at: null,
@@ -120,11 +109,8 @@ export async function handleHybridRequest(
     await route.rawResponse.call({ req: incoming, res } as RespThisType, incoming, res)
   else if (route?.response) {
     if (method !== 'GET') request.body = await bodyOf(incoming)
-    const root = original.data.department_scope_root_id
-    request.body = translateDepartment(request.body, root, 'd-root') as MockRequest['body']
-    request.query = translateDepartment(request.query, root, 'd-root') as MockRequest['query']
     const result = await route.response.call({ req: incoming, res } as RespThisType, request)
-    send(res, translateDepartment(result, 'd-root', root))
+    send(res, result)
   }
   return true
 }

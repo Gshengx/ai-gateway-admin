@@ -133,7 +133,7 @@
     </t-dialog>
 
     <add-members-dialog
-      v-if="group"
+      v-if="group && canWrite"
       v-model:visible="addVisible"
       :group-id="group.id"
       @added="onMembersAdded"
@@ -170,7 +170,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const loadMemberDepartments = useMemberDepartments()
+const loadMemberDepartments = useMemberDepartments(() => props.group?.id)
 const userStore = useUserStore()
 
 let memberRequest = 0

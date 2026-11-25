@@ -1,68 +1,74 @@
 <template>
-  <t-card :bordered="false">
-    <FilterBar @search="search" @reset="reset">
-      <template #content>
-        <div class="list-toolbar">
-          <t-input
-            v-model="draft.search"
-            class="list-search"
-            :maxlength="128"
-            :placeholder="t('termsAudit.searchPlaceholder')"
-            :aria-label="t('termsAudit.searchPlaceholder')"
-            clearable
-            @enter="search"
-          />
-          <t-input
-            v-model="draft.user_id"
-            class="list-search"
-            :maxlength="36"
-            :placeholder="t('termsAudit.userId')"
-            :aria-label="t('termsAudit.userId')"
-            clearable
-            @enter="search"
-          />
-          <t-input
-            v-model="draft.terms_id"
-            class="list-search"
-            :maxlength="36"
-            :placeholder="t('termsAudit.termsId')"
-            :aria-label="t('termsAudit.termsId')"
-            clearable
-            @enter="search"
-          />
-          <t-date-range-picker
-            v-model="dates"
-            enable-time-picker
-            format="YYYY-MM-DD HH:mm:ss"
-            :placeholder="[t('termsAudit.from'), t('termsAudit.to')]"
-            clearable
-          />
-          <t-button @click="search">{{ t('common.search') }}</t-button>
-          <t-button theme="default" variant="base" @click="reset">{{ t('common.reset') }}</t-button>
-        </div>
-      </template>
-    </FilterBar>
-    <t-alert v-if="filterError" theme="warning" :message="filterError" class="audit-feedback" />
-    <t-alert v-if="failed" theme="error" :message="t('common.loadFailed')" class="audit-feedback">
-      <template #operation
-        ><t-link @click="load">{{ t('common.retry') }}</t-link></template
-      >
-    </t-alert>
+  <t-card data-list-region :bordered="false" body-class-name="page-table-layout">
+    <div class="page-table-controls">
+      <FilterBar @search="search" @reset="reset">
+        <template #content>
+          <div class="list-toolbar">
+            <t-input
+              v-model="draft.search"
+              class="list-search"
+              :maxlength="128"
+              :placeholder="t('termsAudit.searchPlaceholder')"
+              :aria-label="t('termsAudit.searchPlaceholder')"
+              clearable
+              @enter="search"
+            />
+            <t-input
+              v-model="draft.user_id"
+              class="list-search"
+              :maxlength="36"
+              :placeholder="t('termsAudit.userId')"
+              :aria-label="t('termsAudit.userId')"
+              clearable
+              @enter="search"
+            />
+            <t-input
+              v-model="draft.terms_id"
+              class="list-search"
+              :maxlength="36"
+              :placeholder="t('termsAudit.termsId')"
+              :aria-label="t('termsAudit.termsId')"
+              clearable
+              @enter="search"
+            />
+            <t-date-range-picker
+              v-model="dates"
+              enable-time-picker
+              format="YYYY-MM-DD HH:mm:ss"
+              :placeholder="[t('termsAudit.from'), t('termsAudit.to')]"
+              clearable
+            />
+            <t-button @click="search">{{ t('common.search') }}</t-button>
+            <t-button theme="default" variant="base" @click="reset">{{
+              t('common.reset')
+            }}</t-button>
+          </div>
+        </template>
+      </FilterBar>
+      <t-alert v-if="filterError" theme="warning" :message="filterError" class="audit-feedback" />
+      <t-alert v-if="failed" theme="error" :message="t('common.loadFailed')" class="audit-feedback">
+        <template #operation
+          ><t-link @click="load">{{ t('common.retry') }}</t-link></template
+        >
+      </t-alert>
+    </div>
     <t-table
+      :ref="setTableRoot"
       row-key="id"
       :data="rows"
       :columns="columns"
       :loading="loading"
       :pagination="pagination"
       :empty="failed ? t('common.loadFailed') : t('termsAudit.empty')"
-      height="var(--stable-table-height)"
+      :height="tableHeight"
       hover
       @page-change="changePage"
+      class="page-table-list"
     >
       <template #accepted_at="{ row }">{{ formatDateTime(row.accepted_at) }}</template>
       <template #department="{ row }">{{ departmentPath(row) }}</template>
       <template #action="{ row }"
-        ><t-link theme="primary" @click="selectedId = row.id">{{
+        ><t-link hover="color" theme="primary" @click="selectedId = row.id">{{
           t('termsAudit.view')
         }}</t-link></template
       >
@@ -71,6 +77,7 @@
   </t-card>
 </template>
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PrimaryTableCol } from 'tdesign-vue-next'
@@ -83,6 +90,8 @@ import {
 } from '@/api/modules/terms'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { formatDateTime, parseDateTimeInTimeZone } from '@/utils/datetime'
+const { tableHeight, setTableRoot } = useTableViewport()
+
 const { t, locale } = useI18n()
 const draft = reactive({ search: '', user_id: '', terms_id: '' })
 const dates = ref<string[]>([])

@@ -1,23 +1,26 @@
 <template>
-  <t-card :bordered="false">
-    <div class="table-toolbar">
-      <t-button v-permission="'identity.roles:write'" @click="open('create')">{{
-        t('roles.create')
-      }}</t-button>
-      <t-input
-        v-model="search"
-        autocomplete="off"
-        name="role-list-filter"
-        class="toolbar-search"
-        :maxlength="128"
-        :placeholder="t('roles.search')"
-        clearable
-      />
+  <t-card data-list-region :bordered="false" body-class-name="page-table-layout">
+    <div class="page-table-controls">
+      <div class="table-toolbar">
+        <t-button v-permission="'identity.roles:write'" @click="open('create')">{{
+          t('roles.create')
+        }}</t-button>
+        <t-input
+          v-model="search"
+          autocomplete="off"
+          name="role-list-filter"
+          class="toolbar-search"
+          :maxlength="128"
+          :placeholder="t('roles.search')"
+          clearable
+        />
+      </div>
     </div>
-    <div ref="actionTableRoot">
+    <div ref="actionTableRoot" class="page-table-list page-table-list--external-footer">
       <t-table
+        :ref="setTableRoot"
         class="identity-action-table"
-        height="var(--stable-table-height)"
+        :height="tableHeight"
         row-key="id"
         table-layout="fixed"
         :table-content-width="tableContentWidth"
@@ -38,17 +41,22 @@
         }}</template>
         <template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template>
         <template #action="{ row }">
-          <t-space class="identity-table-actions">
-            <t-link theme="primary" @click="open(row.is_builtin ? 'view' : 'edit', row)">{{
-              t(row.is_builtin ? 'roles.view' : 'roles.edit')
-            }}</t-link>
+          <t-space size="small" class="identity-table-actions table-row-actions">
             <t-link
+              hover="color"
+              theme="primary"
+              @click="open(row.is_builtin ? 'view' : 'edit', row)"
+              >{{ t(row.is_builtin ? 'roles.view' : 'roles.edit') }}</t-link
+            >
+            <t-link
+              hover="color"
               v-permission.write="'identity.roles'"
               theme="primary"
               @click="open('copy', row)"
               >{{ t('roles.copy') }}</t-link
             >
             <t-link
+              hover="color"
               v-if="!row.is_builtin"
               v-permission="'identity.roles:write'"
               theme="danger"
@@ -59,19 +67,21 @@
         </template>
       </t-table>
     </div>
-    <t-pagination
-      :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
-      class="role-pagination"
-      :current="page"
-      :page-size="pageSize"
-      :total="paginationTotal"
-      :page-size-options="[10, 20, 50]"
-      :show-jumper="false"
-      :show-page-number="true"
-      :show-total="false"
-      :disabled="loading"
-      @change="changePage"
-    />
+    <div class="page-table-pagination">
+      <t-pagination
+        :class="{ 'stable-pagination--pending': (loading || listFailed) && !items.length }"
+        class="role-pagination"
+        :current="page"
+        :page-size="pageSize"
+        :total="paginationTotal"
+        :page-size-options="[10, 20, 50]"
+        :show-jumper="false"
+        :show-page-number="true"
+        :show-total="false"
+        :disabled="loading"
+        @change="changePage"
+      />
+    </div>
   </t-card>
 
   <t-drawer
@@ -193,7 +203,10 @@
 </template>
 
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { tableHeight, setTableRoot } = useTableViewport()
+
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
   cellSelector: '.identity-action-table .identity-action-cell',
   actionsSelector: '.identity-table-actions',
@@ -639,7 +652,7 @@ onMounted(() => {
   width: 280px;
 }
 .role-pagination {
-  margin-top: var(--td-comp-margin-m);
+  margin-top: 0;
 }
 :global(.permission-drawer .t-drawer__header) {
   font: var(--td-font-title-medium);

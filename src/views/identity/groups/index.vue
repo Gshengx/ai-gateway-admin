@@ -1,28 +1,30 @@
 <template>
-  <t-card :bordered="false">
-    <div class="table-toolbar">
-      <t-space>
-        <t-button v-permission="'identity.groups:write'" theme="primary" @click="onCreate">
-          <template #icon><t-icon name="add" /></template>
-          {{ t('groups.create') }}
-        </t-button>
-      </t-space>
-      <t-input
-        v-model="keyword"
-        name="group-list-filter"
-        autocomplete="off"
-        class="toolbar-search"
-        :placeholder="t('groups.searchPlaceholder')"
-        clearable
-      >
-        <template #prefix-icon><t-icon name="search" /></template>
-      </t-input>
+  <t-card data-list-region :bordered="false" body-class-name="page-table-layout">
+    <div class="page-table-controls">
+      <div class="table-toolbar">
+        <t-space>
+          <t-button v-permission="'identity.groups:write'" theme="primary" @click="onCreate">
+            <template #icon><t-icon name="add" /></template>
+            {{ t('groups.create') }}
+          </t-button>
+        </t-space>
+        <t-input
+          v-model="keyword"
+          name="group-list-filter"
+          autocomplete="off"
+          class="toolbar-search"
+          :placeholder="t('groups.searchPlaceholder')"
+          clearable
+        >
+          <template #prefix-icon><t-icon name="search" /></template>
+        </t-input>
+      </div>
     </div>
-
-    <div ref="actionTableRoot">
+    <div ref="actionTableRoot" class="page-table-list">
       <t-table
+        :ref="setTableRoot"
         class="identity-action-table"
-        height="var(--stable-table-height)"
+        :height="tableHeight"
         row-key="id"
         :data="tableData"
         :columns="columns"
@@ -60,7 +62,7 @@
           </span>
         </template>
         <template #action="{ row }">
-          <t-space class="identity-table-actions" :size="12">
+          <t-space size="small" class="identity-table-actions table-row-actions">
             <t-link theme="primary" hover="color" @click="onOpenMembers(row)">
               {{ t('groups.members') }}
             </t-link>
@@ -126,7 +128,10 @@
 </template>
 
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { tableHeight, setTableRoot } = useTableViewport()
+
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
   cellSelector: '.identity-action-table .identity-action-cell',
   actionsSelector: '.identity-table-actions',

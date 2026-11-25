@@ -1,83 +1,91 @@
 <template>
-  <t-card :bordered="false" class="managed-key-panel">
-    <FilterBar>
-      <template #content>
-        <div class="key-filters">
-          <t-input
-            v-model="filters.search"
-            autocomplete="off"
-            name="managed-key-filter"
-            class="managed-key-search"
-            clearable
-            :maxlength="128"
-            :placeholder="t('managedKeys.search')"
-            :disabled="busy"
-          />
-          <t-select
-            clearable
-            v-model="filters.status"
-            class="managed-key-status"
-            :options="statusOptions"
-            :disabled="busy"
-          />
-          <t-select
-            clearable
-            v-model="filters.control"
-            class="managed-key-access"
-            :options="accessOptions"
-            :disabled="busy"
-          />
-          <DepartmentTreeSelect
-            v-model="filters.department"
-            ref="departmentFilter"
-            :placeholder="t('managedKeys.allDepartments')"
-            :resolve-descendants="false"
-            class="managed-key-department"
-            :disabled="busy"
-          />
-          <t-button variant="base" theme="default" :disabled="busy" @click="resetFilters">{{
-            t('managedKeys.reset')
-          }}</t-button>
-        </div>
-      </template>
-    </FilterBar>
-    <t-space class="key-toolbar" align="center">
-      <t-button
-        v-permission.write="'identity.keys'"
-        variant="base"
-        class="list-action-soft"
-        theme="primary"
-        :disabled="loading || busy || !selectedItems.some((row) => row.status !== 'ACTIVE')"
-        @click="openOperation('enable')"
-        >{{ t('managedKeys.enable') }}</t-button
-      >
-      <t-button
-        v-permission.write="'identity.keys'"
-        variant="base"
-        class="list-action-soft"
-        theme="primary"
-        :disabled="loading || busy || !selectedItems.some((row) => row.status === 'ACTIVE')"
-        @click="openOperation('disable')"
-        >{{ t('managedKeys.disable') }}</t-button
-      >
-      <t-button
-        class="list-action-soft"
-        v-permission.write="'identity.keys'"
-        variant="base"
-        theme="danger"
-        :disabled="loading || busy || !selectedKeys.length"
-        @click="openOperation('delete')"
-        >{{ t('myKeys.delete') }}</t-button
-      >
-      <span>{{ t('common.selected', { n: selectedKeys.length }) }}</span>
-      <t-button v-if="selectedKeys.length" variant="text" size="small" @click="clearSelection">
-        {{ t('common.clearSelection') }}
-      </t-button>
-    </t-space>
-    <div ref="actionTableRoot">
+  <t-card
+    data-list-region
+    :bordered="false"
+    class="managed-key-panel"
+    body-class-name="page-table-layout"
+  >
+    <div class="page-table-controls">
+      <FilterBar>
+        <template #content>
+          <div class="key-filters">
+            <t-input
+              v-model="filters.search"
+              autocomplete="off"
+              name="managed-key-filter"
+              class="managed-key-search"
+              clearable
+              :maxlength="128"
+              :placeholder="t('managedKeys.search')"
+              :disabled="busy"
+            />
+            <t-select
+              clearable
+              v-model="filters.status"
+              class="managed-key-status"
+              :options="statusOptions"
+              :disabled="busy"
+            />
+            <t-select
+              clearable
+              v-model="filters.control"
+              class="managed-key-access"
+              :options="accessOptions"
+              :disabled="busy"
+            />
+            <DepartmentTreeSelect
+              v-model="filters.department"
+              ref="departmentFilter"
+              :placeholder="t('managedKeys.allDepartments')"
+              :resolve-descendants="false"
+              class="managed-key-department"
+              :disabled="busy"
+            />
+            <t-button variant="base" theme="default" :disabled="busy" @click="resetFilters">{{
+              t('managedKeys.reset')
+            }}</t-button>
+          </div>
+        </template>
+      </FilterBar>
+      <t-space class="key-toolbar" align="center">
+        <t-button
+          v-permission.write="'identity.keys'"
+          variant="base"
+          class="list-action-soft"
+          theme="primary"
+          :disabled="loading || busy || !selectedItems.some((row) => row.status !== 'ACTIVE')"
+          @click="openOperation('enable')"
+          >{{ t('managedKeys.enable') }}</t-button
+        >
+        <t-button
+          v-permission.write="'identity.keys'"
+          variant="base"
+          class="list-action-soft"
+          theme="primary"
+          :disabled="loading || busy || !selectedItems.some((row) => row.status === 'ACTIVE')"
+          @click="openOperation('disable')"
+          >{{ t('managedKeys.disable') }}</t-button
+        >
+        <t-button
+          class="list-action-soft"
+          v-permission.write="'identity.keys'"
+          variant="base"
+          theme="danger"
+          :disabled="loading || busy || !selectedKeys.length"
+          @click="openOperation('delete')"
+          >{{ t('myKeys.delete') }}</t-button
+        >
+        <span>{{ t('common.selected', { n: selectedKeys.length }) }}</span>
+        <t-button v-if="selectedKeys.length" variant="text" size="small" @click="clearSelection">
+          {{ t('common.clearSelection') }}
+        </t-button>
+      </t-space>
+    </div>
+    <div ref="actionTableRoot" class="page-table-list page-table-list--external-footer">
       <t-table
+        :ref="setTableRoot"
         class="identity-action-table"
-        height="var(--stable-table-height)"
+        :height="tableHeight"
         row-key="id"
         table-layout="fixed"
         table-content-width="max(100%, var(--managed-key-table-width))"
@@ -155,8 +163,9 @@
         }}</template>
         <template #last_used_ip="{ row }">{{ row.last_used_ip || '—' }}</template>
         <template #action="{ row }"
-          ><t-space class="identity-table-actions">
+          ><t-space size="small" class="identity-table-actions table-row-actions">
             <t-link
+              hover="color"
               v-permission.write="'identity.keys'"
               theme="primary"
               :disabled="busy || loading"
@@ -166,6 +175,7 @@
               }}</t-link
             >
             <t-link
+              hover="color"
               v-permission.write="'identity.keys'"
               theme="danger"
               :disabled="busy || loading"
@@ -206,7 +216,10 @@
 </template>
 
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { tableHeight, setTableRoot } = useTableViewport()
+
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
   cellSelector: '.identity-action-table .identity-action-cell',
   actionsSelector: '.identity-table-actions',

@@ -202,7 +202,7 @@ instance.interceptors.request.use(async (config) => {
   config.headers['Accept-Language'] = locale
   // 只有契约声明了 locale 的展示接口才能携带该查询参数。
   const localeQueryPath =
-    /^\/(?:me\/permissions|roles(?:\/[^/]+)?|assignable-roles|user-role-options|permission-resources(?:\/(?!registrable-options$)[^/]+)?|users(?:\/[^/]+)?|departments|groups(?:\/(?:initial-member-options|member-department-options|[^/]+(?:\/(?:member-options|members))?))?|api-keys(?:\/[^/]+)?|terms\/(?:current|required)|locales|audit\/(?:management|annotations|terms-acceptances))$/
+    /^\/(?:me\/permissions|roles(?:\/[^/]+)?|assignable-roles|user-role-options|permission-resources(?:\/(?!registrable-options$)[^/]+)?|users(?:\/[^/]+)?|departments|groups(?:\/(?:initial-member-options|member-department-options|[^/]+(?:\/(?:member-options|members|member-departments))?))?|api-keys(?:\/[^/]+)?|terms\/(?:current|required)|locales|audit\/(?:management|annotations|terms-acceptances))$/
   if (
     method === 'GET' &&
     !(config as RequestConfig).skipLocale &&

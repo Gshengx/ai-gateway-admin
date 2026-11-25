@@ -859,10 +859,6 @@ const labels: Record<string, [string, string]> = {
   configured: ['已配置', 'Configured'],
   unconfigured: ['未配置', 'Not configured'],
   keepSecret: ['已配置，留空保持原值', 'Configured; leave blank to keep'],
-  templateChange: [
-    '更换模板将重置 API 地址和认证信息，关联模型需要重新检测。',
-    'Changing template resets the API URL and credentials. Associated models require retesting.',
-  ],
   INTERNET: ['公网', 'Public Internet'],
   TRUSTED_CLOUD: ['可信云', 'Trusted cloud'],
   PRIVATE: ['私有网络', 'Private network'],

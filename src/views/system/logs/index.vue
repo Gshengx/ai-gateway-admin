@@ -1,130 +1,135 @@
 <template>
-  <section class="system-logs">
-    <div class="logs-heading">
-      <t-tabs v-model="tab" :theme="'normal'" :list="tabs" />
-      <t-button
-        class="list-action-soft"
-        v-permission.write="'system.settings'"
-        theme="primary"
-        variant="base"
-        @click="openConfig"
-      >
-        <template #icon><setting-icon /></template>{{ t('logs.config') }}
-      </t-button>
+  <section data-list-region class="system-logs page-table-layout">
+    <div class="page-table-controls">
+      <div class="logs-heading">
+        <t-tabs v-model="tab" :theme="'normal'" :list="tabs" />
+        <t-button
+          class="list-action-soft"
+          v-permission.write="'system.settings'"
+          theme="primary"
+          variant="base"
+          @click="openConfig"
+        >
+          <template #icon><setting-icon /></template>{{ t('logs.config') }}
+        </t-button>
+      </div>
+      <filter-bar class="logs-filter">
+        <template #content>
+          <div class="logs-filter-row">
+            <t-select
+              clearable
+              v-model="filters.range"
+              :options="ranges"
+              :aria-label="t('logs.timeRange')"
+            />
+            <template v-if="filters.range === 'custom'">
+              <t-date-picker
+                v-model="filters.start"
+                :placeholder="t('logs.start')"
+                :aria-label="t('logs.start')"
+                allow-input
+                clearable
+              />
+              <span>{{ t('logs.to') }}</span>
+              <t-date-picker
+                v-model="filters.end"
+                :placeholder="t('logs.end')"
+                :aria-label="t('logs.end')"
+                allow-input
+                clearable
+              />
+            </template>
+            <template v-if="tab === 'operation'">
+              <t-input
+                v-model="filters.actor"
+                class="logs-search"
+                :placeholder="t('logs.actorSearch')"
+                clearable
+              />
+              <t-select
+                v-model="filters.module"
+                clearable
+                :options="moduleOptions"
+                :placeholder="t('logs.allModules')"
+                :aria-label="t('logs.module')"
+              />
+              <t-select
+                v-model="filters.action"
+                clearable
+                :options="operationOptions"
+                :placeholder="t('logs.allOperations')"
+                :aria-label="t('logs.operation')"
+              />
+              <t-select
+                v-model="filters.resource_type"
+                clearable
+                :options="resourceOptions"
+                :placeholder="t('logs.allResources')"
+                :aria-label="t('logs.resourceType')"
+              />
+              <t-select
+                clearable
+                v-model="filters.outcome"
+                :options="outcomeOptions"
+                :aria-label="t('logs.outcome')"
+              />
+            </template>
+            <template v-else>
+              <t-select
+                v-model="filters.level"
+                clearable
+                :options="levelOptions"
+                :placeholder="t('logs.allLevels')"
+                :aria-label="t('logs.level')"
+              />
+              <t-select
+                v-model="filters.source"
+                clearable
+                :options="sourceOptions"
+                :placeholder="t('logs.allSources')"
+                :aria-label="t('logs.logSource')"
+              />
+              <t-select
+                clearable
+                v-model="filters.node_id"
+                :options="nodeOptions"
+                :aria-label="t('logs.node')"
+              />
+              <t-input
+                v-model="filters.keyword"
+                class="logs-search"
+                :placeholder="t('logs.messageSearch')"
+                clearable
+              />
+            </template>
+            <t-button theme="default" variant="base" @click="reset">{{ t('logs.reset') }}</t-button>
+            <t-button
+              v-if="tab === 'operation'"
+              v-permission.write="'audit.management'"
+              class="list-action-soft logs-export"
+              theme="primary"
+              variant="base"
+              :loading="exporting"
+              :disabled="!!dateError"
+              @click="exportLogs"
+            >
+              <template #icon><download-icon /></template>{{ t('logs.export') }}
+            </t-button>
+          </div>
+        </template>
+      </filter-bar>
+      <t-alert v-if="dateError" theme="warning" :message="dateError" />
+      <t-alert v-if="failed" theme="error" :message="t('logs.loadFailed')">
+        <template #operation
+          ><t-link @click="load">{{ t('logs.retry') }}</t-link></template
+        >
+      </t-alert>
     </div>
-    <filter-bar class="logs-filter">
-      <template #content>
-        <div class="logs-filter-row">
-          <t-select
-            clearable
-            v-model="filters.range"
-            :options="ranges"
-            :aria-label="t('logs.timeRange')"
-          />
-          <template v-if="filters.range === 'custom'">
-            <t-date-picker
-              v-model="filters.start"
-              :placeholder="t('logs.start')"
-              :aria-label="t('logs.start')"
-              allow-input
-              clearable
-            />
-            <span>{{ t('logs.to') }}</span>
-            <t-date-picker
-              v-model="filters.end"
-              :placeholder="t('logs.end')"
-              :aria-label="t('logs.end')"
-              allow-input
-              clearable
-            />
-          </template>
-          <template v-if="tab === 'operation'">
-            <t-input
-              v-model="filters.actor"
-              class="logs-search"
-              :placeholder="t('logs.actorSearch')"
-              clearable
-            />
-            <t-select
-              v-model="filters.module"
-              clearable
-              :options="moduleOptions"
-              :placeholder="t('logs.allModules')"
-              :aria-label="t('logs.module')"
-            />
-            <t-select
-              v-model="filters.action"
-              clearable
-              :options="operationOptions"
-              :placeholder="t('logs.allOperations')"
-              :aria-label="t('logs.operation')"
-            />
-            <t-select
-              v-model="filters.resource_type"
-              clearable
-              :options="resourceOptions"
-              :placeholder="t('logs.allResources')"
-              :aria-label="t('logs.resourceType')"
-            />
-            <t-select
-              clearable
-              v-model="filters.outcome"
-              :options="outcomeOptions"
-              :aria-label="t('logs.outcome')"
-            />
-          </template>
-          <template v-else>
-            <t-select
-              v-model="filters.level"
-              clearable
-              :options="levelOptions"
-              :placeholder="t('logs.allLevels')"
-              :aria-label="t('logs.level')"
-            />
-            <t-select
-              v-model="filters.source"
-              clearable
-              :options="sourceOptions"
-              :placeholder="t('logs.allSources')"
-              :aria-label="t('logs.logSource')"
-            />
-            <t-select
-              clearable
-              v-model="filters.node_id"
-              :options="nodeOptions"
-              :aria-label="t('logs.node')"
-            />
-            <t-input
-              v-model="filters.keyword"
-              class="logs-search"
-              :placeholder="t('logs.messageSearch')"
-              clearable
-            />
-          </template>
-          <t-button theme="default" variant="base" @click="reset">{{ t('logs.reset') }}</t-button>
-          <t-button
-            v-if="tab === 'operation'"
-            v-permission.write="'audit.management'"
-            class="list-action-soft logs-export"
-            theme="primary"
-            variant="base"
-            :loading="exporting"
-            :disabled="!!dateError"
-            @click="exportLogs"
-          >
-            <template #icon><download-icon /></template>{{ t('logs.export') }}
-          </t-button>
-        </div>
-      </template>
-    </filter-bar>
-    <t-alert v-if="dateError" theme="warning" :message="dateError" />
-    <t-alert v-if="failed" theme="error" :message="t('logs.loadFailed')">
-      <template #operation
-        ><t-link @click="load">{{ t('logs.retry') }}</t-link></template
-      >
-    </t-alert>
     <t-table
-      height="var(--stable-table-height)"
+      :ref="setTableRoot"
+      :height="tableHeight"
+      table-layout="fixed"
+      table-content-width="max(100%, var(--system-log-table-width))"
       :key="tab"
       :data="rows"
       :columns="columns"
@@ -140,6 +145,7 @@
       "
       @page-change="changePage"
       @row-click="onRowClick"
+      class="page-table-list"
     >
       <template #occurred_at="{ row }">{{ timestamp(row.occurred_at) }}</template>
       <template #actor="{ row }">{{ actor(row) }}</template>
@@ -317,6 +323,7 @@
 </template>
 
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { useUserLabels } from '@/utils/useUserLabels'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -341,6 +348,8 @@ import {
   type LogOptions,
 } from '@/api/modules/systemLogs'
 import type { NotifiedError } from '@/api/request'
+
+const { tableHeight, setTableRoot } = useTableViewport()
 
 const { t } = useI18n()
 const tab = ref('operation')
@@ -822,7 +831,9 @@ onBeforeUnmount(() => {
   overflow-x: auto;
 }
 .system-logs :deep(.t-table) {
-  min-width: var(--system-log-table-width);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 .system-logs :deep(.t-table tbody tr) {
   cursor: pointer;

@@ -27,7 +27,7 @@
             @click="emit('test', model, 'HEALTH')"
             >{{ t('ma.healthTitle') }}</t-button
           ><t-button
-            v-permission.write="'model.models'"
+            v-permission="'model.permissions'"
             theme="default"
             @click="authorizationVisible = true"
             >{{ t('ma.grants') }}</t-button

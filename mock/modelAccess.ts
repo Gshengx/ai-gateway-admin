@@ -1361,8 +1361,10 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
   if (op === 'P03' || op === 'P05') {
     const b = body as unknown as D.ProviderCreate & D.ProviderUpdate
     if (p) version(b.expected_version, p.version)
+    const templateKey = p?.template_key ?? b.template_key
+    const templateVersion = p?.template_version_id ?? b.template_version_id
     const t = templates.find(
-      (t) => t.key === b.template_key && t.template_version_id === b.template_version_id,
+      (t) => t.key === templateKey && t.template_version_id === templateVersion,
     )
     if (!t || (!t.enabled && t.template_version_id !== p?.template_version_id))
       throw issue('TEMPLATE_UNAVAILABLE')
@@ -1397,7 +1399,6 @@ function execute(op: string, req: MockRequest, ids: Record<string, string>): unk
     const changed =
       !p ||
       p.base_url !== b.base_url ||
-      p.template_version_id !== b.template_version_id ||
       JSON.stringify(p.public_config) !== JSON.stringify(b.public_config) ||
       Object.values(b.secrets ?? {}).some(Boolean) ||
       !!b.clear_secret_fields?.length

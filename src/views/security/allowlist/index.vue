@@ -76,13 +76,15 @@
             @change="askStatus(!row.enabled, [row.id])"
           /><span v-else>{{ label(row.enabled ? 'enabled' : 'disabled') }}</span></template
         ><template #operations="{ row }"
-          ><t-space
+          ><t-space size="small" class="table-row-actions"
             ><t-link
+              hover="color"
               v-permission.write="permission"
               theme="primary"
               @click="((editing = row), (formVisible = true))"
               >{{ label('edit') }}</t-link
             ><t-link
+              hover="color"
               v-permission.write="permission"
               theme="danger"
               @click="pending = { kind: 'delete', ids: [row.id] }"

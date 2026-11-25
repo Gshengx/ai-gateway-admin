@@ -1688,6 +1688,46 @@ export default auditedMock([
     },
   },
   {
+    url: '/api/v1/groups/:group_id/member-departments',
+    method: 'get',
+    response(this: RespThisType, req: MockRequest) {
+      if (!checkToken(req)) {
+        this.res.statusCode = 401
+        return unauthorized()
+      }
+      const account = mockAccounts.get(usernameFromToken(req) ?? '')
+      const capabilities =
+        account?.role === 'super_admin' ? CAPABILITIES : (mockRoles.get(account?.role ?? '') ?? [])
+      if (!capabilities.some((item) => item.resource_code === 'identity.groups' && item.can_read)) {
+        this.res.statusCode = 403
+        return fail('FORBIDDEN', '')
+      }
+      const group = GROUPS.find((item) => item.id === pathSegmentBefore(req, 'member-departments'))
+      if (!group) {
+        this.res.statusCode = 404
+        return fail('NOT_FOUND', '')
+      }
+      const locale = requestLocale(req)
+      const search = firstOf(req.query?.search).trim().toLowerCase()
+      const memberDepartments = new Set(
+        users
+          .filter((user) => group.member_ids.includes(user.id))
+          .map((user) => user.department_id),
+      )
+      return success({
+        items: DEPARTMENTS.filter((item) => memberDepartments.has(item.id))
+          .map((item) => ({
+            id: item.id,
+            parent_id: null,
+            display_name: localized(item.translations, item.name, locale),
+            has_children: false,
+            matched: true,
+          }))
+          .filter((item) => !search || item.display_name.toLowerCase().includes(search)),
+      })
+    },
+  },
+  {
     url: '/api/v1/groups/:group_id/member-options',
     method: 'get',
     timeout: 120,

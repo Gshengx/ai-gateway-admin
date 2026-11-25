@@ -354,14 +354,6 @@ export const transport = {
     model_id_at_provider: string,
     config?: RequestConfig,
   ) => modelTemplates(provider_id, model_id_at_provider, config),
-  metadata: async (
-    provider_id: string,
-    model_id_at_provider: string,
-    config?: RequestConfig,
-  ): Promise<Partial<Model>> => {
-    const result = await modelTemplates(provider_id, model_id_at_provider, config)
-    return templateMetadata(result, model_id_at_provider)
-  },
   metadataWithOptions: async (providerId: string, upstreamId: string, config?: RequestConfig) => {
     const result = await modelTemplates(providerId, upstreamId, config)
     return {
@@ -509,9 +501,11 @@ export const transport = {
     return view
   },
   saveProvider: async (p: Provider) => {
-    const t =
-      currentTemplates().find((t) => t.template_version_id === p.template_version_id) ??
-      currentTemplates().find((t) => t.key === p.template_key)
+    const existing = p.id ? (providerFacts.get(p.id) ?? (await api.P04(p.id))) : undefined
+    const t = currentTemplates().find(
+      (template) =>
+        template.template_version_id === (existing?.template_version_id ?? p.template_version_id),
+    )
     if (!t) throw new Error('TEMPLATE_UNAVAILABLE')
     const secrets: Record<string, string> = {},
       public_config: D.ProviderPublicConfig = {}
@@ -567,10 +561,8 @@ export const transport = {
       }
     if (balance.mode === 'CUSTOM' && b.auth !== 'NONE' && b.secret)
       balance.secrets = b.auth === 'HEADER' ? { header_value: b.secret } : { token: b.secret }
-    const input: D.ProviderCreate = {
+    const input: Omit<D.ProviderCreate, 'template_key' | 'template_version_id'> = {
       name: p.name,
-      template_key: t.key,
-      template_version_id: t.template_version_id,
       base_url: p.base_url,
       security_level: p.security_level,
       public_config,
@@ -582,8 +574,8 @@ export const transport = {
         : {}),
     }
     const result = p.id
-      ? await api.P05(p.id, { ...input, expected_version: providerFacts.get(p.id)!.version })
-      : await api.P03(input)
+      ? await api.P05(p.id, { ...input, expected_version: existing!.version })
+      : await api.P03({ ...input, template_key: t.key, template_version_id: t.template_version_id })
     return providerView(result)
   },
   removeProvider: async (id: string, reason: string) => {
@@ -888,10 +880,6 @@ export const transport = {
     const job = await (purpose === 'HEALTH' ? api.H05 : api.C03)(id, run, { signal })
     return testView(job)
   },
-  latest: async (id: string, purpose: 'ADMISSION' | 'HEALTH') => {
-    const job = await (purpose === 'ADMISSION' ? api.C04 : api.H03)(id)
-    return job ? testView(job) : null
-  },
   history: async (
     id: string,
     purpose: 'ADMISSION' | 'HEALTH',
@@ -904,11 +892,6 @@ export const transport = {
       params: { page, page_size },
     })
     return { ...paged(result), items: result.items.map(testView) }
-  },
-  permissions: async (id: string, page = 1, subject_type?: Subject, page_size = 20) => {
-    const result = await api.A01(id, { params: { page, page_size, subject_type } })
-    grantVersions.set(id, result.grant_version)
-    return paged(result)
   },
   permissionSet: async (id: string, subject_type: Subject, config?: RequestConfig) => {
     // All subject partitions share one complete, version-consistent baseline per load.
@@ -994,7 +977,4 @@ export const transport = {
     const p = await api.R01(id, { ...config, params: { page, page_size } })
     return { ...paged(p), items: p.items.map((p) => pricingView(p)) }
   },
-  savePrice: async (id: string, price: Pricing) =>
-    pricingView(await api.R02(id, pricingInput(price))),
-  syncPrice: async (id: string) => transport.pricing(id),
 }

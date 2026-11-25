@@ -60,6 +60,7 @@ const props = withDefaults(
   defineProps<{
     modelValue: string
     placeholder?: string
+    selectedLabel?: string
     clearable?: boolean
     disabled?: boolean
     resolveDescendants?: boolean
@@ -112,7 +113,9 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined
 const departmentTree = computed(() =>
   departmentKeyword.value ? searchDepartments.value : lazyDepartments.value,
 )
-const selectedDepartmentName = computed(() => departmentNames.get(props.modelValue) ?? '')
+const selectedDepartmentName = computed(
+  () => departmentNames.get(props.modelValue) ?? props.selectedLabel ?? '',
+)
 useDepartmentScope(reset)
 
 function fetchDepartments(params: DepartmentQuery = {}) {

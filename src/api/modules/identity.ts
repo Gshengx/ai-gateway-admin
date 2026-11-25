@@ -1089,6 +1089,17 @@ export function getUserGroupMemberDepartmentOptionsApi(
   )
 }
 
+export function getUserGroupExistingMemberDepartmentsApi(
+  id: string,
+  params: { search?: string } = {},
+  config?: RequestConfig,
+) {
+  return request.get<{ items: UserGroupMemberDepartmentOption[] }>(
+    `/groups/${encodeURIComponent(id)}/member-departments`,
+    { ...config, params },
+  )
+}
+
 /** 组内可添加的候选成员（已在组内的用户不会返回） */
 export function getUserGroupMemberOptionsApi(id: string, params: UserGroupMemberOptionsQuery) {
   return request.get<UserGroupMemberOptionsPage>(`/groups/${id}/member-options`, { params })

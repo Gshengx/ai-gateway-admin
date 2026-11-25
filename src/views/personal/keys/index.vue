@@ -1,34 +1,43 @@
 <template>
-  <t-card :bordered="false" class="personal-key-panel">
-    <div class="key-toolbar">
-      <t-space align="center">
-        <t-button
-          v-permission.write="'personal.keys'"
-          :disabled="loading || !statsReady || atLimit"
-          @click="openName()"
-          >{{ t('myKeys.create') }}</t-button
-        >
-        <span v-if="atLimit">{{ t('myKeys.limit', { n: activeLimit }) }}</span>
-      </t-space>
-      <t-input
-        v-model="search"
-        name="personal-key-filter"
-        autocomplete="off"
-        class="key-search"
-        clearable
-        :placeholder="t('myKeys.search')"
-      />
+  <t-card
+    data-list-region
+    :ref="setActionRoot"
+    :bordered="false"
+    class="personal-key-panel"
+    body-class-name="page-table-layout"
+  >
+    <div class="page-table-controls">
+      <div class="key-toolbar">
+        <t-space align="center">
+          <t-button
+            v-permission.write="'personal.keys'"
+            :disabled="loading || !statsReady || atLimit"
+            @click="openName()"
+            >{{ t('myKeys.create') }}</t-button
+          >
+          <span v-if="atLimit">{{ t('myKeys.limit', { n: activeLimit }) }}</span>
+        </t-space>
+        <t-input
+          v-model="search"
+          name="personal-key-filter"
+          autocomplete="off"
+          class="key-search"
+          clearable
+          :placeholder="t('myKeys.search')"
+        />
+      </div>
     </div>
     <t-table
-      height="var(--stable-table-height)"
+      :ref="setTableRoot"
+      :height="tableHeight"
       row-key="id"
       table-layout="fixed"
       table-content-width="max(100%, var(--personal-key-table-width))"
-      :max-height="560"
       :data="items"
       :columns="columns"
       :loading="loading"
       :empty="listFailed ? t('common.loadFailed') : t('myKeys.empty')"
+      class="page-table-list page-table-list--external-footer"
     >
       <template #masked_value="{ row }"
         ><t-tooltip :content="t('myKeys.maskedHint')"
@@ -50,13 +59,21 @@
         row.last_used_at ? formatDateTime(row.last_used_at) : '—'
       }}</template>
       <template #action="{ row }"
-        ><t-space>
-          <t-link v-permission.write="'personal.keys'" theme="primary" @click="openName(row)">{{
-            t('myKeys.edit')
-          }}</t-link>
-          <t-link v-permission.write="'personal.keys'" theme="danger" @click="openDelete(row)">{{
-            t('myKeys.delete')
-          }}</t-link>
+        ><t-space size="small" class="table-row-actions">
+          <t-link
+            hover="color"
+            v-permission.write="'personal.keys'"
+            theme="primary"
+            @click="openName(row)"
+            >{{ t('myKeys.edit') }}</t-link
+          >
+          <t-link
+            hover="color"
+            v-permission.write="'personal.keys'"
+            theme="danger"
+            @click="openDelete(row)"
+            >{{ t('myKeys.delete') }}</t-link
+          >
         </t-space></template
       >
     </t-table>
@@ -143,8 +160,18 @@
 </template>
 
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { copyText } from '@/utils/clipboard'
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  reactive,
+  ref,
+  watch,
+  type ComponentPublicInstance,
+} from 'vue'
+import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
 import DialogNotice from '@/components/DialogNotice.vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, type PageInfo, type PrimaryTableCol } from 'tdesign-vue-next'
@@ -157,6 +184,8 @@ import {
 } from '@/api/modules/apiKeys'
 import type { NotifiedError } from '@/api/request'
 import { formatDateTime } from '@/utils/datetime'
+
+const { tableHeight, setTableRoot } = useTableViewport()
 
 const { t, locale } = useI18n()
 const items = ref<ApiKeyItem[]>([])
@@ -178,13 +207,32 @@ function idempotencyKey() {
     `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   )
 }
+const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
+  cellSelector: '.personal-action-cell',
+  actionsSelector: '.table-row-actions',
+})
+function setActionRoot(instance: Element | ComponentPublicInstance | null) {
+  const element =
+    instance instanceof HTMLElement
+      ? instance
+      : instance && '$el' in instance
+        ? instance.$el
+        : undefined
+  actionTableRoot.value = element instanceof HTMLElement ? element : undefined
+}
 const columns = computed<PrimaryTableCol<ApiKeyItem>[]>(() => [
   { colKey: 'masked_value', title: t('myKeys.masked'), width: 160 },
   { colKey: 'name', title: t('myKeys.name'), width: 'auto' },
   { colKey: 'status', title: t('myKeys.status'), width: 110 },
   { colKey: 'created_at', title: t('myKeys.createdAt'), width: 190 },
   { colKey: 'last_used_at', title: t('myKeys.lastUsed'), width: 190 },
-  { colKey: 'action', title: t('myKeys.action'), width: 120, fixed: 'right' },
+  {
+    colKey: 'action',
+    title: t('myKeys.action'),
+    width: actionColumnWidth.value,
+    className: 'personal-action-cell',
+    fixed: 'right',
+  },
 ])
 function showError(error: unknown) {
   if (!(error as NotifiedError).notified)

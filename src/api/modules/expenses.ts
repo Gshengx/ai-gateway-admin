@@ -1,10 +1,18 @@
+import type { DepartmentQuery, DepartmentItem } from './identity'
 import request from '@/api/request'
 import type { OffsetPageQuery, OffsetPageResult } from '../types'
 export interface ExpenseRecord {
   id: string
   request_id: string
   created_at: string
-  cost_owner_type: 'USER_DEPARTMENT'
+  cost_owner_type: 'USER_DEPARTMENT' | 'DEPARTMENT' | 'PROJECT' | 'UNCONTROLLED' | 'UNASSIGNED'
+  control_status: 'CONTROLLED' | 'UNCONTROLLED'
+  fee_subject_id: string | null
+  fee_subject_name: string | null
+  cost_center_id: string | null
+  cost_center_name: string | null
+  purpose: 'PERSONAL' | 'PROJECT'
+  cost_department_id: string
   user_id: string
   username: string
   user_name: string
@@ -12,6 +20,8 @@ export interface ExpenseRecord {
   user_department: string
   api_key_id: string
   api_key_name: string
+  api_key_masked: string
+  usage_modality: 'TEXT_TOKENS'
   model_id: string
   model_name: string
   provider_id: string
@@ -32,9 +42,14 @@ export interface ExpenseRecord {
   error_message: string | null
 }
 export interface ExpenseQuery extends OffsetPageQuery {
+  fee_subject_id?: string
+  cost_center_id?: string
+  control_status?: string
+  bill_id?: string
   search?: string
   cost_owner_type?: string
   department_id?: string
+  department_direct?: string
   user_id?: string
   model_id?: string
   provider_id?: string
@@ -67,7 +82,15 @@ export const getExpenseOptions = () =>
     users: { value: string; label: string }[]
     models: { value: string; label: string }[]
     providers: { value: string; label: string }[]
+    feeSubjects: { value: string; label: string }[]
+    costCenters: { value: string; label: string }[]
+    departments: { value: string; label: string }[]
   }>('/cost/record-options')
 export const exportExpenses = (
   data: ExpenseQuery & { fields: string[]; range: 'FILTERED' | 'ALL' },
 ) => request.post<{ content: string; count: number }>('/cost/records-export', data)
+
+export const getExpenseDepartments = (params: DepartmentQuery) =>
+  request.get<{
+    items: Pick<DepartmentItem, 'id' | 'name' | 'display_name' | 'parent_id' | 'has_children'>[]
+  }>('/cost/expense-departments', { params })

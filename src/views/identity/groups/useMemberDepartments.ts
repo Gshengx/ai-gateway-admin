@@ -1,27 +1,23 @@
-import { inject, provide, type InjectionKey } from 'vue'
 import {
+  getUserGroupExistingMemberDepartmentsApi,
   getUserGroupMemberDepartmentOptionsApi,
   type DepartmentQuery,
-  type UserGroupMemberDepartmentOption,
   type UserGroupMemberDepartmentOptionsQuery,
 } from '@/api/modules/identity'
 
-type MemberDepartmentLoader = (
-  params: DepartmentQuery,
-) => Promise<{ items: (UserGroupMemberDepartmentOption & { name: string })[] }>
-const memberDepartmentLoaderKey: InjectionKey<MemberDepartmentLoader> = Symbol('memberDepartments')
-
-export function useMemberDepartments() {
-  const inherited = inject(memberDepartmentLoaderKey, null)
-  if (inherited) return inherited
-  const loadMemberDepartments: MemberDepartmentLoader = async (params) => {
+export function useMemberDepartments(groupId?: () => string | undefined) {
+  return async (params: DepartmentQuery) => {
     const search = params.search?.trim()
+    if (groupId) {
+      const id = groupId()
+      if (!id) return { items: [] }
+      const { items } = await getUserGroupExistingMemberDepartmentsApi(id, { search })
+      return { items: items.map((item) => ({ ...item, name: item.display_name })) }
+    }
     const query: UserGroupMemberDepartmentOptionsQuery = search
       ? { mode: 'FULL', search }
       : { mode: 'CHILDREN', ...(params.parent_id ? { parent_id: params.parent_id } : {}) }
     const { items } = await getUserGroupMemberDepartmentOptionsApi(query)
     return { items: items.map((item) => ({ ...item, name: item.display_name })) }
   }
-  provide(memberDepartmentLoaderKey, loadMemberDepartments)
-  return loadMemberDepartments
 }

@@ -99,6 +99,7 @@ const pageAllowed = computed(() =>
   min-height: 0;
   padding: var(--td-comp-paddingTB-l) var(--td-comp-paddingLR-l);
   overflow-y: auto;
+  overflow-x: hidden;
   background: var(--td-bg-color-page);
 }
 </style>

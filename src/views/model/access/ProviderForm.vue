@@ -39,11 +39,6 @@
           "
           @change="templateChanged"
       /></t-form-item>
-      <t-alert
-        v-if="changedTemplate && provider.id"
-        theme="warning"
-        :message="t('ma.templateChange')"
-      />
       <t-form-item
         v-bind="fieldState('base_url')"
         :label="t('ma.baseUrl')"

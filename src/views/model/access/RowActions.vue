@@ -1,7 +1,8 @@
 <template>
-  <div class="ma-actions">
+  <div class="ma-actions table-row-actions">
     <template v-for="item in inline" :key="item.label">
       <t-link
+        hover="color"
         :theme="item.danger ? 'danger' : 'primary'"
         :disabled="item.disabled || item.loading"
         :aria-busy="item.loading || undefined"
@@ -12,7 +13,8 @@
       </t-link>
     </template>
     <t-dropdown v-if="overflow.length" trigger="click"
-      ><t-link theme="primary">{{ t('ma.more') }}<t-icon name="chevron-down" /></t-link
+      ><t-link hover="color" theme="primary"
+        >{{ t('ma.more') }}<t-icon name="chevron-down" /></t-link
       ><t-dropdown-menu
         ><t-dropdown-item
           v-for="item in overflow"

@@ -1,26 +1,18 @@
+import { costDepartmentNodes, costFilterOptions } from './_costFilterOptions'
 import { expenseRecords, filterExpenses, summarize } from './_expenseRecords'
-import { route, page, value, actor } from './_expenseRoute'
-import { expenseSubtree } from './_expenseDirectory'
+import { route, page, value } from './_expenseRoute'
+import { visibleExpenses, costState, billRecords } from './_costState'
+import { canScope } from './_costDirectory'
 import { success, fail, auditedMock, type MockRequest } from './_utils'
 const expenseRoute = (path: string, method: 'get' | 'post', handler: Parameters<typeof route>[2]) =>
   route(path, method, handler, 'cost.expenses', path === '/cost/records-export' ? false : undefined)
 function scoped(req: MockRequest) {
-  if (!actor(req)?.department_id) return []
-  const ids = expenseSubtree(actor(req)!.department_id!)
-  return expenseRecords.filter((r) => ids.includes(r.user_department_id))
+  const source = visibleExpenses(req)
+  const billId = String(req.query?.bill_id ?? req.body?.bill_id ?? '')
+  if (!billId) return source
+  const bill = costState().bills.find((b) => b.id === billId)
+  return bill && canScope(req, bill.scopeType, bill.scopeId) ? billRecords(bill, source) : []
 }
-const options = (key: 'user' | 'model' | 'provider', source = expenseRecords) =>
-  [
-    ...new Map(
-      source.map((r) =>
-        key === 'user'
-          ? [r.user_id, `${r.user_name} (${r.username})`]
-          : key === 'model'
-            ? [r.model_id, r.model_name]
-            : [r.provider_id, r.provider_name],
-      ),
-    ).entries(),
-  ].map(([value, label]) => ({ value, label }))
 function sorted(req: MockRequest) {
   const items = filterExpenses(req.query ?? {}, scoped(req))
   const key = value(req, 'sort_by') as
@@ -43,13 +35,21 @@ function sorted(req: MockRequest) {
   )
 }
 export default auditedMock([
-  expenseRoute('/cost/record-options', 'get', (req) =>
-    success({
-      users: options('user', scoped(req)),
-      models: options('model', scoped(req)),
-      providers: options('provider', scoped(req)),
-    }),
-  ),
+  expenseRoute('/cost/expense-departments', 'get', (req) => {
+    const departments = costDepartmentNodes(req)
+    const ids = new Set(departments.map((d) => d.id))
+    const parent = value(req, 'parent_id')
+    return success({
+      items: departments
+        .filter((d) => (parent ? d.parent_id === parent : !d.parent_id || !ids.has(d.parent_id)))
+        .map((d) => ({
+          ...d,
+          parent_id: d.parent_id && ids.has(d.parent_id) ? d.parent_id : null,
+          has_children: departments.some((c) => c.parent_id === d.id),
+        })),
+    })
+  }),
+  expenseRoute('/cost/record-options', 'get', (req) => success(costFilterOptions(req))),
   expenseRoute('/cost/records', 'get', (req) => {
     const records = sorted(req)
     return success({ ...page(records, req), summary: summarize(records) })
@@ -61,7 +61,7 @@ export default auditedMock([
   }),
   expenseRoute('/cost/records-export', 'post', (req) => {
     const body = req.body ?? {}
-    const records = body.range === 'ALL' ? scoped(req) : filterExpenses(body, scoped(req))
+    const records = body.range === 'ALL' ? visibleExpenses(req) : filterExpenses(body, scoped(req))
     const fields = Array.isArray(body.fields)
       ? body.fields
           .filter((key) => Object.keys(expenseRecords[0]!).includes(String(key)))
@@ -76,7 +76,16 @@ export default auditedMock([
       '\uFEFF' +
       [
         fields,
-        ...records.map((r) => fields.map((key) => (r as unknown as Record<string, unknown>)[key])),
+        ...records.map((r) =>
+          fields.map((key) =>
+            ['fee_subject_name', 'cost_center_name'].includes(key) &&
+            r.control_status === 'UNCONTROLLED'
+              ? value(req, 'locale').startsWith('en')
+                ? 'Uncontrolled'
+                : '未管控'
+              : (r as unknown as Record<string, unknown>)[key],
+          ),
+        ),
       ]
         .map((row) => row.map(escape).join(','))
         .join('\r\n')

@@ -18,6 +18,10 @@
 
   --layout-header-height: 64px;
   --layout-aside-width: 232px;
+  /* Remaining page height below the shell header and normal content padding. */
+  --page-list-available-height: calc(
+    100dvh - var(--layout-header-height) - var(--td-comp-paddingTB-l) * 2
+  );
   --layout-aside-width-collapsed: 64px;
   /* 全局列表基础尺寸：沿用现有模型管理的搜索/筛选标准，TDesign 无业务宽度 token。 */
   --list-search-width: 280px;
@@ -33,6 +37,78 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--td-comp-margin-s);
+}
+/* A page's list and its controls occupy one stable viewport-sized region. */
+[data-list-region] {
+  height: var(--page-list-available-height);
+  min-height: var(--page-table-layout-min-height, 0px);
+  box-sizing: border-box;
+  min-width: 0;
+}
+[data-list-region] > .t-loading__parent,
+[data-list-region] .page-table-layout {
+  height: 100%;
+  box-sizing: border-box;
+}
+.page-table-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--page-table-layout-min-height, 0px);
+  gap: var(--td-comp-margin-l);
+}
+.page-table-controls {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: var(--td-comp-margin-l);
+}
+.page-table-controls > * {
+  flex-shrink: 0;
+  margin-block: 0;
+}
+.page-table-list {
+  --page-table-footer-reserve: 0px;
+  --page-table-min-height: var(
+    --page-table-requested-min-height,
+    calc(var(--td-comp-size-xl) * 7 + var(--td-comp-size-xxxl) + var(--td-comp-margin-s))
+  );
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: var(--page-table-min-height);
+}
+.page-table-list--external-footer {
+  --page-table-footer-reserve: calc(var(--td-comp-size-xxxl) + var(--td-comp-margin-s));
+}
+.page-table-list > .t-table {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.page-table-list .t-table__pagination-wrap {
+  flex-shrink: 0;
+}
+[data-list-region] .t-table > .t-table__pagination-wrap > .t-table__pagination {
+  padding-top: var(--td-comp-margin-s);
+  padding-bottom: 0;
+}
+[data-list-region].page-table-layout:not(.bill-analysis):has(> .page-table-list),
+[data-list-region].users-main:has(.t-table),
+[data-list-region] .t-card__body.page-table-layout {
+  padding-block: var(--td-comp-paddingTB-l);
+}
+.page-table-layout
+  > .page-table-list--external-footer
+  + :is(.key-pagination, .page-table-pagination) {
+  margin-top: calc(var(--td-comp-margin-s) - var(--td-comp-margin-l));
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.page-table-layout > .page-table-list:has(.t-loading--full) .t-table__content {
+  overflow: hidden;
 }
 .list-toolbar > .list-search {
   flex: 0 1 var(--list-search-width);
@@ -308,16 +384,8 @@ body {
   min-height: var(--td-comp-size-xxxl);
 }
 
-/* 用户确认首屏预留高度：尺寸随视口和 TDesign token 变化，短列表留白，长内容内部滚动。 */
+/* Dialog/detail selectors retain bounded content heights; page lists use viewport regions. */
 :root {
-  --stable-table-height: clamp(
-    calc(var(--td-comp-size-xxxl) * 4),
-    calc(
-      100dvh - var(--layout-header-height) - var(--td-comp-size-xxxl) * 5 -
-        var(--td-comp-margin-l) * 4
-    ),
-    calc(var(--td-comp-size-xxxl) * 12)
-  );
   --stable-detail-table-height: clamp(
     calc(var(--td-comp-size-xxxl) * 3),
     35dvh,
@@ -521,5 +589,19 @@ body {
   white-space: nowrap;
 }
 .identity-action-table .identity-action-cell {
+  white-space: nowrap;
+}
+
+/* Uniform light table headers stay distinct from both page and row backgrounds. */
+.t-table table > thead > tr > th,
+.t-table .t-table__header--fixed:not(.t-table__header--multiple) > tr > th,
+.t-table .t-table__header--fixed.t-table__header--multiple > tr > th {
+  background: color-mix(in srgb, var(--td-bg-color-page) 45%, var(--td-bg-color-container));
+}
+.table-row-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--td-comp-margin-s);
   white-space: nowrap;
 }

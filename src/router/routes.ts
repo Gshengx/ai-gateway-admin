@@ -37,7 +37,7 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
   cost_bills: {
     path: '/cost/bills',
     name: 'CostBills',
-    component: placeholder,
+    component: () => import('@/views/cost/bills/index.vue'),
     meta: { permission: 'cost.bills', icon: 'file' },
   },
   cost_expenses: {

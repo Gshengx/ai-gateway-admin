@@ -1,3 +1,4 @@
+import bills from './modules/bills/en-US'
 import termsAudit from './modules/termsAudit/en-US'
 import profile from './modules/profile/en-US'
 import common from './common/en-US'
@@ -28,6 +29,7 @@ export default {
   ...users,
   ...groups,
   expenses,
+  bills,
   logs: systemLogs,
   ma: modelAccess,
   ...pricingFlowMessages['en-US'],

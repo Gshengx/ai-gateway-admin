@@ -5032,13 +5032,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       enum: null,
     },
     {
-      key: 'template_key',
-      type: 'string',
-      required: true,
-      nullable: false,
-      enum: null,
-    },
-    {
       key: 'base_url',
       type: 'string',
       required: true,
@@ -5084,13 +5077,6 @@ export const schemas: Record<string, readonly ModelAccessSchemaField[]> = {
       key: 'balance_config',
       type: 'BalanceConfigInput',
       required: false,
-      nullable: false,
-      enum: null,
-    },
-    {
-      key: 'template_version_id',
-      type: 'string',
-      required: true,
       nullable: false,
       enum: null,
     },

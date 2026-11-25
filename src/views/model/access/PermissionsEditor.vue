@@ -1,5 +1,5 @@
 <template>
-  <div class="ma-stack" :inert="!canWrite">
+  <div class="ma-stack" :inert="saving">
     <section v-for="kind in kinds" :key="kind" class="permission-group ma-stack">
       <LoadingState
         height="var(--stable-permission-height)"
@@ -12,17 +12,18 @@
           <h3>{{ t('ma.' + kind) }}</h3>
           <t-button
             v-if="selected[kind].length"
-            v-permission.write="'model.models'"
+            v-permission.write="'model.permissions'"
             theme="danger"
             variant="outline"
             @click="requestRemove([...selected[kind]])"
             >{{ t('ma.revokeGrant') }}</t-button
           >
         </div>
-        <div v-permission.write="'model.models'" class="ma-row">
+        <div v-permission.write="'model.permissions'" class="ma-row">
           <SubjectSelect
             v-model="candidates[kind]"
             :type="kind"
+            :use-case="kind === 'USER_GROUP' ? 'MODEL_DETAIL' : undefined"
             :reuse-department-directory="kind === 'DEPARTMENT'"
             :labels="names"
             :locked-ids="authorized[kind]"
@@ -62,7 +63,8 @@
           ><template #subject_name="{ row }">{{ subjectLabel(row) }}</template>
           <template #action="{ row }"
             ><t-link
-              v-permission.write="'model.models'"
+              hover="color"
+              v-permission.write="'model.permissions'"
               theme="danger"
               @click="requestRemove([row.id])"
               >{{ t('ma.revokeGrant') }}</t-link
@@ -109,6 +111,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import { MessagePlugin, type PrimaryTableCol, type PageInfo } from 'tdesign-vue-next'
 import SubjectSelect from './SubjectSelect.vue'
 import { mergePageSelection } from '@/utils/usePageSelection'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { accessApi, type Permission, type Subject } from '@/api/modules/modelAccess'
 
 const props = defineProps<{ modelId: string }>()
@@ -117,7 +120,9 @@ const emit = defineEmits<{
   'saving-change': [value: boolean]
   revoked: []
 }>()
-const { canWrite, signal } = usePermissionScope('model.models', () => emit('revoked'))
+const { canWrite, signal } = usePermissionScope('model.permissions', () => emit('revoked'), {
+  allowRead: true,
+})
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
 const pageSize = 5
@@ -137,6 +142,9 @@ const loading = reactive({ DEPARTMENT: true, USER_GROUP: true, USER: true })
 const failed = reactive({ DEPARTMENT: false, USER_GROUP: false, USER: false })
 const names = ref<Record<string, string>>({})
 const saving = ref(false)
+const grantVersion = ref(0)
+let addAttempt: { signature: string; key: string } | undefined
+let removeAttempt: { signature: string; key: string } | undefined
 watch(saving, (value) => emit('saving-change', value), { flush: 'sync' })
 const removing = ref<string[]>([])
 const reason = ref('')
@@ -151,7 +159,12 @@ watch(
   { flush: 'sync' },
 )
 const columns = computed<PrimaryTableCol[]>(() => [
-  { colKey: 'row-select', type: 'multiple', width: 40 },
+  {
+    colKey: 'row-select',
+    type: 'multiple',
+    width: 40,
+    disabled: () => !canWrite.value || saving.value,
+  },
   { colKey: 'subject_name', title: t('ma.subject') },
   { colKey: 'action', title: t('ma.actions'), width: 100, fixed: 'right' },
 ])
@@ -175,6 +188,7 @@ async function load(kind: Subject) {
   try {
     const data = await accessApi.permissionSet(props.modelId, kind, { signal: current.signal })
     if (!current.isCurrent()) return
+    grantVersion.value = data.grant_version
     const grants = data.items
     for (const [id, grant] of savedGrants) if (grant.subject_type === kind) savedGrants.delete(id)
     grants.forEach((grant) => savedGrants.set(grant.id, grant))
@@ -196,14 +210,19 @@ async function add(kind: Subject) {
       .filter((id) => !authorized[kind].includes(id))
       .map((subject_id) => ({ subject_type: kind, subject_id }))
     if (!grants.length) return
-    await accessApi.grant(props.modelId, grants, { signal })
+    const signature = JSON.stringify([props.modelId, grantVersion.value, grants])
+    if (addAttempt?.signature !== signature) addAttempt = { signature, key: createIdempotencyKey() }
+    await accessApi.grant(props.modelId, grants, { signal, idempotencyKey: addAttempt.key })
+    addAttempt = undefined
     candidates[kind] = []
     selected[kind] = []
     MessagePlugin.success(t('ma.success'))
     pages[kind] = 1
     await load(kind)
-  } catch {
-    // Keep the selection for retry; the request layer reports the error.
+  } catch (error) {
+    const failure = error as NotifiedError
+    if (failure.status && failure.status >= 400 && failure.status < 500) addAttempt = undefined
+    if (failure.code === 'VERSION_CONFLICT' && !signal.aborted) await Promise.all(kinds.map(load))
   } finally {
     saving.value = false
   }
@@ -223,15 +242,28 @@ async function remove() {
   if (!changedKinds.size) return
   saving.value = true
   try {
-    await accessApi.revoke(props.modelId, removing.value, reason.value, { signal })
+    const signature = JSON.stringify([
+      props.modelId,
+      grantVersion.value,
+      removing.value,
+      reason.value,
+    ])
+    if (removeAttempt?.signature !== signature)
+      removeAttempt = { signature, key: createIdempotencyKey() }
+    await accessApi.revoke(props.modelId, removing.value, reason.value, {
+      signal,
+      idempotencyKey: removeAttempt.key,
+    })
+    removeAttempt = undefined
     MessagePlugin.success(t('ma.success'))
     removing.value = []
     reason.value = ''
     for (const kind of changedKinds) selected[kind] = []
     await Promise.all([...changedKinds].map(load))
-  } catch {
-    // Reconcile the current grants before a retry.
-    if (signal.aborted) return
+  } catch (error) {
+    const failure = error as NotifiedError
+    if (signal.aborted || !failure.status || failure.status >= 500) return
+    removeAttempt = undefined
     await Promise.allSettled([...changedKinds].map(load))
     removing.value = removing.value.filter((id) => savedGrants.has(id))
   } finally {

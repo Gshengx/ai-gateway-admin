@@ -1,6 +1,44 @@
 :root {
   --cost-filter-width: var(--list-filter-width);
   --cost-search-width: var(--list-search-width);
-  /* Expense detail width follows the existing request detail layout. */
-  --cost-drawer-width: 960px;
+  /* Expense detail drawer: 760px, matching the cost2/expenses prototype. */
+  --cost-drawer-width: 760px;
+  /* Two-column column picker, matching the expenses prototype popover. */
+  --cost-column-popup-width: 360px;
+}
+
+/* Bills keep filters and pagination visible while only the table content scrolls. */
+.bills,
+.expenses {
+  height: calc(100dvh - var(--layout-header-height) - var(--td-comp-paddingTB-l) * 2);
+}
+
+/* Related control/help stacks shared by manual bills and automatic task forms. */
+.bill-editor-form .t-form__item {
+  margin-bottom: var(--td-comp-margin-l);
+}
+.bill-editor-form .t-form__item:last-child {
+  margin-bottom: 0;
+}
+.bill-field-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: var(--td-comp-margin-xs);
+}
+.bill-field-hint {
+  margin: 0;
+  color: var(--td-text-color-secondary);
+  font: var(--td-font-body-small);
+}
+
+/* User-confirmed wider expense selectors for long model and attribution names. */
+.expenses .expense-wide-filter {
+  width: var(--list-department-width);
+  flex-basis: var(--list-department-width);
+}
+
+/* Bill summary may scroll away; the analysis panel then occupies the remaining viewport. */
+.bill-analysis {
+  height: calc(100dvh - var(--layout-header-height) - var(--td-comp-paddingTB-l) * 4);
 }

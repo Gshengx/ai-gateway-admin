@@ -1,30 +1,37 @@
 <template>
-  <section ref="actionTableRoot" class="panel identity-list-panel model-list-panel ma-stack">
-    <FilterBar class="ma-filter"
-      ><template #content
-        ><div class="ma-row">
-          <t-input
-            v-model="search"
-            class="ma-search"
-            :placeholder="t('ma.providerSearch')"
-            clearable
-          /><t-button theme="default" @click="search = ''">{{ t('ma.reset') }}</t-button>
-        </div></template
-      ></FilterBar
-    >
-    <div>
-      <t-button
-        theme="primary"
-        v-permission.write="'model.providers'"
-        :disabled="templatesLoading"
-        :loading="templatesLoading"
-        @click="create"
-        ><template #icon><t-icon name="add" /></template>{{ t('ma.createProvider') }}</t-button
+  <section
+    data-list-region
+    ref="actionTableRoot"
+    class="panel identity-list-panel model-list-panel ma-stack page-table-layout"
+  >
+    <div class="page-table-controls">
+      <FilterBar class="ma-filter"
+        ><template #content
+          ><div class="ma-row">
+            <t-input
+              v-model="search"
+              class="ma-search"
+              :placeholder="t('ma.providerSearch')"
+              clearable
+            /><t-button theme="default" @click="search = ''">{{ t('ma.reset') }}</t-button>
+          </div></template
+        ></FilterBar
       >
+      <div>
+        <t-button
+          theme="primary"
+          v-permission.write="'model.providers'"
+          :disabled="templatesLoading"
+          :loading="templatesLoading"
+          @click="create"
+          ><template #icon><t-icon name="add" /></template>{{ t('ma.createProvider') }}</t-button
+        >
+      </div>
     </div>
     <t-table
-      height="var(--stable-table-height)"
-      class="ma-table"
+      :ref="setTableRoot"
+      :height="tableHeight"
+      class="ma-table page-table-list"
       table-layout="fixed"
       table-content-width="max(100%, var(--model-access-table-width))"
       row-key="id"
@@ -309,6 +316,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { userDisplayName } from '@/utils/userLabel'
 import { useLatestRequest } from '@/utils/useLatestRequest'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
@@ -326,6 +334,8 @@ import RowActions, { type RowAction } from '../access/RowActions.vue'
 import ProviderForm from '../access/ProviderForm.vue'
 import OnboardingGuide from '../access/OnboardingGuide.vue'
 import { useActionColumnWidth } from '../access/useActionColumnWidth'
+const { tableHeight, setTableRoot } = useTableViewport()
+
 const { t, locale } = useI18n()
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth()
 const recipientNames = ref<Record<string, string>>({})
@@ -511,7 +521,7 @@ async function edit(row: Provider) {
   try {
     const provider = await accessApi.provider(row.id, { signal: current.signal })
     if (!current.isCurrent()) return
-    await loadTemplates(provider.id, provider.template_version_id, true)
+    await loadTemplates(provider.id, provider.template_version_id)
     if (!current.isCurrent()) return
     editing.value = provider
     closeDetail()
@@ -662,27 +672,19 @@ watch(search, () => {
 let templateGeneration = 0
 const templateController = new AbortController()
 const templateRequests = new Map<string, Promise<void>>()
-function loadTemplates(
-  providerId?: string,
-  templateVersion?: string,
-  includeCurrent = false,
-): Promise<void> {
-  const key = JSON.stringify([locale.value, providerId, templateVersion, includeCurrent])
+function loadTemplates(providerId?: string, templateVersion?: string): Promise<void> {
+  const key = JSON.stringify([locale.value, providerId, templateVersion])
   const pending = templateRequests.get(key)
   if (pending) return pending
   const current = ++templateGeneration
   templatesLoading.value = true
   const config = { signal: templateController.signal }
-  const request = Promise.all([
-    accessApi.templates(providerId, config),
-    providerId && includeCurrent ? accessApi.templates(undefined, config) : Promise.resolve([]),
-  ])
-    .then(([bound, candidates]) => {
+  const request = accessApi
+    .templates(providerId, config)
+    .then((bound) => {
       if (current !== templateGeneration) return
       templates.value = [
-        ...new Map(
-          [...candidates, ...bound].map((template) => [template.template_version_id, template]),
-        ).values(),
+        ...new Map(bound.map((template) => [template.template_version_id, template])).values(),
       ]
     })
     .finally(() => {
@@ -701,11 +703,7 @@ watch(locale, () => {
       ? detail.value
       : undefined
   if (formVisible.value || (detailVisible.value && provider))
-    void loadTemplates(
-      provider?.id,
-      provider?.template_version_id,
-      formVisible.value && !!provider,
-    ).catch(() => {})
+    void loadTemplates(provider?.id, provider?.template_version_id).catch(() => {})
 })
 onMounted(() => {
   void load().catch(() => {})

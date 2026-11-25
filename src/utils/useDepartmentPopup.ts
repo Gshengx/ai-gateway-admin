@@ -90,7 +90,8 @@ export function useDepartmentPopup(root: Ref<HTMLElement | undefined>) {
               options: {
                 boundary: current.boundary ?? 'clippingParents',
                 rootBoundary: 'viewport',
-                padding: current.margin,
+                // The dialog/drawer body already reserves its content padding.
+                padding: current.boundary ? 0 : current.margin,
                 tether: false,
               },
             },
@@ -98,7 +99,7 @@ export function useDepartmentPopup(root: Ref<HTMLElement | undefined>) {
               name: 'flip',
               options: {
                 boundary: current.boundary ?? 'clippingParents',
-                padding: current.margin,
+                padding: current.boundary ? 0 : current.margin,
                 fallbackPlacements: [
                   current.placement === 'bottom-right' ? 'top-end' : 'top-start',
                 ],

@@ -1,3 +1,4 @@
+import { costDirectory } from './_costDirectory'
 import { runtimeState } from './_runtime'
 import { expenseDirectory, expenseToday } from './_expenseDirectory'
 import { modelAccessState } from './_modelAccessState'
@@ -5,7 +6,7 @@ import './modelAccess'
 import type { ExpenseRecord, ExpenseSummary } from '../src/api/modules/expenses'
 const micro = (n: number) => Math.round(n * 1e6) / 1e6
 const recordsState = () =>
-  runtimeState<ExpenseRecord[]>('expenseRecordsWithoutAssignments', () => {
+  runtimeState<ExpenseRecord[]>('expenseRecordsV15', () => {
     const records: ExpenseRecord[] = []
     const { users, departments } = expenseDirectory()
     const year = expenseToday().slice(0, 4)
@@ -26,11 +27,26 @@ const recordsState = () =>
       const inputCost = micro(cost * (cached ? 0.6 : 0.65)),
         outputCost = micro(cost - inputCost - cacheCost)
       const dept = departments.find((d) => d.id === user.department_id)
+      const subject = costDirectory().subjects[index % 4]!
+      const control = month < 4 || (month >= 7 && month < 9) ? 'UNCONTROLLED' : 'CONTROLLED'
+      const unassigned = control === 'CONTROLLED' && index % 47 === 0
       records.push({
         id: `expense-${n}`,
         request_id: `req-${year}-${String(n).padStart(8, '0')}`,
         created_at: `${year}-${String(month).padStart(2, '0')}-${String(1 + (index % (month === Number(expenseToday().slice(5, 7)) ? Math.max(1, Number(expenseToday().slice(8, 10)) - 1) : 28))).padStart(2, '0')}T${String(index % 24).padStart(2, '0')}:15:00Z`,
-        cost_owner_type: 'USER_DEPARTMENT',
+        cost_owner_type:
+          control === 'UNCONTROLLED'
+            ? 'UNCONTROLLED'
+            : unassigned
+              ? 'UNASSIGNED'
+              : subject.subjectType!,
+        control_status: control,
+        cost_department_id: user.department_id ?? '',
+        fee_subject_id: unassigned ? null : subject.value,
+        fee_subject_name: unassigned ? null : subject.label,
+        cost_center_id: unassigned ? null : subject.costCenterId!,
+        cost_center_name: unassigned ? null : subject.costCenterName!,
+        purpose: index % 2 ? 'PROJECT' : 'PERSONAL',
         user_id: user.id,
         username: user.username,
         user_name: user.name,
@@ -38,6 +54,8 @@ const recordsState = () =>
         user_department: dept?.path ?? '',
         api_key_id: `key-cost-${user.id}`,
         api_key_name: `${user.username}-default`,
+        api_key_masked: `sk-mock-${n}***`,
+        usage_modality: 'TEXT_TOKENS',
         model_id: physical.id,
         model_name: model,
         provider_id: physical.provider_id,
@@ -136,19 +154,41 @@ export function filterExpenses(query: Record<string, unknown>, records = expense
         `${r.request_id} ${r.user_name} ${r.username} ${r.model_name}`
           .toLowerCase()
           .includes(keyword)) &&
+      (!text('fee_subject_id') ||
+        (text('fee_subject_id') === 'UNASSIGNED'
+          ? !r.fee_subject_id
+          : r.fee_subject_id === text('fee_subject_id'))) &&
+      (!text('cost_center_id') ||
+        (text('cost_center_id') === 'UNASSIGNED'
+          ? !r.cost_center_id
+          : r.cost_center_id === text('cost_center_id'))) &&
+      matchesControlStatus(r, text('control_status')) &&
       (!text('cost_owner_type') || r.cost_owner_type === text('cost_owner_type')) &&
       (!department ||
         r.user_department_id === department ||
-        Boolean(departmentPathValue && r.user_department.startsWith(`${departmentPathValue} /`))) &&
+        Boolean(
+          text('department_direct') !== 'true' &&
+          departmentPathValue &&
+          r.user_department.startsWith(`${departmentPathValue} /`),
+        )) &&
       (!text('user_id') || r.user_id === text('user_id')) &&
       (!text('model_id') || r.model_id === text('model_id')) &&
       (!text('provider_id') || r.provider_id === text('provider_id')) &&
       (!text('status') || r.status === text('status')) &&
-      (!text('start') || r.created_at.slice(0, 10) >= text('start')) &&
-      (!text('end') || r.created_at.slice(0, 10) <= text('end')) &&
+      (!text('start') || r.created_at >= text('start')) &&
+      (!text('end') || r.created_at < text('end')) &&
       (!text('min_cost') || r.total_cost >= Number(query.min_cost)) &&
       (!text('max_cost') || r.total_cost <= Number(query.max_cost)) &&
       (!text('min_tokens') || (r.total_tokens ?? 0) >= Number(query.min_tokens)) &&
       (!text('max_tokens') || (r.total_tokens ?? 0) <= Number(query.max_tokens)),
   )
+}
+
+// Three UI filter categories; the saved control snapshot remains a two-state enum.
+export function matchesControlStatus(record: ExpenseRecord, status: string) {
+  if (!status) return true
+  if (status === 'UNCONTROLLED') return record.control_status === 'UNCONTROLLED'
+  const assigned = !!record.fee_subject_id && !!record.cost_center_id
+  if (status === 'UNASSIGNED') return record.control_status === 'CONTROLLED' && !assigned
+  return status === 'CONTROLLED' && record.control_status === 'CONTROLLED' && assigned
 }

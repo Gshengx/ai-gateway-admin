@@ -1,3 +1,4 @@
+import bills from './modules/bills/zh-CN'
 import termsAudit from './modules/termsAudit/zh-CN'
 import profile from './modules/profile/zh-CN'
 import common from './common/zh-CN'
@@ -28,6 +29,7 @@ export default {
   ...users,
   ...groups,
   expenses,
+  bills,
   logs: systemLogs,
   ma: modelAccess,
   ...pricingFlowMessages['zh-CN'],

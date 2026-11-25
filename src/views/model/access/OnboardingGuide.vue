@@ -161,9 +161,9 @@
               t(results[model.id] ? 'ma.' + results[model.id]!.status : 'ma.awaitingTest')
             }}</span>
             <t-alert
-              v-if="pricingFailures[model.id]"
+              v-if="submissionFailures[model.id]"
               theme="warning"
-              :message="pricingFailures[model.id]"
+              :message="submissionFailures[model.id]"
             />
             <div class="onboarding-model-card__configuration">
               <t-form
@@ -173,8 +173,8 @@
                 required-mark-position="right"
               >
                 <InvocationEditor
-                  :field-errors="pricingFieldErrors[model.id]"
-                  :standard-route="pricingStandardRoutes[model.id]"
+                  :field-errors="submissionFieldErrors[model.id]"
+                  :standard-route="submissionStandardRoutes[model.id]"
                   :initialize-if-empty="model.status === 'DRAFT'"
                   :provider-id="model.provider_id"
                   :upstream-id="model.model_id_at_provider"
@@ -458,14 +458,30 @@ function testKey(model: Model) {
   testKeys.set(model.id, { key, signature })
   return key
 }
-const pricingFieldErrors = ref<Record<string, Record<string, string>>>({})
-const pricingStandardRoutes = ref<Record<string, string>>({})
-const pricingFailures = ref<Record<string, string>>({})
+const submissionFieldErrors = ref<Record<string, Record<string, string>>>({})
+const submissionStandardRoutes = ref<Record<string, string>>({})
+const submissionFailures = ref<Record<string, string>>({})
 function updateInvocationConfiguration(model: Model, configuration: Model) {
   Object.assign(model, configuration)
-  delete pricingFieldErrors.value[model.id]
-  delete pricingStandardRoutes.value[model.id]
-  delete pricingFailures.value[model.id]
+  delete submissionFieldErrors.value[model.id]
+  delete submissionStandardRoutes.value[model.id]
+  delete submissionFailures.value[model.id]
+}
+function recordSubmissionFailure(
+  model: Model,
+  params: Record<string, unknown> | undefined,
+  message: string,
+) {
+  submissionFieldErrors.value[model.id] = (params?.fields as Record<string, string>) ?? {}
+  const route = params?.standard_route as { method?: string; path?: string } | undefined
+  submissionStandardRoutes.value[model.id] = route
+    ? `${route.method ?? ''} ${route.path ?? ''}`.trim()
+    : ''
+  submissionFailures.value[model.id] =
+    invocationErrorsMessage(
+      submissionFieldErrors.value[model.id] ?? {},
+      submissionStandardRoutes.value[model.id],
+    ) || message
 }
 const testAttempted = ref(false)
 async function testAll() {
@@ -487,33 +503,30 @@ async function testAll() {
       if (['PENDING_REVIEW', 'ACTIVE'].includes(m.status)) continue
       let run = results.value[m.id]
       if (!run || run.status !== 'RUNNING') {
-        delete pricingFailures.value[m.id]
-        delete pricingFieldErrors.value[m.id]
+        delete submissionFailures.value[m.id]
+        delete submissionFieldErrors.value[m.id]
         let batch
         try {
           batch = await accessApi.onboardingTests(props.provider.id, [m], testKey(m))
         } catch (error) {
           const failure = error as NotifiedError
-          pricingFieldErrors.value[m.id] = (failure.params?.fields as Record<string, string>) ?? {}
-          const route = failure.params?.standard_route as
-            { method?: string; path?: string } | undefined
-          pricingStandardRoutes.value[m.id] = route
-            ? `${route.method ?? ''} ${route.path ?? ''}`.trim()
-            : ''
-          pricingFailures.value[m.id] =
-            invocationErrorsMessage(
-              pricingFieldErrors.value[m.id] ?? {},
-              pricingStandardRoutes.value[m.id],
-            ) ||
-            failure.message ||
-            t('common.loadFailed')
+          recordSubmissionFailure(m, failure.params, failure.message || t('common.loadFailed'))
+          if (failure.status && failure.status >= 400 && failure.status < 500) testKeys.delete(m.id)
+          if (failure.code === 'VERSION_CONFLICT') await accessApi.model(m.id, false)
           continue
         }
         testKeys.delete(m.id)
         const item = batch.items[0]
-        if (!item?.job_id) {
+        if (closed) break
+        if (item?.status !== 'ACCEPTED' || !item.job_id) {
           failures.push({ name: m.model_id_at_gateway, code: item?.code ?? '' })
+          recordSubmissionFailure(
+            m,
+            item?.params as Record<string, unknown> | undefined,
+            failureNotice('test', failures),
+          )
           notice.value = failureNotice('test', failures)
+          if (item?.code === 'VERSION_CONFLICT') await accessApi.model(m.id, false)
           continue
         }
         // Save the accepted job ID before the first GET. A failed GET resumes
@@ -553,7 +566,7 @@ async function testAll() {
       if (!closed) Object.assign(m, await accessApi.model(m.id, false))
     }
     if (!closed) {
-      if (!Object.keys(pricingFailures.value).length) step.value = 3
+      if (!Object.keys(submissionFailures.value).length) step.value = 3
     }
   } catch {
     if (!closed) notice.value = t('common.loadFailed')

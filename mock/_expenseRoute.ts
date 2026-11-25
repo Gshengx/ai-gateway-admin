@@ -46,7 +46,7 @@ export function page<T>(items: T[], req: MockRequest) {
 }
 export function route(
   url: string,
-  method: 'get' | 'post' | 'patch',
+  method: 'get' | 'post' | 'patch' | 'put' | 'delete',
   handler: (req: MockRequest) => ReturnType<typeof success> | ReturnType<typeof fail>,
   resource: string,
   writeOverride?: boolean,

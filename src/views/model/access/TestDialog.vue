@@ -155,7 +155,7 @@ import TestResultGroups from './TestResultGroups.vue'
 import DialogNotice from '@/components/DialogNotice.vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { createIdempotencyKey } from '@/api/request'
+import { createIdempotencyKey, type NotifiedError } from '@/api/request'
 import { accessApi, type Model, type TestRun } from '@/api/modules/modelAccess'
 import { invocationTargets } from '@/utils/modelInvocation'
 import { invocationLabel } from './helpers'
@@ -283,8 +283,17 @@ async function start() {
     pollStarted = Date.now()
     if (result.status === 'RUNNING') await poll()
     else emit('changed', run.value)
-  } catch {
-    // The shared request layer reports errors without adding another prompt.
+  } catch (error) {
+    const failure = error as NotifiedError
+    if (failure.status && failure.status >= 400 && failure.status < 500) startAttempt = undefined
+    if (failure.code === 'VERSION_CONFLICT' && !closed) {
+      const latest = await accessApi.model(props.model.id, false)
+      if (!closed) {
+        Object.assign(props.model, latest)
+        selected.value = selected.value.filter((check) => available.value.includes(check))
+        emit('changed', undefined)
+      }
+    }
   } finally {
     if (!closed && version === pollVersion) busy.value = false
   }

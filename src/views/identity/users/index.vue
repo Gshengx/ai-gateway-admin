@@ -94,7 +94,12 @@
         </div>
       </CollapsibleSidebar>
 
-      <div class="users-main">
+      <div
+        :ref="setUsersRegionRoot"
+        class="users-main"
+        data-list-region
+        :style="{ height: usersRegionHeight }"
+      >
         <filter-bar class="users-filter">
           <template #content>
             <div class="list-toolbar">
@@ -195,8 +200,9 @@
 
           <div ref="actionTableRoot">
             <t-table
+              :ref="setTableRoot"
               class="identity-action-table"
-              height="var(--stable-table-height)"
+              :height="tableHeight"
               row-key="id"
               :data="tableData"
               :columns="columns"
@@ -259,7 +265,7 @@
                 </span>
               </template>
               <template #action="{ row }">
-                <t-space class="identity-table-actions" :size="12">
+                <t-space size="small" class="identity-table-actions table-row-actions">
                   <t-link
                     v-permission.write="'identity.users'"
                     theme="primary"
@@ -414,7 +420,13 @@
 </template>
 
 <script setup lang="ts">
+import { useTableViewport } from '@/utils/useTableViewport'
 import { useActionColumnWidth } from '@/utils/useActionColumnWidth'
+const { tableHeight, setTableRoot } = useTableViewport()
+const { tableHeight: usersRegionHeight, setTableRoot: setUsersRegionRoot } = useTableViewport({
+  panel: true,
+})
+
 const { actionTableRoot, actionColumnWidth } = useActionColumnWidth({
   cellSelector: '.identity-action-table .identity-action-cell',
   actionsSelector: '.identity-table-actions',
@@ -1667,6 +1679,8 @@ onMounted(() => {
   flex-direction: column;
   flex: none;
   width: var(--users-sidebar-width);
+  height: var(--page-list-available-height);
+  box-sizing: border-box;
   border-right: 1px solid var(--td-component-stroke);
 }
 
@@ -1679,6 +1693,7 @@ onMounted(() => {
 .users-dept-content {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .users-dept-content {
@@ -1691,6 +1706,13 @@ onMounted(() => {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.users-dept-content > :not(.dept-tree-region) {
+  flex-shrink: 0;
 }
 
 .dept-tree-region :deep(.loading-state) {
@@ -1903,10 +1925,14 @@ onMounted(() => {
 
   .users-dept {
     width: 100%;
+    height: auto;
   }
 
   .users-main {
+    flex: none;
     width: 100%;
+    height: var(--page-list-available-height);
+    box-sizing: border-box;
   }
 
   .dept-tree-region {

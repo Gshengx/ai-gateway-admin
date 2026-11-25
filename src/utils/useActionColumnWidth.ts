@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 /** 固定布局表格仍需明确列宽；以当前可见按钮的固有宽度测量，避免分摊剩余空间。 */
 export function useActionColumnWidth({
@@ -63,6 +63,15 @@ export function useActionColumnWidth({
     }
     observeActions()
   })
+  watch(
+    actionTableRoot,
+    (root) => {
+      mutations?.disconnect()
+      if (root) mutations?.observe(root, { childList: true, subtree: true, characterData: true })
+      observeActions()
+    },
+    { flush: 'post' },
+  )
   onBeforeUnmount(() => {
     mutations?.disconnect()
     sizes?.disconnect()

@@ -273,7 +273,7 @@ M08 按 `provider_id` 和 `model_id_at_provider` 读取实例支持的候选，�
 
 权限：`model.providers:WRITE`。
 
-业务、并发与事务规则：expected_version、template_key、template_version_id必填。原绑定ID普通编辑保持旧模板规则，即使目录默认已更新；明确选择不同ID（可同key）只允许当前可采用模板，完整校验配置及秘密语义，不把同名不同义旧秘密直接继承。模板改绑定与其他实际配置修改均按原规则推进相应provider/connection版本，仅目录发布不推进实例版本；不自动准入/下架；notes/秘密/余额省略语义保持。
+业务、并发与事务规则：expected_version必填；模板key及版本创建后固定。P05不接受template_key/template_version_id，按实例固定模板校验公开配置、秘密与余额；目录新版不改变原绑定，版本/CSRF/幂等与省略语义保持。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -1341,7 +1341,7 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 权限：`identity.users:WRITE,model.permissions:WRITE`。
 
-业务、并发与事务规则：同一新grants库和范围策略；CAS新表 ma_grant_state.revision 对应 authorization_version，更新各受影响模型grant_version；混合增删前端确认；authorization_version 只保护直接关系集合，任意模型直接授权变更均推进；身份成员/部门变化不推进，但保存必须现时重校验范围/主体状态。粗粒度冲突允许重新读取。；只对本次新增直授模型要求当前ACTIVE；已存在的非ACTIVE直接关系允许保留或撤销，不因候选筛选而默删；保存按实际增删差异验证，不能把未出现在候选的既有授权当作无效。
+业务、并发与事务规则：同一新grants库和范围策略；CAS新表 ma_grant_state.revision 对应 authorization_version，更新各受影响模型grant_version；混合增删前端确认；authorization_version 只保护直接关系集合，任意模型直接授权变更均推进；身份成员/部门变化不推进，但保存必须现时重校验范围/主体状态。粗粒度冲突允许重新读取。；只对本次新增直授模型要求当前ACTIVE或PENDING_REVIEW；已存在的非ACTIVE直接关系允许保留或撤销，不因候选筛选而默删；保存按实际增删差异验证，不能把未出现在候选的既有授权当作无效。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -1391,7 +1391,7 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 权限：`identity.users:WRITE,model.permissions:WRITE`。
 
-业务、并发与事务规则：同一新grants库和范围策略；CAS新表 ma_grant_state.revision 对应 authorization_version，更新各受影响模型grant_version；混合增删前端确认；authorization_version 只保护直接关系集合，任意模型直接授权变更均推进；身份成员/部门变化不推进，但保存必须现时重校验范围/主体状态。粗粒度冲突允许重新读取。；只对本次新增直授模型要求当前ACTIVE；已存在的非ACTIVE直接关系允许保留或撤销，不因候选筛选而默删；保存按实际增删差异验证，不能把未出现在候选的既有授权当作无效。
+业务、并发与事务规则：同一新grants库和范围策略；CAS新表 ma_grant_state.revision 对应 authorization_version，更新各受影响模型grant_version；混合增删前端确认；authorization_version 只保护直接关系集合，任意模型直接授权变更均推进；身份成员/部门变化不推进，但保存必须现时重校验范围/主体状态。粗粒度冲突允许重新读取。；只对本次新增直授模型要求当前ACTIVE或PENDING_REVIEW；已存在的非ACTIVE直接关系允许保留或撤销，不因候选筛选而默删；保存按实际增删差异验证，不能把未出现在候选的既有授权当作无效。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -1441,7 +1441,7 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 权限：`identity.groups:WRITE,model.permissions:WRITE`。
 
-业务、并发与事务规则：同一新grants库和范围策略；CAS新表 ma_grant_state.revision 对应 authorization_version，更新各受影响模型grant_version；混合增删前端确认；authorization_version 只保护直接关系集合，任意模型直接授权变更均推进；身份成员/部门变化不推进，但保存必须现时重校验范围/主体状态。粗粒度冲突允许重新读取。；只对本次新增直授模型要求当前ACTIVE；已存在的非ACTIVE直接关系允许保留或撤销，不因候选筛选而默删；保存按实际增删差异验证，不能把未出现在候选的既有授权当作无效。
+业务、并发与事务规则：同一新grants库和范围策略；CAS新表 ma_grant_state.revision 对应 authorization_version，更新各受影响模型grant_version；混合增删前端确认；authorization_version 只保护直接关系集合，任意模型直接授权变更均推进；身份成员/部门变化不推进，但保存必须现时重校验范围/主体状态。粗粒度冲突允许重新读取。；只对本次新增直授模型要求当前ACTIVE或PENDING_REVIEW；已存在的非ACTIVE直接关系允许保留或撤销，不因候选筛选而默删；保存按实际增删差异验证，不能把未出现在候选的既有授权当作无效。
 
 | 位置   | 参数              | 类型   | 必填 | 可空 | 默认/限制                              | 参数说明                                                                                     |
 | ------ | ----------------- | ------ | ---- | ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -1487,6 +1487,8 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 ### A12 模型授权可选主体
 
+模型详情组下拉新增可选查询字段 `use_case`：仅接受 `MODEL_DETAIL` 且subject_type必须USER_GROUP；省略保留原范围。该用途返回全部组，默认每页20、上限100，total与搜索同范围；不展开成员。空/重复参数400，非法枚举或主体组合422。权限仍为model.permissions READ，可写标志来自对应WRITE。
+
 `GET /api/v1/model-access/model-permission-subjects`；operationId：`modelAccessV14A12`。
 
 权限：`model.permissions:READ OR model.permissions:WRITE`。
@@ -1495,6 +1497,7 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 | 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                                 | 参数说明                                                                                                           |
 | ------ | ----------------- | ------- | ---- | ---- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| query  | `use_case`        | string  | 否   | 否   | enum=["MODEL_DETAIL"]                     | 仅USER_GROUP可用；详情全局候选，省略保持原范围。                                                                   |
 | query  | `page`            | integer | 否   | 否   | default=1；minimum=1                      | 页码，从 1 开始；省略为 1。                                                                                        |
 | query  | `page_size`       | integer | 否   | 否   | default=20；minimum=1；maximum=100        | 每页条数，省略 20，上限 100。                                                                                      |
 | query  | `subject_type`    | string  | 是   | 否   | enum=["DEPARTMENT", "USER_GROUP", "USER"] | 主体类型 DEPARTMENT/USER_GROUP/USER；候选查询必填。                                                                |
@@ -1519,7 +1522,7 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 权限：`(model.permissions:READ OR model.permissions:WRITE) AND 对应identity主体READ或WRITE`。
 
-业务、并发与事务规则：按subject_type同时校验USER/DEPARTMENT对应identity.users、USER_GROUP对应identity.groups的READ或WRITE之一，以及model.permissions READ或WRITE之一和当前主体/模型管理范围。仅返回ACTIVE、未由该主体直接授权的模型；部门/组继承不等于该主体直授，不据此错误排除。无需models:READ，不返回模型完整配置/价格。保存仍现时校验；不可见主体统一404。；按model_id_at_gateway、id稳定升序。；ACTIVE限制仅用于主体页面本次新增候选，不限制M03初始授权/A02模型侧DRAFT授权，且不影响已有非ACTIVE关系的展示、保留和撤销。
+业务、并发与事务规则：按subject_type同时校验USER/DEPARTMENT对应identity.users、USER_GROUP对应identity.groups的READ或WRITE之一，以及model.permissions READ或WRITE之一和当前主体/模型管理范围。仅返回ACTIVE或PENDING_REVIEW、未由该主体直接授权的模型；部门/组继承不等于该主体直授，不据此错误排除。无需models:READ，不返回模型完整配置/价格。保存仍现时校验；不可见主体统一404。；按model_id_at_gateway、id稳定升序。；新增状态限制仅用于主体页面本次新增候选，不限制M03初始授权/A02模型侧DRAFT授权，且不影响已有非ACTIVE关系的展示、保留和撤销。
 
 | 位置   | 参数              | 类型    | 必填 | 可空 | 默认/限制                                 | 参数说明                                               |
 | ------ | ----------------- | ------- | ---- | ---- | ----------------------------------------- | ------------------------------------------------------ |
@@ -1548,13 +1551,13 @@ C01 在受理事务内按已保存协议复核价格门槛，有计费项但缺�
 
 请求：路径 `user_id` 为目标用户 UUID；必填请求头 `X-CSRF-Token`、`Idempotency-Key`，媒体类型 `application/json`。请求体见 [UserGrantDelta](#schema-usergrantdelta)。只添加指定模型的 USER 直授，不覆盖其他直授，不修改部门、组继承。
 
-一个请求同一用户、同一动作，1～100 个物理模型，整个请求一个事务。对象、范围、版本及所有本次新增的模型状态有任一不满足，则全部回滚。真正新增要求模型 ACTIVE；已有非 ACTIVE 直授仍允许无变化成功。继承模型可再直授；停用、冻结用户沿现主体配置规则仍可管理直授，不代表立即可调用。
+一个请求同一用户、同一动作，1～100 个物理模型，整个请求一个事务。对象、范围、版本及所有本次新增的模型状态有任一不满足，则全部回滚。真正新增要求模型 ACTIVE 或 PENDING_REVIEW；已有非 ACTIVE 直授仍允许无变化成功。继承模型可再直授；停用、冻结用户沿现主体配置规则仍可管理直授，不代表立即可调用。
 
 成功：HTTP **200**，`data` 见 [UserGrantDeltaResult](#schema-usergrantdeltaresult)。所有项 `direct_granted=true`，是否实变由各项 `changed` 表示。
 
 新命令先校验 `expected_authorization_version`，即使全批可无变化，旧版本仍返回 409。至少一项实变时全局授权版本仅加 1，各实变模型授权版本各加 1；全批无变化不推进。相同幂等命令返回原整批回执；目标用户、模型集、期望版本或原因改变则幂等冲突，模型集合换序不改变规范语义。
 
-错误：沿公共会话、对象、权限及输入边界；额外关注 `409 VERSION_CONFLICT / IDEMPOTENCY_CONFLICT / IDEMPOTENCY_IN_PROGRESS / OPERATION_RESULT_UNKNOWN`、`422 VALIDATION_FAILED`（含本次新增非 ACTIVE、UUID 重复、项数不合规）、`503 COMMAND_HMAC_KEY_UNAVAILABLE`。合法 JSON 的类型、未知键及约束不合规返回 422；JSON 语法或超过 64 KiB 返回 400。没有部分成功结果。
+错误：沿公共会话、对象、权限及输入边界；额外关注 `409 VERSION_CONFLICT / IDEMPOTENCY_CONFLICT / IDEMPOTENCY_IN_PROGRESS / OPERATION_RESULT_UNKNOWN`、`422 VALIDATION_FAILED`（含本次新增既非 ACTIVE 也非 PENDING_REVIEW、UUID 重复、项数不合规）、`503 COMMAND_HMAC_KEY_UNAVAILABLE`。合法 JSON 的类型、未知键及约束不合规返回 422；JSON 语法或超过 64 KiB 返回 400。没有部分成功结果。
 
 <a id="api-a15"></a>
 
@@ -2022,7 +2025,7 @@ Template 字段契约；下列字段含义、必填与空值均是正式设计�
 | `notification_delivery_supported` | boolean                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 当前系统是否具备余额通知投递能力；本版按已确认范围返回 false，不表示通知已发送，不是供应商可配置开关或研发进度                           | 无额外格式限制；仍遵守所属组件业务规则 |
 | `icon_key`                        | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 受控模板图标键；前端从本地图标目录映射，未知用通用图标，不是任意远端URL                                                                  | 无额外格式限制；仍遵守所属组件业务规则 |
 | `balance_template_spec`           | [BalanceTemplateSpec](#schema-balancetemplatespec) / null | 是   | 是   | 无静态默认；省略语义见组件/接口 | 模板未支持时null；仍可选择CUSTOM                                                                                                         | 无额外格式限制；仍遵守所属组件业务规则 |
-| `template_version_id`             | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 不可变模板版本行UUID；创建或明确改选模板时回传，普通编辑保留实例原绑定                                                                   | format="uuid"                          |
+| `template_version_id`             | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 不可变模板版本行UUID；创建时回传，编辑不提交模板字段                                                                                     | format="uuid"                          |
 | `catalog_release_id`              | string                                                    | 是   | 否   | 无静态默认；省略语义见组件/接口 | 模板所属完整目录发布批次，与外层读取上下文一致                                                                                           | format="uuid"                          |
 
 未声明字段：拒绝（`additionalProperties=false`）。
@@ -2375,7 +2378,7 @@ BalanceConfig 字段契约；下列字段含义、必填与空值均是正式设
 | `template_name`            | string                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例固定template_version_id的本地化模板名称，不取当前发布指针下同key的新名称                                | 无额外格式限制；仍遵守所属组件业务规则        |
 | `template_icon_key`        | string                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 受控本地图标键；未知键显示通用图标，不从外部URL加载                                                         | 无额外格式限制；仍遵守所属组件业务规则        |
 | `balance_summary`          | [ProviderBalanceSummary](#schema-providerbalancesummary) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 与列表一致的本地余额摘要                                                                                    | 无额外格式限制；仍遵守所属组件业务规则        |
-| `template_version_id`      | string                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例当前固定的数据库模板版本UUID；普通编辑必须回传，发布目录不会自动改写                                    | format="uuid"                                 |
+| `template_version_id`      | string                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例固定的数据库模板版本UUID；只读展示，编辑不提交，目录发布不改变绑定                                      | format="uuid"                                 |
 | `catalog_release_id`       | string                                                   | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例固定模板所属的完整目录发布批次；其内置模型/价建议来自该批次                                             | format="uuid"                                 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
@@ -3948,18 +3951,18 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 新供应商完整创建；不接受 expected_version；余额可选，同事务保存；template_version_id必传，不按template_key静默解析最新版本
 
-| 字段                  | 类型/组件                                            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                       | 约束                                          |
-| --------------------- | ---------------------------------------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `name`                | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                                                                               | minLength=1；maxLength=128                    |
-| `template_key`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例选用的稳定供应商模板键；与template_version_id对应，允许通过既有模板选择和保存修改，目录数据无产品写接口    | 无额外格式限制；仍遵守所属组件业务规则        |
-| `base_url`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整供应商 Base URL；禁止携带用户名密码或秘密查询参数                                                          | maxLength=2048                                |
-| `security_level`      | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商网络安全分类标签；不是出口审批或网络许可                                                                 | enum=["INTERNET", "TRUSTED_CLOUD", "PRIVATE"] |
-| `public_config`       | [ProviderPublicConfig](#schema-providerpublicconfig) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 创建时的模板公开参数，未知键拒绝                                                                               | 无额外格式限制；仍遵守所属组件业务规则        |
-| `secrets`             | [SecretInput](#schema-secretinput)                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 仅请求输入的秘密字段；不回显，不写日志                                                                         | 无额外格式限制；仍遵守所属组件业务规则        |
-| `clear_secret_fields` | array&lt;string&gt;                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 明确清除的秘密字段键；与本次非空替换字段不可冲突                                                               | uniqueItems=true                              |
-| `notes`               | string / null                                        | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可空备注，去除秘密后原文保存                                                                                   | 无额外格式限制；仍遵守所属组件业务规则        |
-| `balance_config`      | [BalanceConfigInput](#schema-balanceconfiginput)     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选余额配置，与供应商创建同事务；省略为 NONE                                                                  | 无额外格式限制；仍遵守所属组件业务规则        |
-| `template_version_id` | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | P01返回的准确模板版本UUID，必须与template_key一致；创建/改选只能采用当前允许新绑定版本，普通编辑回传实例原版本 | format="uuid"                                 |
+| 字段                  | 类型/组件                                            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                    | 约束                                          |
+| --------------------- | ---------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `name`                | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                                                                            | minLength=1；maxLength=128                    |
+| `template_key`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例选用的稳定供应商模板键；与template_version_id对应，允许通过既有模板选择和保存修改，目录数据无产品写接口 | 无额外格式限制；仍遵守所属组件业务规则        |
+| `base_url`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整供应商 Base URL；禁止携带用户名密码或秘密查询参数                                                       | maxLength=2048                                |
+| `security_level`      | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商网络安全分类标签；不是出口审批或网络许可                                                              | enum=["INTERNET", "TRUSTED_CLOUD", "PRIVATE"] |
+| `public_config`       | [ProviderPublicConfig](#schema-providerpublicconfig) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 创建时的模板公开参数，未知键拒绝                                                                            | 无额外格式限制；仍遵守所属组件业务规则        |
+| `secrets`             | [SecretInput](#schema-secretinput)                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 仅请求输入的秘密字段；不回显，不写日志                                                                      | 无额外格式限制；仍遵守所属组件业务规则        |
+| `clear_secret_fields` | array&lt;string&gt;                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 明确清除的秘密字段键；与本次非空替换字段不可冲突                                                            | uniqueItems=true                              |
+| `notes`               | string / null                                        | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可空备注，去除秘密后原文保存                                                                                | 无额外格式限制；仍遵守所属组件业务规则        |
+| `balance_config`      | [BalanceConfigInput](#schema-balanceconfiginput)     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选余额配置，与供应商创建同事务；省略为 NONE                                                               | 无额外格式限制；仍遵守所属组件业务规则        |
+| `template_version_id` | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | P01返回的准确模板版本UUID，必须与template_key一致；创建只能采用当前允许新绑定版本，编辑不提交模板字段       | format="uuid"                                 |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -3969,19 +3972,17 @@ P01 对应模板 balance_fields 的非秘密参数；只接受已声明的字段
 
 供应商完整编辑；必传读取版本，不限制模型状态，不触发准入；template_version_id必传，不按template_key静默解析最新版本
 
-| 字段                  | 类型/组件                                            | 必填 | 可空 | 默认/省略                       | 字段说明                                                                                                       | 约束                                          |
-| --------------------- | ---------------------------------------------------- | ---- | ---- | ------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `expected_version`    | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                                                                         | minimum=1                                     |
-| `name`                | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                                                                               | minLength=1；maxLength=128                    |
-| `template_key`        | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 实例选用的稳定供应商模板键；与template_version_id对应，允许通过既有模板选择和保存修改，目录数据无产品写接口    | 无额外格式限制；仍遵守所属组件业务规则        |
-| `base_url`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整供应商 Base URL；禁止携带用户名密码或秘密查询参数                                                          | maxLength=2048                                |
-| `security_level`      | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商网络安全分类标签；不是出口审批或网络许可                                                                 | enum=["INTERNET", "TRUSTED_CLOUD", "PRIVATE"] |
-| `public_config`       | [ProviderPublicConfig](#schema-providerpublicconfig) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 编辑时完整替换的模板公开参数，未知键拒绝                                                                       | 无额外格式限制；仍遵守所属组件业务规则        |
-| `secrets`             | [SecretInput](#schema-secretinput)                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 仅请求输入的秘密字段；不回显，不写日志                                                                         | 无额外格式限制；仍遵守所属组件业务规则        |
-| `clear_secret_fields` | array&lt;string&gt;                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 明确清除的秘密字段键；与本次非空替换字段不可冲突                                                               | uniqueItems=true                              |
-| `notes`               | string / null                                        | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可空备注，去除秘密后原文保存                                                                                   | 无额外格式限制；仍遵守所属组件业务规则        |
-| `balance_config`      | [BalanceConfigInput](#schema-balanceconfiginput)     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选余额配置，与供应商编辑同事务；省略保持原配置                                                               | 无额外格式限制；仍遵守所属组件业务规则        |
-| `template_version_id` | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | P01返回的准确模板版本UUID，必须与template_key一致；创建/改选只能采用当前允许新绑定版本，普通编辑回传实例原版本 | format="uuid"                                 |
+| 字段                  | 类型/组件                                            | 必填 | 可空 | 默认/省略                       | 字段说明                                              | 约束                                          |
+| --------------------- | ---------------------------------------------------- | ---- | ---- | ------------------------------- | ----------------------------------------------------- | --------------------------------------------- |
+| `expected_version`    | integer                                              | 是   | 否   | 无静态默认；省略语义见组件/接口 | 乐观版本，需回传读取值                                | minimum=1                                     |
+| `name`                | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 对象显示名称，精确含义见所属组件                      | minLength=1；maxLength=128                    |
+| `base_url`            | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 完整供应商 Base URL；禁止携带用户名密码或秘密查询参数 | maxLength=2048                                |
+| `security_level`      | string                                               | 是   | 否   | 无静态默认；省略语义见组件/接口 | 供应商网络安全分类标签；不是出口审批或网络许可        | enum=["INTERNET", "TRUSTED_CLOUD", "PRIVATE"] |
+| `public_config`       | [ProviderPublicConfig](#schema-providerpublicconfig) | 是   | 否   | 无静态默认；省略语义见组件/接口 | 编辑时完整替换的模板公开参数，未知键拒绝              | 无额外格式限制；仍遵守所属组件业务规则        |
+| `secrets`             | [SecretInput](#schema-secretinput)                   | 否   | 否   | 无静态默认；省略语义见组件/接口 | 仅请求输入的秘密字段；不回显，不写日志                | 无额外格式限制；仍遵守所属组件业务规则        |
+| `clear_secret_fields` | array&lt;string&gt;                                  | 否   | 否   | 无静态默认；省略语义见组件/接口 | 明确清除的秘密字段键；与本次非空替换字段不可冲突      | uniqueItems=true                              |
+| `notes`               | string / null                                        | 否   | 是   | 无静态默认；省略语义见组件/接口 | 可空备注，去除秘密后原文保存                          | 无额外格式限制；仍遵守所属组件业务规则        |
+| `balance_config`      | [BalanceConfigInput](#schema-balanceconfiginput)     | 否   | 否   | 无静态默认；省略语义见组件/接口 | 可选余额配置，与供应商编辑同事务；省略保持原配置      | 无额外格式限制；仍遵守所属组件业务规则        |
 
 未声明字段：拒绝（`additionalProperties=false`）。
 
@@ -5128,7 +5129,7 @@ M14只读产品/研发按型号发布的企业默认规则，固定实例目录�
 | 组件/字段                 | 明确语义                                                                                                                                                                                                                                                                          |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ProviderCreate            | 无 expected_version；name/template_key/template_version_id/base_url/security_level/public_config 必填；notes 省略为 null，balance_config 省略则余额 NONE；秘密按模板条件必填。                                                                                                    |
-| ProviderUpdate            | expected_version及template_version_id必填；基础配置完整替换；notes 省略保持、null 清空；balance_config 省略保持；secrets 省略/空字符串保留，clear_secret_fields 明确清除；必需秘密清除且无替换返回 422。                                                                          |
+| ProviderUpdate            | expected_version必填，禁止template_key及template_version_id；基础配置完整替换；notes 省略保持、null 清空；balance_config 省略保持；secrets 省略/空字符串保留，clear_secret_fields 明确清除；必需秘密清除且无替换返回 422。                                                        |
 | ModelCreate               | 基础四项必填；其余元信息按字段默认；health 默认关闭/360；initial_grants 默认空；pricing 省略尝试已核实且币种相符的内置价，否则未定价，不填假零价。                                                                                                                                |
 | ModelUpdate               | 至少提交base/metadata/grants/pricing/health一域；base仅DRAFT且expected_base_version，metadata全状态且expected_metadata_version；health需其版本；授权/价格自带版本；仅版本参数422。                                                                                                |
 | ModelUpdate.base          | 仅完整身份/协议域，必填五类字段含完整自定义接口集合；不提交base表示该域不变。模态/标签/上下文/最大输出/描述改用metadata完整六字段，null/[]显式清空，不接受跨域字段。                                                                                                              |
@@ -5343,3 +5344,21 @@ M13条件权限：先校验models:WRITE和供应商模型用途范围、解析�
 ### 2026-11-12追加的公共导航目录
 
 项目管理及成本与预算三个菜单加入公共导航：完整19叶子/5分组，`navigation.groups.maxItems=5`，items上限20及schema_version=3保持。新增资源 identity.projects/cost.bills/cost.expenses/cost.budgets，默认仅超管显式读写。无新增模型业务API，也未交付项目/费用/预算业务API；路由映射与职责边界见[07最后一节](07-前端协同对接指南.md#2026-11-12追加项目管理成本与预算菜单)。
+
+## 产品澄清后的字段和调用约束
+
+| 接口或字段                  | 现行含义                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| A01/A02 USER_GROUP          | 模型详情用户组关系全局读写，保存/撤销/重放及Added回读一致；其他主体范围不变                             |
+| A06/A08/A10/A14新增状态     | ACTIVE或PENDING_REVIEW，已有非ACTIVE保留/撤销不变                                                       |
+| A13候选状态                 | ACTIVE或PENDING_REVIEW且未由该主体直接授权                                                              |
+| 用户组成员部门选项 group_id | 可选规范UUID；省略为本部门子树新增候选；提供仅允许FULL，无parent_id，返回该组真实成员部门的最小平面选项 |
+| P05模板字段                 | ProviderUpdate中不再声明template_key/template_version_id，未知字段按strict-json拒绝；模板key与版本固定  |
+| C05                         | 可选独立诊断，不是C01/D03的前置条件，不签发预检证明                                                     |
+| C01/D03                     | 直接提交，保留正式价格、版本、状态、权限校验及现有费用与上架规则                                        |
+
+## 现有组成员部门筛选只读入口
+
+`GET /api/v1/groups/{group_id}/member-departments`，operationId为`listGroupExistingMemberDepartments`；要求完整会话及`identity.groups READ`。无正文，path的group_id为必填规范UUID，query支持可选locale和search（最多128个Unicode字符）。返回200，data.items为MemberDepartment最小平面列表：id、parent_id（null）、display_name、has_children（false）、matched；search仅返回组内真实成员部门的匹配项，不补全外部祖先。组不存在404，无权限403；输入错误400或422。分页和树加载继续使用新增候选专用入口的原约定。
+
+原`/api/v1/groups/member-department-options`及其group_id模式保持WRITE权限；只读成员页使用上述新入口，不能借此读取新增候选目录。

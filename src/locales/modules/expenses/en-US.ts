@@ -1,6 +1,48 @@
 import type zhCN from './zh-CN'
 
 const messages: Record<keyof typeof zhCN, string> = {
+  directDepartment: 'Direct consumption of the selected department only',
+  collapse: 'Collapse',
+  notCalculated: 'Not calculated',
+  noCharge: 'No charge',
+  columnsHint: 'Common fields are shown by default. Select additional fields to display them.',
+
+  api_key_masked: 'API Key',
+  usage_modality: 'Usage modality',
+  TEXT_TOKENS: 'Text tokens',
+  model_id: 'Physical model ID',
+  currency: 'Currency',
+  charged: 'Charged',
+  noCostDetail: 'This request has zero cost under its price snapshot.',
+  noUsageDetail: 'The provider did not return usage; the gateway cannot calculate request costs.',
+  snapshotHint:
+    'Billing item prices use the request-time snapshot ({version}); later price changes do not affect this record.',
+  rawSection: 'Raw usage and billing source',
+  usageSource: 'Usage source',
+  unavailable: 'Unavailable',
+  viewRaw: 'View raw provider usage',
+  noUsageRecorded: 'No provider usage was recorded for this request; costs were not calculated.',
+
+  helpcreated_at: 'Time this request was initiated, accurate to the second.',
+  helpcost_owner_type:
+    'Shows Uncontrolled before controls were enabled; otherwise shows Project, Department, or Unassigned.',
+  helpfee_subject_name:
+    'Shows Uncontrolled before controls were enabled; otherwise shows the fee subject associated at consumption time.',
+  helpcost_center_name:
+    'Shows Uncontrolled before controls were enabled; otherwise shows the cost center of the fee subject associated at consumption time.',
+  helpmodel_name:
+    'Model name used in the request; globally unique and mapped directly to one physical model.',
+  helptotal_cost: 'Request cost, equal to the sum of billing item subtotals in request details.',
+
+  fee_subject_name: 'Fee subject',
+  cost_center_name: 'Cost center',
+  control_status: 'Control status',
+  CONTROLLED: 'Controlled',
+  UNCONTROLLED: 'Uncontrolled',
+  UNASSIGNED: 'Unassigned',
+  DEPARTMENT: 'Department',
+  PROJECT: 'Project',
+  billScope: 'Showing expenses within the selected bill scope and billing period',
   dimDEPARTMENT: 'By user department',
   dimUSER: 'By user',
   dimMODEL: 'By model',
@@ -43,7 +85,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   summary: 'Filtered results: {count} requests',
   amount: 'Total cost',
   average: 'Average cost per request',
-  sortHint: 'Select request time, token or cost headers to sort. Select a row for request details.',
+  sortHint: 'Click Request time or Cost to toggle sorting; click a row to view request details',
   detail: 'Request details',
   basic: 'Basic information',
   billing: 'Cost breakdown',
@@ -82,7 +124,7 @@ const messages: Record<keyof typeof zhCN, string> = {
   NO: 'No',
   date: 'Request date range',
   disclaimer:
-    'Costs are gateway estimates based on the request-time price snapshot and usage. They support internal attribution and allocation, and may differ from provider invoices.',
+    'Costs are gateway estimates based on request-time price snapshots and usage, for internal attribution and allocation. They may differ from provider bills. Click a row to view details.',
   source: 'Billing source',
   PROVIDER: 'Provider usage',
   GATEWAY: 'Gateway metering',
