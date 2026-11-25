@@ -869,11 +869,6 @@ export const transport = {
       }),
     )
   },
-  pricingCheck: async (m: Model, proposed = false) =>
-    api.C05(m.id, {
-      expected_base_version: modelVersions.get(m.id)?.base ?? (await facts(m.id)).versions.base,
-      ...(proposed ? { invocation_apis: baseInput(m).invocation_apis } : {}),
-    }),
   startTest: async (
     id: string,
     purpose: 'ADMISSION' | 'HEALTH',

@@ -49,14 +49,8 @@
           "
           ><template #icon><t-icon name="add" /></template>{{ t('ma.create') }}</t-button
         >
-        <span v-if="selected.length" class="ma-muted">{{
-          t('common.selected', { n: selected.length })
-        }}</span>
-        <t-button v-if="selected.length" variant="text" size="small" @click="clearSelection">
-          {{ t('common.clearSelection') }}
-        </t-button>
         <t-button
-          v-permission.write="'model.permissions'"
+          v-permission.write="'model.models'"
           class="list-action-soft"
           theme="primary"
           :disabled="!canBatchAuthorize"
@@ -67,9 +61,13 @@
             }
           "
           >{{ t('ma.batchGrant') }}</t-button
-        ><span v-if="selectedHasPendingReview" class="ma-muted">{{
-          t('ma.batchGrantPendingReview')
+        >
+        <span v-if="selected.length" class="ma-muted">{{
+          t('common.selected', { n: selected.length })
         }}</span>
+        <t-button v-if="selected.length" variant="text" size="small" @click="clearSelection">
+          {{ t('common.clearSelection') }}
+        </t-button>
       </div>
       <StatusFlowGuide />
     </div>
@@ -244,12 +242,7 @@ const authorization = ref<{
   models: Pick<ModelListItem, 'id' | 'model_id_at_gateway'>[]
   batch: boolean
 }>()
-const selectedHasPendingReview = computed(() =>
-  selectedItems.value.some((model) => model.status === 'PENDING_REVIEW'),
-)
-const canBatchAuthorize = computed(
-  () => selected.value.length > 0 && !selectedHasPendingReview.value,
-)
+const canBatchAuthorize = computed(() => selected.value.length > 0)
 const pending = ref<{
     model: Pick<Model, 'id' | 'status' | 'model_id_at_gateway'>
     target: Status | 'DELETE'
@@ -293,16 +286,15 @@ function rowActions(model: ModelListItem): RowAction[] {
     danger = false,
     overflow = false,
   ) => actions.push({ label: t('ma.' + label), permission, run, danger, overflow })
-  if (model.status !== 'PENDING_REVIEW')
-    add(
-      'authorize',
-      'model.permissions',
-      () => {
-        authorization.value = { models: [model], batch: false }
-      },
-      false,
-      false,
-    )
+  add(
+    'authorize',
+    'model.models',
+    () => {
+      authorization.value = { models: [model], batch: false }
+    },
+    false,
+    false,
+  )
   if (!['TESTING', 'PENDING_REVIEW'].includes(model.status))
     add('edit', 'model.models', () => edit(model.id))
   if (['ACTIVE', 'SUSPENDED'].includes(model.status))

@@ -30,9 +30,6 @@
       :loading="loading"
       :empty="listFailed ? t('common.loadFailed') : t('myKeys.empty')"
     >
-      <template #id="{ row }"
-        ><code>{{ row.id }}</code></template
-      >
       <template #masked_value="{ row }"
         ><t-tooltip :content="t('myKeys.maskedHint')"
           ><code>{{ row.masked_value }}</code></t-tooltip
@@ -182,7 +179,6 @@ function idempotencyKey() {
   )
 }
 const columns = computed<PrimaryTableCol<ApiKeyItem>[]>(() => [
-  { colKey: 'id', title: t('myKeys.id'), width: 260 },
   { colKey: 'masked_value', title: t('myKeys.masked'), width: 160 },
   { colKey: 'name', title: t('myKeys.name'), width: 'auto' },
   { colKey: 'status', title: t('myKeys.status'), width: 110 },

@@ -74,27 +74,6 @@ function checkKey(key, file) {
 
 // These contracts feed dynamically constructed translation keys, including states absent in a page.
 const enumContracts = [
-  ['cost', 'PeriodType', 'cost.'],
-  ['cost', 'Dimension', 'cost.'],
-  ['cost', 'BudgetStatus', 'cost.', { SHARED: 'cost.sharedBudget' }],
-  ['cost', 'BudgetConfig.period_type', 'cost.'],
-  ['cost', 'BudgetConfig.budget_mode', 'cost.'],
-  ['cost', 'BudgetConfig.over_budget_action', 'cost.'],
-  ['cost', 'Adjustment.status', 'cost.'],
-  ['projects', 'ProjectStatus', 'projects.'],
-  ['projects', 'ProjectRole', 'projects.'],
-  ['projects', 'ProjectBudget.status', 'projects.', { DISABLED: 'projects.budgetDisabled' }],
-  ['projectBudgets', 'ProjectBudgetPeriod.state', 'budgetPlan.'],
-  [
-    'projectBudgets',
-    'ProjectBudgetHistory.action',
-    'cost.history',
-    { CONFIGURED: 'cost.historyUPDATED' },
-  ],
-  ['projectBudgets', 'BudgetApplication.target', 'budgetFlow.'],
-  ['projectBudgets', 'BudgetApplication.mode', 'budgetFlow.'],
-  ['projectBudgets', 'BudgetWorkOrder.status', 'budgetFlow.'],
-  ['projectBudgets', 'BudgetWorkOrder.execution', 'budgetFlow.'],
   ['expenses', 'ExpenseRecord.cost_owner_type', 'expenses.'],
   ['expenses', 'ExpenseRecord.status', 'expenses.'],
   ['expenses', 'ExpenseRecord.usage_source', 'expenses.'],

@@ -2,7 +2,6 @@
 export const CAPABILITIES = [
   { resource_code: 'identity.users', can_read: true, can_write: true },
   { resource_code: 'identity.groups', can_read: true, can_write: true },
-  { resource_code: 'identity.projects', can_read: true, can_write: true },
   { resource_code: 'identity.roles', can_read: true, can_write: true },
   { resource_code: 'identity.keys', can_read: true, can_write: true },
   { resource_code: 'identity.permission_resources', can_read: true, can_write: true },
@@ -12,8 +11,6 @@ export const CAPABILITIES = [
   { resource_code: 'system.settings', can_read: true, can_write: true },
   { resource_code: 'personal.profile', can_read: true, can_write: true },
   { resource_code: 'personal.keys', can_read: true, can_write: true },
-  { resource_code: 'personal.projects', can_read: true, can_write: true },
-  { resource_code: 'personal.work_orders', can_read: true, can_write: true },
   { resource_code: 'demo.control_plane', can_read: false, can_write: false },
   { resource_code: 'model.admission', can_read: true, can_write: true },
   { resource_code: 'cost.bills', can_read: true, can_write: true },
@@ -30,7 +27,6 @@ export const CAPABILITIES = [
 export const CAPABILITY_NAMES: Record<string, [string, string]> = {
   'identity.users': ['用户管理', 'User Management'],
   'identity.groups': ['用户组管理', 'User Group Management'],
-  'identity.projects': ['项目管理', 'Project Management'],
   'cost.bills': ['消费账单', 'Consumption Bills'],
   'cost.expenses': ['费用明细', 'Expense Details'],
   'cost.budgets': ['预算管理', 'Budget Management'],
@@ -43,8 +39,6 @@ export const CAPABILITY_NAMES: Record<string, [string, string]> = {
   'system.settings': ['系统设置', 'System Settings'],
   'personal.profile': ['个人资料', 'Personal Profile'],
   'personal.keys': ['我的 API Key', 'My API Keys'],
-  'personal.projects': ['我的项目', 'My Projects'],
-  'personal.work_orders': ['工单管理', 'Work Orders'],
   'demo.control_plane': ['控制平面演示', 'Control Plane Demo'],
   'model.admission': ['准入检测', 'Admission Testing'],
   'model.models': ['模型管理', 'Model Management'],

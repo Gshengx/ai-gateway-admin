@@ -28,12 +28,6 @@ const catalog: {
       group: 'identity',
     },
     {
-      id: 'identity_projects',
-      title: ['项目管理', 'Project management'],
-      resource: 'identity.projects',
-      group: 'identity',
-    },
-    {
       id: 'roles',
       title: ['角色管理', 'Role management'],
       resource: 'identity.roles',
@@ -122,18 +116,6 @@ const catalog: {
       id: 'terms',
       title: ['用户须知', 'Terms of use'],
       resource: null,
-    },
-    {
-      id: 'personal_work_orders',
-      title: ['工单管理', 'Work orders'],
-      resource: 'personal.work_orders',
-      group: 'personal',
-    },
-    {
-      id: 'personal_projects',
-      title: ['我的项目', 'My projects'],
-      resource: 'personal.projects',
-      group: 'personal',
     },
   ],
 }

@@ -4,11 +4,7 @@ export interface ExpenseRecord {
   id: string
   request_id: string
   created_at: string
-  cost_owner_type: 'USER_DEPARTMENT' | 'PROJECT'
-  project_id: string | null
-  project_name: string | null
-  project_department_id: string | null
-  project_department: string | null
+  cost_owner_type: 'USER_DEPARTMENT'
   user_id: string
   username: string
   user_name: string
@@ -36,12 +32,9 @@ export interface ExpenseRecord {
   error_message: string | null
 }
 export interface ExpenseQuery extends OffsetPageQuery {
-  bill_id?: string
   search?: string
   cost_owner_type?: string
-  project_id?: string
   department_id?: string
-  project_department_id?: string
   user_id?: string
   model_id?: string
   provider_id?: string
@@ -52,7 +45,6 @@ export interface ExpenseQuery extends OffsetPageQuery {
   max_cost?: number
   min_tokens?: number
   max_tokens?: number
-  has_project?: string
   sort_by?: string
   direction?: string
 }
@@ -72,7 +64,6 @@ export const getExpenses = (params: ExpenseQuery) =>
 export const getExpense = (id: string) => request.get<ExpenseRecord>(`/cost/records/${id}`)
 export const getExpenseOptions = () =>
   request.get<{
-    projects: { value: string; label: string }[]
     users: { value: string; label: string }[]
     models: { value: string; label: string }[]
     providers: { value: string; label: string }[]

@@ -1,6 +1,5 @@
 import { accessibleModelCount } from './modelAccess'
 import { runtimeState, nextSequence, directory, apiKeys, preferencesFor } from './_runtime'
-import { removeProjectMember, userProjects, wouldRemoveAllProjectAdmins } from './_projects'
 import { mockAccounts, mockRoles } from './_accounts'
 import { CAPABILITIES, CAPABILITY_NAMES } from './_capabilities'
 import { getPasswordRules } from './settings'
@@ -401,7 +400,6 @@ runtimeState('configuredUsers', () => {
 })
 for (const user of users) directory.set(user.username, user)
 function cleanUser(user: MockUser) {
-  removeProjectMember(user.id)
   directory.delete(user.username)
   mockAccounts.delete(user.username)
   revokeUserTokens(user.username)
@@ -659,7 +657,6 @@ function toApiUser(user: MockUser, locale: string) {
       requested_locale: locale,
       resolved_locale: locale,
     })),
-    projects: userProjects(user.id),
     role: role
       ? {
           id: role.id,
@@ -1966,13 +1963,12 @@ export default auditedMock([
           user_id: u.id,
           username: u.username,
         }))
-      const projectBlocked = wouldRemoveAllProjectAdmins(deletable.map((user) => user.user_id))
       return success({
-        allowed: deletable.length > 0 && !projectBlocked,
+        allowed: deletable.length > 0,
         api_key_count: apiKeys.filter((key) =>
           deletable.some((user) => user.user_id === key.user_id),
         ).length,
-        block_reason: projectBlocked ? 'EXTERNAL_REFERENCE_BLOCKED' : '',
+        block_reason: '',
         deletable,
         dependency_count: 0,
         excluded,
@@ -2023,8 +2019,6 @@ export default auditedMock([
       if (batchDeleteDigest(deletable, excluded) !== digest) {
         return fail('TARGET_SET_CHANGED', '目标集合已变化，请重新预览')
       }
-      if (wouldRemoveAllProjectAdmins(deletableUsers.map((user) => user.id)))
-        return fail('EXTERNAL_REFERENCE_BLOCKED', '请先转交项目管理员再删除用户')
       const removedKeyCount = apiKeys.filter((key) =>
         deletableUsers.some((u) => u.id === key.user_id),
       ).length
@@ -2291,15 +2285,10 @@ export default auditedMock([
       const allowed =
         !user.is_initial_admin &&
         user.username !== usernameFromToken(req) &&
-        user.role_id !== 'role-super-admin' &&
-        !wouldRemoveAllProjectAdmins([user.id])
+        user.role_id !== 'role-super-admin'
       return success({
         allowed,
-        block_reason: allowed
-          ? ''
-          : wouldRemoveAllProjectAdmins([user.id])
-            ? 'EXTERNAL_REFERENCE_BLOCKED'
-            : '内置管理员不允许删除',
+        block_reason: allowed ? '' : '内置管理员不允许删除',
         dependency_count:
           apiKeys.filter((key) => key.user_id === user.id).length +
           GROUPS.filter((group) => group.member_ids.includes(user.id)).length,
@@ -2363,8 +2352,6 @@ export default auditedMock([
       if (user.username === usernameFromToken(req) || user.role_id === 'role-super-admin')
         return fail('FORBIDDEN', '管理员不允许删除')
 
-      if (wouldRemoveAllProjectAdmins([user.id]))
-        return fail('EXTERNAL_REFERENCE_BLOCKED', '请先转交项目管理员再删除用户')
       cleanUser(user)
       // 就地删除，保持 users 数组引用不变（各 mock 路由共享同一实例）
       users.splice(

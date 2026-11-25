@@ -34,16 +34,10 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
     component: () => import('@/views/model/models/index.vue'),
     meta: { permission: 'model.models', icon: 'app' },
   },
-  identity_projects: {
-    path: '/identity/projects',
-    name: 'IdentityProjects',
-    component: () => import('@/views/identity/projects/index.vue'),
-    meta: { permission: 'identity.projects', icon: 'folder' },
-  },
   cost_bills: {
     path: '/cost/bills',
     name: 'CostBills',
-    component: () => import('@/views/cost/bills/index.vue'),
+    component: placeholder,
     meta: { permission: 'cost.bills', icon: 'file' },
   },
   cost_expenses: {
@@ -55,7 +49,7 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
   cost_budgets: {
     path: '/cost/budgets',
     name: 'CostBudgets',
-    component: () => import('@/views/cost/budgets/index.vue'),
+    component: placeholder,
     meta: { permission: 'cost.budgets', icon: 'wallet' },
   },
   groups: {
@@ -112,32 +106,6 @@ export const routeRegistry: Record<string, RouteRecordRaw> = {
     name: 'PersonalKeys',
     component: () => import('@/views/personal/keys/index.vue'),
     meta: { permission: 'personal.keys', icon: 'key' },
-  },
-  personal_work_orders: {
-    path: '/personal/work-orders',
-    name: 'ProjectBudgetRequest',
-    component: () => import('@/views/personal/workOrders/index.vue'),
-    meta: {
-      title: 'budgetFlow.title',
-      serverTitle: false,
-      permission: 'personal.work_orders',
-      icon: 'file',
-    },
-  },
-  personal_projects: {
-    path: '/account/projects',
-    alias: '/personal/projects',
-    name: 'PersonalProjects',
-    component: () => import('@/views/personal/projects/index.vue'),
-    children: [
-      {
-        path: ':id',
-        name: 'PersonalProjectDetail',
-        component: () => import('@/views/personal/projects/Detail.vue'),
-        meta: { title: 'projects.detail', serverTitle: false, permission: 'personal.projects' },
-      },
-    ],
-    meta: { permission: 'personal.projects', icon: 'folder' },
   },
   profile: {
     path: '/account',

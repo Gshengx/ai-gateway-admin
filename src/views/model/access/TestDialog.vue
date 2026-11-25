@@ -15,7 +15,7 @@
       )
     "
     :width="
-      protocolConfigurationRequired || pricingReason
+      protocolConfigurationRequired
         ? 'var(--notice-dialog-width)'
         : !run && purpose === 'ADMISSION'
           ? 'var(--admission-start-dialog-width)'
@@ -30,11 +30,6 @@
         v-if="protocolConfigurationRequired"
         theme="warning"
         :message="t('ma.admissionProtocolRequired')"
-      />
-      <DialogNotice
-        v-else-if="pricingReason"
-        theme="warning"
-        :message="t('ma.error_' + pricingReason)"
       />
       <template v-else>
         <p v-if="!run" class="ma-muted">
@@ -86,15 +81,13 @@
     <template #footer
       ><div class="ma-footer">
         <t-button
-          :theme="protocolConfigurationRequired || pricingReason ? 'primary' : 'default'"
+          :theme="protocolConfigurationRequired ? 'primary' : 'default'"
           :disabled="locked"
           @click="close"
-          >{{
-            t(run || pricingReason || protocolConfigurationRequired ? 'ma.close' : 'ma.cancel')
-          }}</t-button
+          >{{ t(run || protocolConfigurationRequired ? 'ma.close' : 'ma.cancel') }}</t-button
         >
         <t-button
-          v-if="!run && !pricingReason && !protocolConfigurationRequired"
+          v-if="!run && !protocolConfigurationRequired"
           theme="primary"
           :disabled="locked || !selected.length"
           :loading="busy"
@@ -198,7 +191,6 @@ const selected = ref([...available.value]),
   rejecting = ref(false),
   rejectionReason = ref(''),
   rejectionError = ref(false)
-const pricingReason = ref('')
 const polling = ref(false)
 const pollFailed = ref(false)
 const resultMessage = computed(() => {
@@ -269,13 +261,7 @@ async function retryPoll() {
   await poll()
 }
 async function start() {
-  if (
-    locked.value ||
-    protocolConfigurationRequired.value ||
-    pricingReason.value ||
-    !selected.value.length
-  )
-    return
+  if (locked.value || protocolConfigurationRequired.value || !selected.value.length) return
   const version = ++pollVersion
   pollController?.abort()
   clearTimeout(timer)
@@ -285,15 +271,6 @@ async function start() {
   if (startAttempt?.signature !== signature)
     startAttempt = { signature, key: createIdempotencyKey() }
   try {
-    if (props.purpose === 'ADMISSION') {
-      pricingReason.value = ''
-      const check = await accessApi.pricingCheck(props.model)
-      if (closed || version !== pollVersion) return
-      if (!check.pricing_check_passed) {
-        pricingReason.value = check.reason
-        return
-      }
-    }
     const result = await accessApi.startTest(
       props.model.id,
       props.purpose,

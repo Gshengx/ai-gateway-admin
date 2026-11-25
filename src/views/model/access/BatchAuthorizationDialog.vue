@@ -37,7 +37,7 @@ import { usePermissionScope } from '@/utils/usePermissionScope'
 
 const props = defineProps<{ models: Pick<ModelListItem, 'id' | 'model_id_at_gateway'>[] }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
-const { canWrite, signal } = usePermissionScope('model.permissions', () => emit('close'))
+const { canWrite, signal } = usePermissionScope('model.models', () => emit('close'))
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
 const subjects = reactive<Record<Subject, string[]>>({ DEPARTMENT: [], USER_GROUP: [], USER: [] })

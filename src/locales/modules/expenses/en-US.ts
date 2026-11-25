@@ -1,14 +1,12 @@
 import type zhCN from './zh-CN'
 
 const messages: Record<keyof typeof zhCN, string> = {
-  directSpend: 'Non-project spending',
-  projectSpend: 'Project spending',
-  dimPROJECT: 'By project',
   dimDEPARTMENT: 'By user department',
   dimUSER: 'By user',
   dimMODEL: 'By model',
   dimPROVIDER: 'By provider instance',
-  costHelp: 'Sum of request costs in this bill scope, based on request-time prices and usage.',
+  costHelp:
+    'Sum of request costs in the current query scope, based on request-time prices and usage.',
   tokenHelp:
     'Text input, output and cached tokens. Other modalities are shown in request billing details.',
   requestsHelp: 'Includes successful zero-cost requests and failed requests that incurred costs.',
@@ -16,19 +14,17 @@ const messages: Record<keyof typeof zhCN, string> = {
 
   title: 'Expense details',
   intro:
-    'Inspect request-level costs to investigate project spending, unusual consumption and expensive requests. Select a row for details.',
+    'Inspect request-level costs to investigate unusual consumption and expensive requests. Select a row for details.',
   columns: 'Visible columns',
   export: 'Export details CSV',
   more: 'More filters',
   reset: 'Reset filters',
-  search: 'Search request ID, name, username, model or project',
+  search: 'Search request ID, name, username or model',
   all: 'All',
   created_at: 'Request time',
   cost_owner_type: 'Cost owner type',
-  project_name: 'Project',
   user_name: 'User',
   user_department: 'User department',
-  project_department: 'Project responsible department',
   model_name: 'Model',
   provider_name: 'Provider instance',
   input_tokens: 'Input Token',
@@ -40,7 +36,6 @@ const messages: Record<keyof typeof zhCN, string> = {
   request_id: 'Request ID',
   api_key_name: 'API Key',
   USER_DEPARTMENT: 'Department',
-  PROJECT: 'Project',
   SUCCESS: 'Success',
   FAILED: 'Failed',
   PARTIAL: 'Partial success',
@@ -83,13 +78,11 @@ const messages: Record<keyof typeof zhCN, string> = {
   maxCost: 'Maximum cost',
   minTokens: 'Minimum Token',
   maxTokens: 'Maximum Token',
-  hasProject: 'Associated project',
   YES: 'Yes',
   NO: 'No',
   date: 'Request date range',
-  returnBill: 'Return to bill',
   disclaimer:
-    'Costs are gateway estimates based on the request-time price snapshot and usage. They support internal attribution, allocation and budget warnings, and may differ from provider invoices.',
+    'Costs are gateway estimates based on the request-time price snapshot and usage. They support internal attribution and allocation, and may differ from provider invoices.',
   source: 'Billing source',
   PROVIDER: 'Provider usage',
   GATEWAY: 'Gateway metering',

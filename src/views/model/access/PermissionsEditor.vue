@@ -12,14 +12,14 @@
           <h3>{{ t('ma.' + kind) }}</h3>
           <t-button
             v-if="selected[kind].length"
-            v-permission.write="'model.permissions'"
+            v-permission.write="'model.models'"
             theme="danger"
             variant="outline"
             @click="requestRemove([...selected[kind]])"
             >{{ t('ma.revokeGrant') }}</t-button
           >
         </div>
-        <div v-permission.write="'model.permissions'" class="ma-row">
+        <div v-permission.write="'model.models'" class="ma-row">
           <SubjectSelect
             v-model="candidates[kind]"
             :type="kind"
@@ -62,7 +62,7 @@
           ><template #subject_name="{ row }">{{ subjectLabel(row) }}</template>
           <template #action="{ row }"
             ><t-link
-              v-permission.write="'model.permissions'"
+              v-permission.write="'model.models'"
               theme="danger"
               @click="requestRemove([row.id])"
               >{{ t('ma.revokeGrant') }}</t-link
@@ -117,7 +117,7 @@ const emit = defineEmits<{
   'saving-change': [value: boolean]
   revoked: []
 }>()
-const { canWrite, signal } = usePermissionScope('model.permissions', () => emit('revoked'))
+const { canWrite, signal } = usePermissionScope('model.models', () => emit('revoked'))
 const { t } = useI18n()
 const kinds: Subject[] = ['DEPARTMENT', 'USER_GROUP', 'USER']
 const pageSize = 5

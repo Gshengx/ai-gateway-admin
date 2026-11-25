@@ -489,12 +489,11 @@ async function testAll() {
       if (!run || run.status !== 'RUNNING') {
         delete pricingFailures.value[m.id]
         delete pricingFieldErrors.value[m.id]
-        let check
+        let batch
         try {
-          check = await accessApi.pricingCheck(m, true)
+          batch = await accessApi.onboardingTests(props.provider.id, [m], testKey(m))
         } catch (error) {
           const failure = error as NotifiedError
-          pricingFailures.value[m.id] = failure.message || t('common.loadFailed')
           pricingFieldErrors.value[m.id] = (failure.params?.fields as Record<string, string>) ?? {}
           const route = failure.params?.standard_route as
             { method?: string; path?: string } | undefined
@@ -506,16 +505,10 @@ async function testAll() {
               pricingFieldErrors.value[m.id] ?? {},
               pricingStandardRoutes.value[m.id],
             ) ||
-            pricingFailures.value[m.id] ||
-            ''
+            failure.message ||
+            t('common.loadFailed')
           continue
         }
-        if (closed) break
-        if (!check.pricing_check_passed) {
-          pricingFailures.value[m.id] = t('ma.error_' + check.reason)
-          continue
-        }
-        const batch = await accessApi.onboardingTests(props.provider.id, [m], testKey(m))
         testKeys.delete(m.id)
         const item = batch.items[0]
         if (!item?.job_id) {

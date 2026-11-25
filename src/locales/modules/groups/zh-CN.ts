@@ -10,7 +10,6 @@ export default {
     createSuccess: '用户组已保存',
     updateSuccess: '用户组已保存',
     deleteSuccess: '用户组已删除',
-    writeBlocked: '当前用户组不可写：你的管理范围未覆盖组内全部成员。',
     columns: {
       name: '用户组',
       description: '描述',

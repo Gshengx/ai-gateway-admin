@@ -1,11 +1,5 @@
 <template>
-  <t-card :bordered="false" class="expenses"
-    ><t-link
-      v-if="route.query.billId"
-      theme="primary"
-      @click="router.push({ path: '/cost/bills', query: { billId: route.query.billId } })"
-      >{{ t('expenses.returnBill') }}</t-link
-    >
+  <t-card :bordered="false" class="expenses">
     <div class="heading">
       <div>
         <h3>{{ t('expenses.title') }}</h3>
@@ -28,21 +22,6 @@
             clearable
             @enter="firstPage"
             @clear="firstPage"
-          /><t-select
-            class="list-filter"
-            v-model="query.cost_owner_type"
-            :options="enumOptions(['USER_DEPARTMENT', 'PROJECT'])"
-            :placeholder="t('expenses.cost_owner_type')"
-            clearable
-            @change="firstPage"
-          /><t-select
-            class="list-filter"
-            v-model="query.project_id"
-            :options="options?.projects"
-            :placeholder="t('expenses.project_name')"
-            filterable
-            clearable
-            @change="firstPage"
           /><DepartmentSelect
             class="list-department"
             v-model="department"
@@ -88,23 +67,11 @@
             :placeholder="t(`expenses.${numberLabels[key]}`)"
             theme="normal"
             @change="firstPage"
-          /><DepartmentSelect
-            class="list-department"
-            v-model="projectDepartment"
-            :placeholder="t('expenses.project_department')"
-            @change="firstPage"
           /><t-select
             class="list-filter"
             v-model="query.status"
             :options="enumOptions(['SUCCESS', 'FAILED', 'PARTIAL'])"
             :placeholder="t('expenses.status')"
-            clearable
-            @change="firstPage"
-          /><t-select
-            class="list-filter"
-            v-model="query.has_project"
-            :options="enumOptions(['YES', 'NO'])"
-            :placeholder="t('expenses.hasProject')"
             clearable
             @change="firstPage"
           /></div></template
@@ -131,12 +98,7 @@
       ><template #created_at="{ row }">{{ formatDateTime(row.created_at) }}</template
       ><template #cost_owner_type="{ row }"
         ><t-tag variant="light">{{ t(`expenses.${row.cost_owner_type}`) }}</t-tag></template
-      ><template #project_name="{ row }">{{ row.project_name ?? '—' }}</template
       ><template #user_name="{ row }">{{ row.user_name }}（{{ row.username }}）</template
-      ><template v-for="key in tokenFields" :key="key" #[key]="{ row }"
-        ><span :class="{ hint: row[key] === null }">{{
-          row[key] === null ? t('expenses.unknown') : number(row[key])
-        }}</span></template
       ><template #total_cost="{ row }">{{ money(row.total_cost, row.currency) }}</template
       ><template #status="{ row }"
         ><t-tag
@@ -236,7 +198,7 @@
 </template>
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import type { PageInfo, TableSort, PrimaryTableCol, TableRowData } from 'tdesign-vue-next'
 import {
   getExpenses,
@@ -249,23 +211,19 @@ import {
 } from '@/api/modules/expenses'
 import { useUserStore } from '@/stores/modules/user'
 import FilterBar from '@/components/FilterBar.vue'
-import DepartmentSelect from '../DepartmentSelect.vue'
+import DepartmentSelect from '@/components/DepartmentTreeSelect.vue'
 import { useCost } from '../useCost'
 import { formatDateTime } from '@/utils/datetime'
-import { downloadBlob } from '../bills/download'
+import { downloadBlob } from '@/utils/download'
 import '@/styles/cost.css'
 const { t, locale, money, number, error } = useCost(),
-  route = useRoute(),
-  router = useRouter()
+  route = useRoute()
 const query = reactive<ExpenseQuery>({
   page: 1,
   page_size: 20,
   sort_by: 'created_at',
   direction: 'desc',
-  bill_id: route.query.billId ? String(route.query.billId) : undefined,
-  ...Object.fromEntries(Object.entries(route.query).filter(([key]) => key !== 'billId')),
 })
-const projectDepartment = ref('')
 const department = ref(String(route.query.department_id ?? '')),
   dates = ref<string[]>([]),
   more = ref(false),
@@ -293,24 +251,14 @@ const summary = ref<ExpenseSummary>({
 const defaultFields = [
   'created_at',
   'cost_owner_type',
-  'project_name',
   'user_name',
   'user_department',
   'model_name',
   'provider_name',
-  'input_tokens',
-  'output_tokens',
-  'total_tokens',
   'total_cost',
   'status',
 ]
-const allFields = [
-  ...defaultFields,
-  'request_id',
-  'project_department',
-  'api_key_name',
-  'cached_tokens',
-]
+const allFields = [...defaultFields, 'request_id', 'api_key_name']
 const selectedFields = ref([...defaultFields]),
   visibleFields = ref([...defaultFields])
 const basicFields: (keyof Pick<
@@ -319,8 +267,6 @@ const basicFields: (keyof Pick<
   | 'request_id'
   | 'status'
   | 'cost_owner_type'
-  | 'project_name'
-  | 'project_department'
   | 'user_name'
   | 'user_department'
   | 'api_key_name'
@@ -331,15 +277,12 @@ const basicFields: (keyof Pick<
   'request_id',
   'status',
   'cost_owner_type',
-  'project_name',
-  'project_department',
   'user_name',
   'user_department',
   'api_key_name',
   'model_name',
   'provider_name',
 ]
-const tokenFields = ['input_tokens', 'output_tokens', 'cached_tokens', 'total_tokens']
 const numberFilters = ['min_cost', 'max_cost', 'min_tokens', 'max_tokens'] as const
 const numberLabels = {
   min_cost: 'minCost',
@@ -355,9 +298,7 @@ const columns = computed<PrimaryTableCol<TableRowData>[]>(() =>
     colKey,
     title: t(`expenses.${colKey}`),
     minWidth: colKey === 'created_at' || colKey.includes('department') ? 200 : 140,
-    sorter: ['created_at', 'input_tokens', 'output_tokens', 'total_tokens', 'total_cost'].includes(
-      colKey,
-    ),
+    sorter: ['created_at', 'total_cost'].includes(colKey),
   })),
 )
 const billingColumns = computed(() =>
@@ -371,7 +312,6 @@ function params() {
   return {
     ...query,
     department_id: department.value || undefined,
-    project_department_id: projectDepartment.value || undefined,
     start: dates.value[0] || query.start,
     end: dates.value[1] || query.end,
   }
@@ -416,7 +356,6 @@ function reset() {
   Object.keys(query).forEach((key) => delete (query as unknown as Record<string, unknown>)[key])
   Object.assign(query, { page: 1, page_size: 20, sort_by: 'created_at', direction: 'desc' })
   department.value = ''
-  projectDepartment.value = ''
   dates.value = []
   void load()
 }
@@ -470,7 +409,8 @@ onMounted(async () => {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey.value) ?? 'null') as string[] | null
     if (saved?.length) {
-      visibleFields.value = allFields.filter((k) => saved.includes(k))
+      const retained = allFields.filter((k) => saved.includes(k))
+      visibleFields.value = retained.length ? retained : [...defaultFields]
       selectedFields.value = [...visibleFields.value]
     }
     options.value = await getExpenseOptions()

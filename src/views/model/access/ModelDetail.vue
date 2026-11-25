@@ -27,8 +27,7 @@
             @click="emit('test', model, 'HEALTH')"
             >{{ t('ma.healthTitle') }}</t-button
           ><t-button
-            v-if="model.status !== 'PENDING_REVIEW'"
-            v-permission.write="'model.permissions'"
+            v-permission.write="'model.models'"
             theme="default"
             @click="authorizationVisible = true"
             >{{ t('ma.grants') }}</t-button

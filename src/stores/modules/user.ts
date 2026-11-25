@@ -18,7 +18,6 @@ import { validatePermissions } from '@/router/navigation'
 import { getCurrentLocale, i18n, normalizeLocale, setLocale, setApiLocale } from '@/locales'
 import { usePermissionStore } from './permission'
 import { clearSession, clearCsrf, setCsrfToken } from '@/utils/auth'
-import { setCostMockActor } from '@/api/mock/cost'
 import { setSecurityMockActor } from '@/api/mock/security'
 
 export interface UserInfo {
@@ -199,7 +198,6 @@ export const useUserStore = defineStore('user', {
           return
         validatePermissions(permissions)
         language?.commit()
-        setCostMockActor(session.user_id)
         setSecurityMockActor(session.user_id)
         this.userInfo = {
           id: session.user_id,
@@ -276,7 +274,6 @@ export const useUserStore = defineStore('user', {
       contextRequest = undefined
       this.invalidatePermissions()
       this.permissionError = ''
-      setCostMockActor('')
       setSecurityMockActor('')
       useTermsStore().reset()
       usePermissionStore().reset()

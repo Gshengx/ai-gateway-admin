@@ -244,16 +244,6 @@
                   {{ row.role?.display_name ?? '—' }}
                 </span>
               </template>
-              <template #projects="{ row }">
-                <t-tooltip :content="projectTooltip(row)">
-                  <span class="group-text">
-                    {{ row.projects?.[0]?.display_name ?? '—' }}
-                    <t-tag v-if="(row.projects?.length ?? 0) > 1" size="small" variant="light">
-                      +{{ row.projects.length - 1 }}
-                    </t-tag>
-                  </span>
-                </t-tooltip>
-              </template>
 
               <template #status="{ row }">
                 <span class="status-cell" :class="`status-cell--${row.status}`">
@@ -513,12 +503,6 @@ function groupTooltip(row: UserItem) {
   return row.groups.length
     ? row.groups.map((group) => group.display_name).join(t('users.detail.listSeparator'))
     : t('users.detail.noGroups')
-}
-function projectTooltip(row: UserItem) {
-  return (
-    row.projects?.map((project) => project.display_name).join(t('users.detail.listSeparator')) ||
-    '—'
-  )
 }
 const userStore = useUserStore()
 const canWriteUsers = computed(() => canWriteResource(userStore.permissions, 'identity.users'))

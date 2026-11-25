@@ -45,10 +45,6 @@ function businessMessage(code?: string, config?: RequestConfig): string {
     '/locales/options': 'locales',
   }[config?.url ?? '']
   if (initializationKey) return i18n.global.t(`initializationErrors.${initializationKey}`)
-  if (config?.url?.startsWith('/projects') || config?.url?.startsWith('/me/projects')) {
-    const key = `projects.error_${code}`
-    return i18n.global.te(key) ? i18n.global.t(key) : i18n.global.t('projects.failed')
-  }
   if (config?.url?.startsWith('/model-access')) {
     const key = `ma.error_${code}`
     return i18n.global.te(key) ? i18n.global.t(key) : i18n.global.t('ma.error_fallback')

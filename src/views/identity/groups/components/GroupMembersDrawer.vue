@@ -12,7 +12,6 @@
       <p v-if="group.display_description || group.description" class="members__desc">
         {{ group.display_description || group.description }}
       </p>
-      <p v-if="!canWrite" class="members__hint">{{ t('groups.writeBlocked') }}</p>
 
       <div class="members__head">
         <h3 class="members__title">{{ t('groups.membersDrawer.sectionTitle') }}</h3>
@@ -200,13 +199,7 @@ const columns = computed<PrimaryTableCol<UserGroupMember>[]>(() => [
   { colKey: 'action', title: t('groups.membersDrawer.columns.action'), width: 90, fixed: 'right' },
 ])
 
-/** 是否可写：无管理权限或存在写入阻断码时只读 */
-const canWrite = computed(
-  () =>
-    canWriteResource(userStore.permissions, 'identity.groups') &&
-    !!props.group?.can_manage &&
-    !props.group?.write_blocking_code,
-)
+const canWrite = computed(() => canWriteResource(userStore.permissions, 'identity.groups'))
 
 function onDepartmentChange({ id }: { id: string }) {
   if (!id && !appliedDepartmentId) return

@@ -985,10 +985,6 @@ const labels: Record<string, [string, string]> = {
   batchGrant: ['批量授权', 'Batch Authorize'],
   batchGrantSubjectsRequired: ['请至少选择一个授权对象', 'Select at least one subject'],
   batchGrantModelLimit: ['每次请选择 1～100 个模型', 'Select between 1 and 100 models'],
-  batchGrantPendingReview: [
-    '所选模型包含待审核模型，无法批量授权',
-    'The selection contains models pending review. Batch authorization is unavailable.',
-  ],
   selectedModels: ['授权模型', 'Models to authorize'],
   subject: ['授权对象', 'Subject'],
   grantHelp: [

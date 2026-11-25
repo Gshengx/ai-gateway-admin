@@ -2,15 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { RespThisType } from 'vite-plugin-mock'
 import type { AuthContext, PermissionsResult } from '../src/api/modules/auth'
 import type { ApiResult } from '../src/api/types'
-import projectRoutes from './projects'
-import budgetRoutes from './projectBudgets'
 import expenseRoutes from './expenses'
-import costRoutes from './costShared'
 import { directory, runtimeState, hybridRequests } from './_runtime'
 import { fail, type MockMethod, type MockRequest } from './_utils'
-import { projects } from './_projects'
 
-const localRoutes = [...projectRoutes, ...budgetRoutes, ...expenseRoutes, ...costRoutes]
+const localRoutes = [...expenseRoutes]
 function match(route: MockMethod, pathname: string, method: string) {
   if (String(route.method ?? 'get').toLowerCase() !== method.toLowerCase()) return false
   if (typeof route.url !== 'string') return false
@@ -127,16 +123,6 @@ export async function handleHybridRequest(
     const root = original.data.department_scope_root_id
     request.body = translateDepartment(request.body, root, 'd-root') as MockRequest['body']
     request.query = translateDepartment(request.query, root, 'd-root') as MockRequest['query']
-    // Add the real actor to an existing fixture once, without replacing complex samples.
-    const marker = runtimeState('hybridProjectActors', () => new Set<string>())
-    if (!marker.has(session.user_id)) {
-      const project = projects().find((project) => project.id === 'project-10')
-      if (project && !project.admin_ids.includes(session.user_id)) {
-        project.admin_ids.push(session.user_id)
-        project.joined[session.user_id] = new Date().toISOString()
-      }
-      marker.add(session.user_id)
-    }
     const result = await route.response.call({ req: incoming, res } as RespThisType, request)
     send(res, translateDepartment(result, 'd-root', root))
   }

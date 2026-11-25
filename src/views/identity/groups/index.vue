@@ -68,7 +68,6 @@
               v-permission="'identity.groups:write'"
               theme="primary"
               hover="color"
-              :disabled="!row.can_manage"
               @click="onEdit(row)"
             >
               {{ t('groups.edit') }}
@@ -77,7 +76,6 @@
               v-permission="'identity.groups:write'"
               theme="danger"
               hover="color"
-              :disabled="!row.can_manage"
               @click="onDelete(row)"
             >
               {{ t('groups.deleteAction') }}

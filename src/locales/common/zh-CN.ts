@@ -18,7 +18,6 @@ export default {
       label: '身份管理',
       users: '用户管理',
       groups: '用户组管理',
-      projects: '项目管理',
       roles: '角色管理',
       keys: 'API Key 管理',
     },

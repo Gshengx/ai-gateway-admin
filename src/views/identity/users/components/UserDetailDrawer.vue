@@ -495,7 +495,7 @@ const lastAcceptance = computed(() => termsInfo.value?.last_acceptance ?? null)
 const canViewKeys = computed(() => hasPermission(userStore.permissions, 'identity.keys'))
 const canWriteKeys = computed(() => canWriteResource(userStore.permissions, 'identity.keys'))
 const grantPermitted = computed(() =>
-  ['identity.users', 'model.permissions'].every((resource) =>
+  ['identity.users', 'model.models'].every((resource) =>
     userStore.permissionSnapshot?.capabilities.some(
       (capability) => capability.resource_code === resource && capability.can_write,
     ),

@@ -18,7 +18,6 @@ export default {
       label: 'Identity',
       users: 'Users',
       groups: 'User Groups',
-      projects: 'Project management',
       roles: 'Roles',
       keys: 'API Keys',
     },

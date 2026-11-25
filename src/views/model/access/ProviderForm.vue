@@ -27,6 +27,7 @@
         ><t-select
           clearable
           v-model="provider.template_version_id"
+          :disabled="Boolean(initial?.id)"
           filterable
           :options="
             templates.map((x) => ({
@@ -370,6 +371,7 @@ function configured(key: string) {
   return !changedTemplate.value && provider.value.configured_secret_fields.includes(key)
 }
 function templateChanged() {
+  if (props.initial?.id) return
   changedTemplate.value = true
   const template = props.templates.find(
     (x) => x.template_version_id === provider.value.template_version_id,

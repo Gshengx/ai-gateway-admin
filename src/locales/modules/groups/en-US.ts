@@ -10,8 +10,6 @@ export default {
     createSuccess: 'User group saved',
     updateSuccess: 'User group saved',
     deleteSuccess: 'User group deleted',
-    writeBlocked:
-      'This group is read-only: your management scope does not cover all of its members.',
     columns: {
       name: 'User group',
       description: 'Description',

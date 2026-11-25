@@ -78,7 +78,5 @@ export const { mockAccounts, mockRoles } = runtimeState('accounts', loadAccounts
 // The built-in user role can submit its own requests and process only orders
 // assigned to it. Explicitly configured role definitions remain authoritative.
 if (!mockRoles.has('user')) {
-  mockRoles.set('user', [
-    { resource_code: 'personal.work_orders', can_read: true, can_write: true },
-  ])
+  mockRoles.set('user', [])
 }

@@ -1,6 +1,6 @@
 # AI 安全网关管理端
 
-`ais-gateway-admin` 是 AI 安全网关的 Web 管理端，提供模型与供应商接入、身份与权限管理、项目管理、成本与预算、系统管理及个人中心等入口。
+`ais-gateway-admin` 是 AI 安全网关的 Web 管理端，提供模型与供应商接入、身份与权限管理、费用明细、系统管理及个人中心等入口。
 
 菜单和业务路由由后端 navigation 与 capabilities 动态决定；部分入口仍为占位页。功能是否可用，应以当前后端契约、账号权限和页面实现为准。
 
@@ -39,10 +39,10 @@ npm run dev
 
 ### 开发模式
 
-| 命令               | 数据来源                 | 说明                                                                   |
-| ------------------ | ------------------------ | ---------------------------------------------------------------------- |
-| `npm run dev`      | 真实后端 + 部分业务 Mock | 认证、权限及已接入接口走代理；项目、成本与预算等本地业务由开发服务处理 |
-| `npm run dev:mock` | 完整 Mock                | 使用 `mock/` 中的模拟认证及业务处理器                                  |
+| 命令               | 数据来源                 | 说明                                                         |
+| ------------------ | ------------------------ | ------------------------------------------------------------ |
+| `npm run dev`      | 真实后端 + 部分业务 Mock | 认证、权限及已接入接口走代理；消费明细本地业务由开发服务处理 |
+| `npm run dev:mock` | 完整 Mock                | 使用 `mock/` 中的模拟认证及业务处理器                        |
 
 默认模式不会在后端失败后回退到 Mock，也不会为本地业务追加权限。菜单和读写能力仍由真实后端授权。本地业务响应可通过 `X-AIS-Local-Mock: true` 识别。
 
@@ -122,11 +122,10 @@ ais-gateway-admin/
 | 概览                             | `/`、`/dashboard`                                               |
 | 供应商、模型                     | `/model/providers`、`/model/models`                             |
 | 用户、用户组、角色               | `/identity/users`、`/identity/groups`、`/identity/roles`        |
-| 项目、托管密钥                   | `/identity/projects`、`/identity/keys`                          |
-| 账单、费用、预算                 | `/cost/bills`、`/cost/expenses`、`/cost/budgets`                |
+| 托管密钥                         | `/identity/keys`                                                |
+| 账单和预算（占位页）、消费明细   | `/cost/bills`、`/cost/expenses`、`/cost/budgets`                |
 | 系统配置、管理审计、条款同意记录 | `/system/settings`、`/system/logs`、`/system/terms-acceptances` |
-| 个人资料、个人项目、个人密钥     | `/account`、`/account/projects`、`/account/keys`                |
-| 个人工单                         | `/personal/work-orders`                                         |
+| 个人资料、个人密钥               | `/account`、`/account/keys`                                     |
 
 ## 开发约定
 
